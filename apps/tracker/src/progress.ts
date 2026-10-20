@@ -1,3 +1,4 @@
+import { handlePaymentReorg } from './payment-reorg';
 import { savePaymentEvent } from './payment-events';
 import type { Hex } from '../../../libs/chain/src/chain-client';
 import type { PrismaClient } from '../../../libs/db/src';
@@ -39,49 +40,8 @@ export class PaymentProgress {
           current.blockHash !== payment.blockHash
         )
           return;
-        const credited =
-          current.stage === 'settled' || current.stage === 'notified';
         if (!current.final && hashes.get(block) !== current.blockHash) {
-          const kind = credited ? 'settled_reorg' : 'payment_reorg';
-          if (
-            !(await tx.incident.findFirst({
-              where: { kind, paymentId: current.id, fromBlock: block },
-            }))
-          )
-            await tx.incident.create({
-              data: {
-                kind,
-                paymentId: current.id,
-                fromBlock: block,
-                toBlock: block,
-                whatHappened: 'The payment block is no longer canonical.',
-                howHandled: credited
-                  ? 'Kept the ledger credit for manual review; withheld finality.'
-                  : 'Dropped the payment back to sent and scheduled a rescan.',
-              },
-            });
-          if (!credited) {
-            const dropped = await tx.payment.update({
-              where: { id: current.id },
-              data: {
-                stage: 'sent',
-                blockNumber: null,
-                blockHash: null,
-                confirmations: 0,
-                receivedAt: null,
-                confirmingAt: null,
-              },
-            });
-            await savePaymentEvent(tx, dropped);
-            await tx.scanGap.create({
-              data: {
-                fromBlock: block,
-                toBlock: block,
-                errorCategory: 'reorg',
-                nextRetryAt: this.now(),
-              },
-            });
-          }
+          await handlePaymentReorg(tx, current, this.now());
           return;
         }
         const confirmations = Number(head > block ? head - block : 0n);

@@ -175,7 +175,7 @@ it('rejects a minimum scan range that cannot advance beyond the configured overl
     'MIN_RANGE',
   );
 });
-it('stores one payment and one cursor when recovery overlaps a concurrent foreground scan', async () => {
+it('stores one payment and one cursor when two scans overlap', async () => {
   f.chain.logs = [log()];
   await Promise.all([scanner.scanOnce(), scanner.scanOnce()]);
   expect(await f.db.payment.count()).toBe(1);

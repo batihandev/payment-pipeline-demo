@@ -1,3 +1,4 @@
+import { handlePaymentReorg } from './payment-reorg';
 import {
   fixture,
   clear,
@@ -112,4 +113,48 @@ it('keeps the current confirmation count in events for a settled payment awaitin
     stage: 'settled',
     confirmations: 11,
   });
+});
+it('keeps the payment identity when a re-mined transfer has a different log index', async () => {
+  const original = await f.db.payment.findFirstOrThrow();
+  f.chain.hashes.set(10n, hash(999n));
+  await progress.advance(20n, 0n);
+  f.chain.logs = [
+    { ...log(), blockNumber: 21n, blockHash: hash(21n), logIndex: 7 },
+  ];
+  f.chain.head = 21n;
+  await scanner.scanOnce();
+  expect(await f.db.payment.count()).toBe(1);
+  expect(await f.db.payment.findFirstOrThrow()).toMatchObject({
+    id: original.id,
+    stage: 'received',
+    blockNumber: 21n,
+    logIndex: 7,
+    externalKey: `${options.chainId}:${log().txHash}:7`,
+  });
+});
+it('holds a re-mined settled transaction for review without crediting its new log position', async () => {
+  await progress.advance(20n, 0n);
+  f.chain.hashes.set(10n, hash(999n));
+  f.chain.logs = [
+    { ...log(), blockNumber: 21n, blockHash: hash(21n), logIndex: 7 },
+  ];
+  f.chain.head = 31n;
+  await scanner.scanOnce();
+  await progress.advance(31n, 0n);
+  expect(await f.db.payment.count()).toBe(1);
+  expect(await f.db.ledgerEntry.count()).toBe(1);
+  expect(await f.db.incident.count({ where: { kind: 'settled_reorg' } })).toBe(
+    1,
+  );
+});
+
+it('preserves a credit when reorg processing loaded the payment before settlement committed', async () => {
+  const observed = await f.db.payment.findFirstOrThrow();
+  await progress.advance(20n, 0n);
+  await f.db.$transaction((tx) => handlePaymentReorg(tx, observed, now));
+  expect((await f.db.payment.findFirstOrThrow()).stage).toBe('settled');
+  expect(await f.db.ledgerEntry.count()).toBe(1);
+  expect(await f.db.incident.count({ where: { kind: 'settled_reorg' } })).toBe(
+    1,
+  );
 });

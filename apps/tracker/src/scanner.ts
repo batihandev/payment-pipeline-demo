@@ -1,3 +1,4 @@
+import { handlePaymentReorg } from './payment-reorg';
 import { savePaymentEvent } from './payment-events';
 import { receiveTransfer } from './matching';
 import { setTimeout } from 'node:timers/promises';
@@ -178,6 +179,20 @@ export class Scanner {
       )
         throw new Error('Provider returned a log outside the requested filter');
       const externalKey = `${this.options.chainId}:${log.txHash.toLowerCase()}:${log.logIndex}`;
+      const relocated = await tx.payment.findMany({
+        where: {
+          provider: 'chain',
+          chainId: this.options.chainId,
+          transactionHash: log.txHash.toLowerCase(),
+          blockHash: { not: log.blockHash },
+        },
+      });
+      let heldCredit = false;
+      for (const previous of relocated) {
+        if (await handlePaymentReorg(tx, previous, this.now()))
+          heldCredit = true;
+      }
+      if (heldCredit) continue;
       const exists = await tx.payment.findUnique({
         where: { provider_externalKey: { provider: 'chain', externalKey } },
       });
@@ -187,6 +202,7 @@ export class Scanner {
           data: {
             blockNumber: log.blockNumber,
             blockHash: log.blockHash,
+            logIndex: log.logIndex,
             stage: 'received',
             receivedAt: this.now(),
           },
