@@ -23,11 +23,11 @@ export class OrderSender {
     private readonly lock: RedisLock,
     private readonly options: SenderOptions,
   ) {}
-  sendForOrder(orderId: string): Promise<void> {
-    return this.send({ kind: 'order', id: orderId });
+  sendForOrder(orderId: string, exhausted = false): Promise<void> {
+    return this.send({ kind: 'order', id: orderId }, exhausted);
   }
-  sendForSweep(id: string): Promise<void> {
-    return this.send({ kind: 'sweep', id });
+  sendForSweep(id: string, exhausted = false): Promise<void> {
+    return this.send({ kind: 'sweep', id }, exhausted);
   }
   private async load(tx: Prisma.TransactionClient, target: Target) {
     if (target.kind === 'order') {
@@ -54,6 +54,15 @@ export class OrderSender {
       await tx.order.update({ where: { id: target.id }, data });
     else await tx.sweep.update({ where: { id: target.id }, data });
   }
+  private async lockRow(
+    tx: Prisma.TransactionClient,
+    target: Target,
+  ): Promise<void> {
+    if (target.kind === 'order')
+      await tx.$queryRaw`SELECT id FROM orders WHERE id = ${target.id}::uuid FOR UPDATE`;
+    else
+      await tx.$queryRaw`SELECT id FROM sweeps WHERE id = ${target.id} FOR UPDATE`;
+  }
   private async prepare(target: Target, from: Address, to: Address) {
     return this.db.$transaction(
       async (tx) => {
@@ -65,7 +74,19 @@ export class OrderSender {
         });
         // The database row fences nonce allocation even if the Redis lease expires.
         await tx.$queryRaw`SELECT address FROM wallet_nonces WHERE address = ${address} FOR UPDATE`;
+        await this.lockRow(tx, target);
         let row = await this.load(tx, target);
+        if (
+          target.kind === 'order' &&
+          'status' in row &&
+          row.status === 'expired' &&
+          !row.signedTransaction &&
+          row.sendState === 'pending'
+        ) {
+          await this.update(tx, target, { sendState: 'failed' });
+          await new BudgetReservation(tx).release(row.createdAt, row.amount);
+          return this.load(tx, target);
+        }
         if (row.sendState === 'failed' || row.sendState === 'sent') return row;
         if (!row.signedTransaction) {
           const allocated = await tx.walletNonce.findUniqueOrThrow({
@@ -98,7 +119,7 @@ export class OrderSender {
       { timeout: 60000 },
     );
   }
-  private async send(target: Target): Promise<void> {
+  private async send(target: Target, exhausted: boolean): Promise<void> {
     const from =
       target.kind === 'order' ? this.options.buyer : this.options.shop;
     const to = target.kind === 'order' ? this.options.shop : this.options.buyer;
@@ -151,12 +172,17 @@ export class OrderSender {
         });
       });
     } catch (error) {
-      await this.recordFailure(target, error);
+      await this.recordFailure(target, error, exhausted);
       throw error instanceof RpcError ? error : new RpcError('transient');
     }
   }
-  private async recordFailure(target: Target, error: unknown): Promise<void> {
+  private async recordFailure(
+    target: Target,
+    error: unknown,
+    exhausted: boolean,
+  ): Promise<void> {
     await this.db.$transaction(async (tx) => {
+      await this.lockRow(tx, target);
       const row = await this.load(tx, target);
       const knownFailure =
         error instanceof RpcError &&
@@ -178,7 +204,9 @@ export class OrderSender {
           whatHappened: `Transfer ${target.id} failed (${error instanceof RpcError ? error.kind : 'transient'}).`,
           howHandled: knownFailure
             ? 'No transaction was broadcast; released the reservation and closed the order.'
-            : 'Kept the reservation; retry with backoff using the same signed transaction when present.',
+            : exhausted
+              ? 'Automatic retries exhausted; kept the reservation and the same signed transaction for manual review.'
+              : 'Kept the reservation; retry with backoff using the same signed transaction when present.',
         },
       });
     });

@@ -123,3 +123,26 @@ it('releases a known unsigned failure once and never sends that order on a later
     await database.db.dailyBudget.findUniqueOrThrow({ where: { day } }),
   ).toMatchObject({ reservedCount: 0, reservedAmount: 0n });
 });
+
+it('retains an uncertain send for manual review after automatic retries are exhausted', async () => {
+  const row = await order();
+  chain.fail = 'broadcast';
+  await expect(sender.sendForOrder(row.id, true)).rejects.toMatchObject({
+    kind: 'timeout',
+  });
+  const incident = await database.db.incident.findFirstOrThrow();
+  expect(incident.howHandled).toContain('manual review');
+  expect(
+    await database.db.dailyBudget.findUniqueOrThrow({ where: { day } }),
+  ).toMatchObject({ reservedCount: 1, reservedAmount: 100n });
+});
+it('does not sign an unpaid order that expired before its queued send began', async () => {
+  const row = await order();
+  await database.db.order.update({
+    where: { id: row.id },
+    data: { status: 'expired' },
+  });
+  await sender.sendForOrder(row.id);
+  expect(chain.signed).toBe(0);
+  expect(chain.accepted.size).toBe(0);
+});
