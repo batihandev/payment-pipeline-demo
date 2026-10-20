@@ -10,7 +10,7 @@ import { ViemChainClient } from '../../../libs/chain/src/viem-client';
 import { RpcError } from '../../../libs/chain/src/rpc-error';
 import type { buyerSchema } from '../../../libs/config/src';
 import type { PrismaClient } from '../../../libs/db/src';
-import { Purchases } from './purchases';
+import { Purchases, purchaseOptions } from './purchases';
 import { BuyerJobs, retryOptions, type BuyerJobData } from './jobs';
 import { RedisLock } from './redis-lock';
 import { OrderSender } from './send-order';
@@ -54,13 +54,7 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
       },
       limiter,
     );
-    this.purchases = new Purchases(db, {
-      cap: { count: config.DAILY_COUNT_CAP, amount: config.DAILY_AMOUNT_CAP },
-      seed: String(config.CHAIN_ID),
-      ttlMinutes: config.ORDER_TTL_MINUTES,
-      quietStart: config.QUIET_START_HOUR_UTC,
-      quietEnd: config.QUIET_END_HOUR_UTC,
-    });
+    this.purchases = new Purchases(db, purchaseOptions(config));
     const connection = { url: config.REDIS_URL };
     this.queue = new Queue<BuyerJobData>('buyer', { connection });
     this.queue.on('error', () =>

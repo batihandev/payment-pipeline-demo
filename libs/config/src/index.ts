@@ -16,16 +16,20 @@ const chain = {
   RPC_COOLDOWN_MS: positiveInteger.default(30_000),
 };
 
-export const buyerSchema = z.object({
-  ...connection,
-  ...chain,
-  BUYER_PRIVATE_KEY: privateKey,
-  SHOP_PRIVATE_KEY: privateKey,
+const purchase = {
   DAILY_COUNT_CAP: positiveInteger.default(20),
   DAILY_AMOUNT_CAP: microUnits.default(100_000_000n),
   ORDER_TTL_MINUTES: positiveInteger.default(30),
   QUIET_START_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(0),
   QUIET_END_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(7),
+};
+
+export const buyerSchema = z.object({
+  ...connection,
+  ...chain,
+  BUYER_PRIVATE_KEY: privateKey,
+  SHOP_PRIVATE_KEY: privateKey,
+  ...purchase,
 });
 
 export const trackerSchema = z.object({
@@ -49,6 +53,7 @@ export const trackerSchema = z.object({
 });
 
 export const apiSchema = z.object({
+  ...purchase,
   ...connection,
   ...chain,
   API_PORT: positiveInteger.max(65535).default(3000),

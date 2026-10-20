@@ -7,6 +7,9 @@ import { ViemChainClient } from '../../../libs/chain/src/viem-client';
 import { serviceLimiter } from '../../../libs/chain/src/service-limiter';
 import { registerReads, type ApiConfig } from './reads';
 import { registerEvents } from './events';
+import { registerTestPurchases } from './test-purchases';
+import { Purchases, purchaseOptions } from '../../buyer/src/purchases';
+import { BuyerJobs, type BuyerJobData } from '../../buyer/src/jobs';
 export class ApiRuntime implements OnModuleDestroy {
   readonly redis: Redis;
   readonly queues: Record<string, Queue>;
@@ -42,6 +45,14 @@ export class ApiRuntime implements OnModuleDestroy {
       ),
     );
     await registerEvents(app, this.redis);
+    const purchases = new Purchases(this.db, purchaseOptions(config));
+    const queue = this.queues.buyer as Queue<BuyerJobData>;
+    registerTestPurchases(
+      app,
+      this.redis,
+      purchases,
+      new BuyerJobs(this.db, purchases, queue),
+    );
     registerReads(app, this.db, config, {
       chain,
       redis: this.redis,

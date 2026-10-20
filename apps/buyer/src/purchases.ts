@@ -1,3 +1,5 @@
+import type { z } from 'zod';
+import type { buyerSchema } from '../../../libs/config/src';
 import { createHash } from 'node:crypto';
 import { catalogue } from '../../../libs/core/src/catalogue';
 import { allocateOffset, expectedAmount } from '../../../libs/core/src/amounts';
@@ -123,4 +125,24 @@ export class Purchases {
       },
     });
   }
+}
+
+export function purchaseOptions(
+  config: Pick<
+    z.output<typeof buyerSchema>,
+    | 'DAILY_COUNT_CAP'
+    | 'DAILY_AMOUNT_CAP'
+    | 'CHAIN_ID'
+    | 'ORDER_TTL_MINUTES'
+    | 'QUIET_START_HOUR_UTC'
+    | 'QUIET_END_HOUR_UTC'
+  >,
+): Options {
+  return {
+    cap: { count: config.DAILY_COUNT_CAP, amount: config.DAILY_AMOUNT_CAP },
+    seed: String(config.CHAIN_ID),
+    ttlMinutes: config.ORDER_TTL_MINUTES,
+    quietStart: config.QUIET_START_HOUR_UTC,
+    quietEnd: config.QUIET_END_HOUR_UTC,
+  };
 }
