@@ -143,16 +143,19 @@ it('honors rate-limit cooldown before another RPC request', async () => {
 });
 it('rolls back payments when the cursor cannot be saved', async () => {
   f.chain.logs = [log()];
+  await f.db.cursor.create({
+    data: { name: scanner.cursorName, blockNumber: 0n, blockHash: hash(0n) },
+  });
   await f.db.$executeRawUnsafe(
     `CREATE FUNCTION reject_cursor() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'cursor unavailable'; END $$`,
   );
   await f.db.$executeRawUnsafe(
-    'CREATE TRIGGER reject_cursor BEFORE INSERT ON cursors FOR EACH ROW EXECUTE FUNCTION reject_cursor()',
+    'CREATE TRIGGER reject_cursor BEFORE UPDATE ON cursors FOR EACH ROW EXECUTE FUNCTION reject_cursor()',
   );
   try {
     await expect(scanner.scanOnce()).rejects.toThrow();
     expect(await f.db.payment.count()).toBe(0);
-    expect(await f.db.cursor.count()).toBe(0);
+    expect((await f.db.cursor.findFirstOrThrow()).blockNumber).toBe(0n);
   } finally {
     await f.db.$executeRawUnsafe('DROP TRIGGER reject_cursor ON cursors');
     await f.db.$executeRawUnsafe('DROP FUNCTION reject_cursor()');
@@ -180,4 +183,20 @@ it('stores one payment and one cursor when two scans overlap', async () => {
   await Promise.all([scanner.scanOnce(), scanner.scanOnce()]);
   expect(await f.db.payment.count()).toBe(1);
   expect((await f.db.cursor.findFirstOrThrow()).blockNumber).toBe(20n);
+});
+
+it('starts a fresh database near the head and saves the cursor', async () => {
+  f.chain.head = 100000n;
+  scanner = new Scanner(f.db, f.chain, { ...options, startBlock: undefined });
+  await scanner.scanOnce();
+  expect(f.chain.ranges).toEqual([[99995n, 100000n]]);
+  expect((await f.db.cursor.findFirstOrThrow()).blockNumber).toBe(100000n);
+});
+it('uses START_BLOCK on a fresh database and retains an existing cursor on restart', async () => {
+  f.chain.head = 100000n;
+  scanner = new Scanner(f.db, f.chain, { ...options, startBlock: 80000n });
+  await scanner.scanOnce();
+  expect(f.chain.ranges).toEqual([[80000n, 80499n]]);
+  await scanner.scanOnce();
+  expect(f.chain.ranges[1]).toEqual([80494n, 80993n]);
 });

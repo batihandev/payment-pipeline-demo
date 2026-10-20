@@ -9,6 +9,7 @@ import { testDatabase } from '../../../libs/db/testing/database';
 export const shop = `0x${'22'.repeat(20)}` as const;
 export const now = new Date('2026-10-20T12:00:00Z');
 export const options = {
+  startBlock: 0n,
   chainId: 84532,
   shop,
   maxRange: 500,

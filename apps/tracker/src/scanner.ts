@@ -9,6 +9,7 @@ import type {
 import { RpcError } from '../../../libs/chain/src/rpc-error';
 import type { Prisma, PrismaClient } from '../../../libs/db/src';
 export type TrackerOptions = {
+  startBlock?: bigint;
   chainId: number;
   shop: string;
   maxRange: number;
@@ -49,7 +50,23 @@ export class Scanner {
     const cursor = await this.db.cursor.findUnique({
       where: { name: this.cursorName },
     });
-    let position = cursor?.blockNumber ?? 0n;
+    let position =
+      cursor?.blockNumber ??
+      this.options.startBlock ??
+      max(0n, head.number - BigInt(this.options.rescanBlocks));
+    if (!cursor) {
+      const blockHash =
+        position === head.number
+          ? head.hash
+          : await this.rpc(() => this.chain.getBlockHash(position));
+      if (!blockHash) throw new RpcError('transient');
+      const initialized = await this.db.cursor.upsert({
+        where: { name: this.cursorName },
+        create: { name: this.cursorName, blockNumber: position, blockHash },
+        update: {},
+      });
+      position = initialized.blockNumber;
+    }
     if (
       cursor &&
       (await this.rpc(() => this.chain.getBlockHash(cursor.blockNumber))) !==
@@ -69,7 +86,9 @@ export class Scanner {
         },
       });
     }
-    const from = max(0n, position - BigInt(this.options.rescanBlocks));
+    const from = cursor
+      ? max(0n, position - BigInt(this.options.rescanBlocks))
+      : position;
     let to = min(head.number, from + BigInt(this.options.maxRange) - 1n);
     if (from > to) return head;
     const range = await this.readRange(from, to);

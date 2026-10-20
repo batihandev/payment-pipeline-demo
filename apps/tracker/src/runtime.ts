@@ -38,6 +38,7 @@ export class TrackerRuntime implements OnModuleInit, OnModuleDestroy {
       new RpcLimiter(config.RPC_REQUESTS_PER_SECOND, config.RPC_COOLDOWN_MS),
     );
     const scanner = new Scanner(db, chain, {
+      startBlock: config.START_BLOCK,
       chainId: config.CHAIN_ID,
       shop: config.SHOP_ADDRESS,
       maxRange: config.MAX_RANGE,

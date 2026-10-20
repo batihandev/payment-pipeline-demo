@@ -35,6 +35,10 @@ export const trackerSchema = z.object({
   NOTICE_SECRET: z.string().min(32),
   SHOP_NOTICE_URL: z.url({ protocol: /^https?$/ }),
   CONFIRMATIONS: positiveInteger.default(10),
+  START_BLOCK: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    microUnits.optional(),
+  ),
   RESCAN_BLOCKS: positiveInteger.default(5),
   MAX_RANGE: positiveInteger.default(500),
   MIN_RANGE: positiveInteger.default(10),
