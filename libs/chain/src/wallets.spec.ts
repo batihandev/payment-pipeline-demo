@@ -45,3 +45,19 @@ it('keeps existing keys and settings while filling empty wallet settings on repe
   expect(await createWallets(path)).toEqual(first);
   expect(await readFile(path, 'utf8')).toBe(contents);
 });
+
+it('preserves keys written with dotenv quotes, whitespace, export and comments', async () => {
+  const path = join(directory, '.env');
+  const key = `0x${'11'.repeat(32)}`;
+  await writeFile(
+    path,
+    `export BUYER_PRIVATE_KEY = "${key}" # buyer\nSHOP_PRIVATE_KEY=\n`,
+  );
+  const addresses = await createWallets(path);
+  expect(addresses.BUYER).toBe(
+    privateKeyToAccount(key as `0x${string}`).address,
+  );
+  expect(await readFile(path, 'utf8')).toContain(
+    `export BUYER_PRIVATE_KEY = "${key}" # buyer`,
+  );
+});

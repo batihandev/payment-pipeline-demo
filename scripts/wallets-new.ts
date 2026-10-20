@@ -1,3 +1,4 @@
+import { parseEnv } from 'node:util';
 import { chmod, open, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import type { Hex } from 'viem';
@@ -23,19 +24,14 @@ export async function createWallets(
       contents = '';
     }
     const set = (name: string, value: string) => {
-      const pattern = new RegExp(`^(?:export\\s+)?${name}=.*$`, 'm');
+      const pattern = new RegExp(`^\\s*(?:export\\s+)?${name}\\s*=.*$`, 'm');
       contents = pattern.test(contents)
         ? contents.replace(pattern, `${name}=${value}`)
         : `${contents}${contents.endsWith('\n') || !contents ? '' : '\n'}${name}=${value}\n`;
     };
     const addresses = {} as { BUYER: string; SHOP: string };
     for (const name of ['BUYER', 'SHOP'] as const) {
-      const existing = contents
-        .match(
-          new RegExp(`^(?:export\\s+)?${name}_PRIVATE_KEY=(.*)$`, 'm'),
-        )?.[1]
-        ?.trim()
-        .replace(/^(['"])(.*)\1$/, '$2');
+      const existing = parseEnv(contents)[`${name}_PRIVATE_KEY`];
       if (existing && !/^0x[0-9a-fA-F]{64}$/.test(existing))
         throw new Error(`Invalid ${name}_PRIVATE_KEY`);
       const key = (existing || generatePrivateKey()) as Hex;
