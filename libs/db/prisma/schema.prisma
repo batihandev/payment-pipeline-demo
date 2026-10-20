@@ -1,0 +1,150 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../generated"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum OrderStatus {
+  open
+  paid
+  expired
+}
+
+enum OrderSource {
+  schedule
+  visitor
+}
+
+enum PaymentProvider {
+  chain
+  stripe
+}
+
+enum PaymentStage {
+  sent
+  received
+  confirming
+  processing
+  settled
+  notified
+}
+
+model Order {
+  id                String      @id @default(uuid()) @db.Uuid
+  item              String
+  price             BigInt
+  expectedAmount    BigInt      @map("expected_amount")
+  status            OrderStatus @default(open)
+  source            OrderSource
+  nonce             BigInt?
+  signedTransaction String?     @map("signed_transaction")
+  transactionHash   String?     @map("transaction_hash")
+  sendAttempts      Int         @default(0) @map("send_attempts")
+  createdAt         DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt         DateTime    @map("expires_at") @db.Timestamptz(3)
+  payments          Payment[]
+
+  @@index([expectedAmount, createdAt])
+  @@map("orders")
+}
+
+model DailyBudget {
+  day            DateTime @id @db.Date
+  targetCount    Int      @map("target_count")
+  targetAmount   BigInt   @map("target_amount")
+  reservedCount  Int      @default(0) @map("reserved_count")
+  reservedAmount BigInt   @default(0) @map("reserved_amount")
+
+  @@map("daily_budgets")
+}
+
+model ScanGap {
+  id            String    @id @default(uuid()) @db.Uuid
+  fromBlock     BigInt    @map("from_block")
+  toBlock       BigInt    @map("to_block")
+  errorCategory String    @map("error_category")
+  attempts      Int       @default(0)
+  nextRetryAt   DateTime  @map("next_retry_at") @db.Timestamptz(3)
+  resolvedAt    DateTime? @map("resolved_at") @db.Timestamptz(3)
+
+  @@index([resolvedAt, nextRetryAt])
+  @@map("scan_gaps")
+}
+
+model Payment {
+  id              String          @id @default(uuid()) @db.Uuid
+  provider        PaymentProvider
+  externalKey     String          @map("external_key")
+  orderId         String?         @map("order_id") @db.Uuid
+  order           Order?          @relation(fields: [orderId], references: [id])
+  amount          BigInt
+  stage           PaymentStage    @default(received)
+  confirmations   Int             @default(0)
+  chainId         Int?            @map("chain_id")
+  blockNumber     BigInt?         @map("block_number")
+  blockHash       String?         @map("block_hash")
+  transactionHash String?         @map("transaction_hash")
+  logIndex        Int?            @map("log_index")
+  final           Boolean         @default(false)
+  sentAt          DateTime?       @map("sent_at") @db.Timestamptz(3)
+  receivedAt      DateTime?       @map("received_at") @db.Timestamptz(3)
+  confirmingAt    DateTime?       @map("confirming_at") @db.Timestamptz(3)
+  processingAt    DateTime?       @map("processing_at") @db.Timestamptz(3)
+  settledAt       DateTime?       @map("settled_at") @db.Timestamptz(3)
+  notifiedAt      DateTime?       @map("notified_at") @db.Timestamptz(3)
+  finalAt         DateTime?       @map("final_at") @db.Timestamptz(3)
+  ledgerEntry     LedgerEntry?
+  notice          Notice?
+  incidents       Incident[]
+
+  @@unique([provider, externalKey])
+  @@unique([chainId, transactionHash, logIndex])
+  @@index([orderId])
+  @@map("payments")
+}
+
+model LedgerEntry {
+  id        String   @id @default(uuid()) @db.Uuid
+  paymentId String   @unique @map("payment_id") @db.Uuid
+  payment   Payment  @relation(fields: [paymentId], references: [id])
+  amount    BigInt
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@map("ledger_entries")
+}
+
+model Incident {
+  id           String   @id @default(uuid()) @db.Uuid
+  kind         String
+  whatHappened String   @map("what_happened")
+  howHandled   String   @map("how_handled")
+  paymentId    String?  @map("payment_id") @db.Uuid
+  payment      Payment? @relation(fields: [paymentId], references: [id])
+  fromBlock    BigInt?  @map("from_block")
+  toBlock      BigInt?  @map("to_block")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([paymentId])
+  @@map("incidents")
+}
+
+model Cursor {
+  name        String @id
+  blockNumber BigInt @map("block_number")
+  blockHash   String @map("block_hash")
+
+  @@map("cursors")
+}
+
+model Notice {
+  paymentId   String    @id @map("payment_id") @db.Uuid
+  payment     Payment   @relation(fields: [paymentId], references: [id])
+  attempts    Int       @default(0)
+  deliveredAt DateTime? @map("delivered_at") @db.Timestamptz(3)
+
+  @@map("notices")
+}

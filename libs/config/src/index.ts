@@ -1,0 +1,78 @@
+import { z } from 'zod';
+
+const positiveInteger = z.coerce.number().int().positive();
+const microUnits = z.string().regex(/^\d+$/).transform(BigInt);
+const address = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
+const privateKey = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
+const connection = {
+  DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
+  REDIS_URL: z.url({ protocol: /^rediss?$/ }),
+};
+const chain = {
+  CHAIN_ID: positiveInteger,
+  RPC_URL: z.url({ protocol: /^https?$/ }),
+  USDC_ADDRESS: address,
+  RPC_REQUESTS_PER_SECOND: positiveInteger.default(5),
+  RPC_COOLDOWN_MS: positiveInteger.default(30_000),
+};
+
+export const buyerSchema = z.object({
+  ...connection,
+  ...chain,
+  BUYER_PORT: positiveInteger.max(65535).default(3001),
+  BUYER_PRIVATE_KEY: privateKey,
+  SHOP_PRIVATE_KEY: privateKey,
+  DAILY_COUNT_CAP: positiveInteger.default(20),
+  DAILY_AMOUNT_CAP: microUnits.default(100_000_000n),
+  ORDER_TTL_MINUTES: positiveInteger.default(30),
+  QUIET_START_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(0),
+  QUIET_END_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(7),
+});
+
+export const trackerSchema = z.object({
+  ...connection,
+  ...chain,
+  TRACKER_PORT: positiveInteger.max(65535).default(3002),
+  SHOP_ADDRESS: address,
+  NOTICE_SECRET: z.string().min(32),
+  SHOP_NOTICE_URL: z.url({ protocol: /^https?$/ }),
+  CONFIRMATIONS: positiveInteger.default(10),
+  RESCAN_BLOCKS: positiveInteger.default(5),
+  MAX_RANGE: positiveInteger.default(500),
+  MIN_RANGE: positiveInteger.default(10),
+  ACTIVE_POLL_MS: positiveInteger.default(2000),
+  IDLE_POLL_MS: positiveInteger.default(30_000),
+  RPC_MAX_ATTEMPTS: positiveInteger.default(3),
+  GAP_MAX_ATTEMPTS: positiveInteger.default(5),
+});
+
+export const apiSchema = z.object({
+  ...connection,
+  ...chain,
+  API_PORT: positiveInteger.max(65535).default(3000),
+  BUYER_ADDRESS: address,
+  SHOP_ADDRESS: address,
+  NOTICE_SECRET: z.string().min(32),
+  WEB_ORIGIN: z.url({ protocol: /^https?$/ }),
+  BLOCK_EXPLORER_URL: z
+    .url({ protocol: /^https?$/ })
+    .default('https://sepolia.basescan.org'),
+  LOW_NATIVE_BALANCE: microUnits.default(1_000_000_000_000_000n),
+  LOW_USDC_BALANCE: microUnits.default(10_000_000n),
+});
+
+export function validateConfig<T extends z.ZodType>(
+  schema: T,
+  environment: Record<string, string | undefined>,
+): z.output<T> {
+  const result = schema.safeParse(environment);
+  if (!result.success) {
+    const names = [
+      ...new Set(result.error.issues.map((issue) => issue.path.join('.'))),
+    ];
+    throw new Error(
+      `Invalid or missing environment variables: ${names.join(', ')}`,
+    );
+  }
+  return result.data;
+}
