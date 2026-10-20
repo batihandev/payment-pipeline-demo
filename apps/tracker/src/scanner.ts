@@ -69,26 +69,9 @@ export class Scanner {
     const from = max(0n, position - BigInt(this.options.rescanBlocks));
     let to = min(head.number, from + BigInt(this.options.maxRange) - 1n);
     if (from > to) return head;
-    let logs: TransferLog[] = [];
-    let failure: RpcError | undefined;
-    while (true) {
-      try {
-        logs = await this.rpc(() => this.chain.getTransferLogs(from, to));
-        break;
-      } catch (error) {
-        if (!(error instanceof RpcError)) throw error;
-        const size = to - from + 1n;
-        if (
-          error.kind === 'range_too_large' &&
-          size > BigInt(this.options.minRange)
-        ) {
-          to = from + max(BigInt(this.options.minRange), size / 2n) - 1n;
-          continue;
-        }
-        failure = error;
-        break;
-      }
-    }
+    const range = await this.readRange(from, to);
+    to = range.to;
+    const { logs, failure } = range;
     const blockHash =
       to === head.number
         ? head.hash
@@ -123,6 +106,30 @@ export class Scanner {
       });
     });
     return head;
+  }
+  async readRange(from: bigint, end: bigint) {
+    let to = end;
+    let logs: TransferLog[] = [];
+    let failure: RpcError | undefined;
+    while (true) {
+      try {
+        logs = await this.rpc(() => this.chain.getTransferLogs(from, to));
+        break;
+      } catch (error) {
+        if (!(error instanceof RpcError)) throw error;
+        const size = to - from + 1n;
+        if (
+          error.kind === 'range_too_large' &&
+          size > BigInt(this.options.minRange)
+        ) {
+          to = from + max(BigInt(this.options.minRange), size / 2n) - 1n;
+          continue;
+        }
+        failure = error;
+        break;
+      }
+    }
+    return { to, logs, failure };
   }
   async rpc<T>(work: () => Promise<T>): Promise<T> {
     for (let attempt = 1; ; attempt++) {
