@@ -6,6 +6,7 @@ import type { PrismaClient } from '../../../libs/db/src';
 import { ViemChainClient } from '../../../libs/chain/src/viem-client';
 import { serviceLimiter } from '../../../libs/chain/src/service-limiter';
 import { registerReads, type ApiConfig } from './reads';
+import { registerEvents } from './events';
 export class ApiRuntime implements OnModuleDestroy {
   readonly redis: Redis;
   readonly queues: Record<string, Queue>;
@@ -25,7 +26,7 @@ export class ApiRuntime implements OnModuleDestroy {
       }),
     );
   }
-  register(app: FastifyInstance): void {
+  async register(app: FastifyInstance): Promise<void> {
     const config = this.config;
     const chain = new ViemChainClient(
       {
@@ -40,6 +41,7 @@ export class ApiRuntime implements OnModuleDestroy {
         config.RPC_COOLDOWN_MS,
       ),
     );
+    await registerEvents(app, this.redis);
     registerReads(app, this.db, config, {
       chain,
       redis: this.redis,
