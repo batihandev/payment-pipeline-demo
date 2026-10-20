@@ -19,7 +19,6 @@ const chain = {
 export const buyerSchema = z.object({
   ...connection,
   ...chain,
-  BUYER_PORT: positiveInteger.max(65535).default(3001),
   BUYER_PRIVATE_KEY: privateKey,
   SHOP_PRIVATE_KEY: privateKey,
   DAILY_COUNT_CAP: positiveInteger.default(20),
@@ -32,7 +31,6 @@ export const buyerSchema = z.object({
 export const trackerSchema = z.object({
   ...connection,
   ...chain,
-  TRACKER_PORT: positiveInteger.max(65535).default(3002),
   SHOP_ADDRESS: address,
   NOTICE_SECRET: z.string().min(32),
   SHOP_NOTICE_URL: z.url({ protocol: /^https?$/ }),

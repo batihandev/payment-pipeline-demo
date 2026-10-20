@@ -133,6 +133,9 @@ it('retains an uncertain send for manual review after automatic retries are exha
   const incident = await database.db.incident.findFirstOrThrow();
   expect(incident.howHandled).toContain('manual review');
   expect(
+    await database.db.order.findUniqueOrThrow({ where: { id: row.id } }),
+  ).toMatchObject({ sendState: 'review' });
+  expect(
     await database.db.dailyBudget.findUniqueOrThrow({ where: { day } }),
   ).toMatchObject({ reservedCount: 1, reservedAmount: 100n });
 });

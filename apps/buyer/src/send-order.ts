@@ -198,6 +198,8 @@ export class OrderSender {
           });
         }
       }
+      if (exhausted && !knownFailure && row.sendState === 'pending')
+        await this.update(tx, target, { sendState: 'review' });
       await tx.incident.create({
         data: {
           kind: 'send_failed',

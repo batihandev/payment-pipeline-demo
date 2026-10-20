@@ -13,7 +13,7 @@ export class NightlySweep {
     private readonly sender: OrderSender,
     private readonly shop: Address,
   ) {}
-  async run(day: Date): Promise<void> {
+  async run(day: Date, exhausted = false): Promise<void> {
     const id = utcDay(day).toISOString().slice(0, 10);
     const existing = await this.db.sweep.findUnique({ where: { id } });
     if (!existing) {
@@ -25,6 +25,6 @@ export class NightlySweep {
         update: {},
       });
     }
-    await this.sender.sendForSweep(id);
+    await this.sender.sendForSweep(id, exhausted);
   }
 }
