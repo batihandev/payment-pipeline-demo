@@ -167,6 +167,18 @@ export class Scanner {
       const exists = await tx.payment.findUnique({
         where: { provider_externalKey: { provider: 'chain', externalKey } },
       });
+      if (exists && exists.stage === 'sent' && exists.blockNumber === null) {
+        await tx.payment.update({
+          where: { id: exists.id },
+          data: {
+            blockNumber: log.blockNumber,
+            blockHash: log.blockHash,
+            stage: 'received',
+            receivedAt: this.now(),
+          },
+        });
+        continue;
+      }
       if (exists) {
         await tx.incident.create({
           data: {

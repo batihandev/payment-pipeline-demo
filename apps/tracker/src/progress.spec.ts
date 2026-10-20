@@ -23,7 +23,11 @@ beforeEach(async () => {
   f.chain.logs = [log()];
   await order(f.db);
   await new Scanner(f.db, f.chain, options, () => now).scanOnce();
-  progress = new PaymentProgress(f.db, options, () => now);
+  progress = new PaymentProgress(
+    f.db,
+    new Scanner(f.db, f.chain, options, () => now),
+    () => now,
+  );
 });
 it('computes confirmations from the pass head and waits for blocks on top', async () => {
   await progress.advance(19n);
