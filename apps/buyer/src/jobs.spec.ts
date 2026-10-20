@@ -105,3 +105,8 @@ it('recovers an order whose process stopped after reservation and before enqueue
   );
   expect(await database.db.order.count()).toBe(1);
 });
+
+it('keeps a scheduled send inside the current minute when the pacing job starts late', async () => {
+  const row = await jobs.pace(new Date('2026-10-20T12:00:50Z'));
+  expect((await queue.getJob(`send-${row?.id}`))?.delay).toBe(2500);
+});

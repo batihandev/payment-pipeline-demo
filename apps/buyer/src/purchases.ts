@@ -34,14 +34,15 @@ export class Purchases {
     private readonly options: Options,
     private readonly rng = Math.random,
   ) {}
-  ensureBudget(now: Date) {
+  async ensureBudget(now: Date) {
     const day = utcDay(now);
     const target = dailyTarget(this.options.cap, day, this.options.seed);
-    return this.db.dailyBudget.upsert({
-      where: { day },
-      create: { day, targetCount: target.count, targetAmount: target.amount },
-      update: {},
-    });
+    await this.db.$executeRaw`
+      INSERT INTO daily_budgets (day, target_count, target_amount)
+      VALUES (${day.toISOString().slice(0, 10)}::date, ${target.count}, ${target.amount})
+      ON CONFLICT (day) DO NOTHING
+    `;
+    return this.db.dailyBudget.findUniqueOrThrow({ where: { day } });
   }
   async pace(now: Date) {
     const id = minuteId(now);

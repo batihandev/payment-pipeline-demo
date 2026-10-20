@@ -19,7 +19,10 @@ export class BuyerJobs {
       await this.queueSend(
         order.id,
         'schedule',
-        Math.floor(this.rng() * 60000),
+        Math.floor(
+          this.rng() *
+            (60000 - now.getUTCSeconds() * 1000 - now.getUTCMilliseconds()),
+        ),
       );
     return order;
   }

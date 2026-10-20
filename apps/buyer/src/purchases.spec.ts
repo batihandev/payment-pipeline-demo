@@ -103,3 +103,13 @@ it('refuses a visitor order when its exact amount exceeds the remaining amount b
   expect(await purchases.visitor(randomUUID(), now)).toBeNull();
   expect(await database.db.order.count()).toBe(0);
 });
+
+it('initializes a missing daily target once when first purchases start concurrently', async () => {
+  await Promise.all(
+    Array.from({ length: 20 }, () => purchases.ensureBudget(now)),
+  );
+  expect(await database.db.dailyBudget.count()).toBe(1);
+  expect(
+    await database.db.dailyBudget.findUniqueOrThrow({ where: { day } }),
+  ).toMatchObject({ reservedCount: 0, reservedAmount: 0n });
+});
