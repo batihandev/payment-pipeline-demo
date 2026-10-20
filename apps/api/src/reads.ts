@@ -155,6 +155,7 @@ export function registerReads(
         lowUsdc: balance.usdc < config.LOW_USDC_BALANCE,
       });
       return json({
+        confirmations: config.CONFIRMATIONS,
         head: head.number,
         cursor: cursor?.blockNumber ?? null,
         lag: cursor

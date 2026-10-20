@@ -16,6 +16,8 @@ const chain = {
   RPC_COOLDOWN_MS: positiveInteger.default(30_000),
 };
 
+const confirmations = { CONFIRMATIONS: positiveInteger.default(10) };
+
 const purchase = {
   DAILY_COUNT_CAP: positiveInteger.default(20),
   DAILY_AMOUNT_CAP: microUnits.default(100_000_000n),
@@ -38,7 +40,7 @@ export const trackerSchema = z.object({
   SHOP_ADDRESS: address,
   NOTICE_SECRET: z.string().min(32),
   SHOP_NOTICE_URL: z.url({ protocol: /^https?$/ }),
-  CONFIRMATIONS: positiveInteger.default(10),
+  ...confirmations,
   START_BLOCK: z.preprocess(
     (value) => (value === '' ? undefined : value),
     microUnits.optional(),
@@ -53,6 +55,7 @@ export const trackerSchema = z.object({
 });
 
 export const apiSchema = z.object({
+  ...confirmations,
   ...purchase,
   ...connection,
   ...chain,

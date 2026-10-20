@@ -15,6 +15,7 @@ const config = apiSchema.parse({
   DATABASE_URL: 'postgresql://unused/unused',
   REDIS_URL: 'redis://127.0.0.1:56379',
   CHAIN_ID: 84532,
+  CONFIRMATIONS: 7,
   RPC_URL: 'https://example.com',
   USDC_ADDRESS: `0x${'33'.repeat(20)}`,
   BUYER_ADDRESS: `0x${'11'.repeat(20)}`,
@@ -181,6 +182,7 @@ it('reports head, scoped cursor lag, open gaps, queued work and live balance war
   const response = await adapter.getInstance().inject('/health');
   expect(response.statusCode).toBe(200);
   expect(response.json()).toMatchObject({
+    confirmations: 7,
     head: '100',
     cursor: '92',
     lag: '8',
