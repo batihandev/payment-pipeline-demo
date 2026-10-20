@@ -101,6 +101,7 @@ model Payment {
   ledgerEntry     LedgerEntry?
   notice          Notice?
   incidents       Incident[]
+  events          PaymentEvent[]
 
   @@unique([provider, externalKey])
   @@unique([chainId, transactionHash, logIndex])
@@ -166,4 +167,16 @@ model Sweep {
   sendState         String @default("pending") @map("send_state")
   createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   @@map("sweeps")
+}
+
+model PaymentEvent {
+  id          BigInt    @id @default(autoincrement())
+  paymentId   String    @map("payment_id") @db.Uuid
+  payment     Payment   @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  body        String
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(3)
+
+  @@index([publishedAt, id])
+  @@map("payment_events")
 }

@@ -1,3 +1,4 @@
+import { savePaymentEvent } from './payment-events';
 import { receiveTransfer } from './matching';
 import { setTimeout } from 'node:timers/promises';
 import type {
@@ -175,7 +176,7 @@ export class Scanner {
         where: { provider_externalKey: { provider: 'chain', externalKey } },
       });
       if (exists && exists.stage === 'sent' && exists.blockNumber === null) {
-        await tx.payment.update({
+        const restored = await tx.payment.update({
           where: { id: exists.id },
           data: {
             blockNumber: log.blockNumber,
@@ -184,6 +185,7 @@ export class Scanner {
             receivedAt: this.now(),
           },
         });
+        await savePaymentEvent(tx, restored);
         continue;
       }
       if (exists) {

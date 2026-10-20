@@ -1,3 +1,4 @@
+import { savePaymentEvent } from './payment-events';
 import type { Hex } from '../../../libs/chain/src/chain-client';
 import type { PrismaClient } from '../../../libs/db/src';
 import type { Scanner } from './scanner';
@@ -58,7 +59,7 @@ export class PaymentProgress {
               },
             });
           if (!credited) {
-            await tx.payment.update({
+            const dropped = await tx.payment.update({
               where: { id: current.id },
               data: {
                 stage: 'sent',
@@ -69,6 +70,7 @@ export class PaymentProgress {
                 confirmingAt: null,
               },
             });
+            await savePaymentEvent(tx, dropped);
             await tx.scanGap.create({
               data: {
                 fromBlock: block,
@@ -85,6 +87,9 @@ export class PaymentProgress {
           current.orderId &&
           ['received', 'confirming'].includes(current.stage)
         ) {
+          const changed =
+            current.stage !== 'confirming' ||
+            current.confirmations !== confirmations;
           current = await tx.payment.update({
             where: { id: current.id },
             data: {
@@ -93,6 +98,7 @@ export class PaymentProgress {
               confirmations,
             },
           });
+          if (changed) await savePaymentEvent(tx, current);
           if (confirmations >= this.scanner.options.confirmations) {
             await tx.ledgerEntry.create({
               data: { paymentId: current.id, amount: current.amount },
@@ -100,6 +106,12 @@ export class PaymentProgress {
             current = await tx.payment.update({
               where: { id: current.id },
               data: { stage: 'settled', settledAt: this.now() },
+            });
+            await savePaymentEvent(tx, current);
+            await tx.notice.upsert({
+              where: { paymentId: current.id },
+              create: { paymentId: current.id },
+              update: {},
             });
             await tx.order.update({
               where: { id: current.orderId ?? '' },
@@ -111,11 +123,13 @@ export class PaymentProgress {
             where: { id: current.id },
             data: { confirmations },
           });
-        if (block <= finalized)
-          await tx.payment.update({
+        if (block <= finalized) {
+          const finalPayment = await tx.payment.update({
             where: { id: current.id },
             data: { final: true, finalAt: this.now() },
           });
+          await savePaymentEvent(tx, finalPayment);
+        }
       });
     }
   }

@@ -1,3 +1,4 @@
+import { savePaymentEvent } from './payment-events';
 import type { TransferLog } from '../../../libs/chain/src/chain-client';
 import type { Prisma } from '../../../libs/db/src';
 export async function receiveTransfer(
@@ -53,5 +54,6 @@ export async function receiveTransfer(
           : 'Stored the unmatched payment without order credit.',
       },
     });
+  await savePaymentEvent(tx, payment);
   return payment;
 }

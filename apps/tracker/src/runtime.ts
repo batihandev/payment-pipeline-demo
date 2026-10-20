@@ -1,3 +1,6 @@
+import { Redis } from 'ioredis';
+import { PaymentDelivery } from './delivery';
+import { NoticeSender } from './notices';
 import type { OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { setTimeout } from 'node:timers/promises';
 import { Queue, Worker, UnrecoverableError } from 'bullmq';
@@ -15,6 +18,9 @@ export type TrackerConfig = z.output<typeof trackerSchema>;
 export class TrackerRuntime implements OnModuleInit, OnModuleDestroy {
   private readonly queue: Queue;
   private readonly worker: Worker;
+  private readonly redis: Redis;
+  private readonly noticeQueue: Queue<{ paymentId: string }>;
+  private readonly noticeWorker: Worker<{ paymentId: string }>;
   private readonly poller: TrackerPoller;
   private readonly stopped = new AbortController();
   private loop: Promise<void> | undefined;
@@ -50,9 +56,38 @@ export class TrackerRuntime implements OnModuleInit, OnModuleDestroy {
     const gaps = new GapRecovery(db, scanner);
     const connection = { url: config.REDIS_URL };
     this.queue = new Queue('tracker', { connection });
+    this.redis = new Redis(config.REDIS_URL, { maxRetriesPerRequest: 1 });
+    this.redis.on('error', () =>
+      console.error('Tracker Redis connection failed.'),
+    );
+    this.noticeQueue = new Queue('shop-notices', { connection });
+    this.noticeQueue.on('error', () =>
+      console.error('Shop notice queue connection failed.'),
+    );
+    const sender = new NoticeSender(db, {
+      url: config.SHOP_NOTICE_URL,
+      secret: config.NOTICE_SECRET,
+    });
+    this.noticeWorker = new Worker<{ paymentId: string }>(
+      'shop-notices',
+      (job) =>
+        sender.send(
+          job.data.paymentId,
+          job.attemptsMade + 1 >= (job.opts.attempts ?? 1),
+        ),
+      { connection, concurrency: 1, autorun: false },
+    );
+    this.noticeWorker.on('error', () =>
+      console.error('Shop notice worker connection failed.'),
+    );
+    const delivery = new PaymentDelivery(db, this.redis, this.noticeQueue);
     this.worker = new Worker(
       'tracker',
       async (job) => {
+        if (job.name === 'deliver-payments') {
+          await delivery.flush();
+          return;
+        }
         if (job.name !== 'retry-gap')
           throw new UnrecoverableError('Unknown tracker job');
         await gaps.retryOnce();
@@ -79,6 +114,18 @@ export class TrackerRuntime implements OnModuleInit, OnModuleDestroy {
     void this.worker
       .run()
       .catch(() => console.error('Tracker worker stopped.'));
+    await this.queue.upsertJobScheduler(
+      'tracker-delivery',
+      { every: 2000 },
+      {
+        name: 'deliver-payments',
+        data: {},
+        opts: { removeOnComplete: 100, removeOnFail: 100 },
+      },
+    );
+    void this.noticeWorker
+      .run()
+      .catch(() => console.error('Shop notice worker stopped.'));
     this.loop = this.poll();
   }
   private async poll(): Promise<void> {
@@ -112,5 +159,8 @@ export class TrackerRuntime implements OnModuleInit, OnModuleDestroy {
     await this.loop;
     await this.worker.close();
     await this.queue.close();
+    await this.noticeWorker.close();
+    await this.noticeQueue.close();
+    await this.redis.quit();
   }
 }
