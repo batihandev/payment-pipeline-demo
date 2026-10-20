@@ -40,7 +40,10 @@ export class PaymentDelivery {
       });
     }
     const notices = await this.db.notice.findMany({
-      where: { deliveredAt: null },
+      where: {
+        deliveredAt: null,
+        attempts: { lt: noticeRetryOptions.attempts },
+      },
       take: 100,
       orderBy: { paymentId: 'asc' },
     });
@@ -48,7 +51,11 @@ export class PaymentDelivery {
       await this.queue.add(
         'shop-notice',
         { paymentId: notice.paymentId },
-        { ...noticeRetryOptions, jobId: `notice-${notice.paymentId}` },
+        {
+          ...noticeRetryOptions,
+          attempts: noticeRetryOptions.attempts - notice.attempts,
+          jobId: `notice-${notice.paymentId}`,
+        },
       );
   }
 }

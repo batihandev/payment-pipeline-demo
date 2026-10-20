@@ -13,7 +13,10 @@ export class PaymentProgress {
       where: {
         provider: 'chain',
         chainId: this.scanner.options.chainId,
-        final: false,
+        OR: [
+          { final: false },
+          { stage: { in: ['received', 'confirming'] }, orderId: { not: null } },
+        ],
         blockNumber: { not: null },
       },
     });
@@ -21,7 +24,7 @@ export class PaymentProgress {
     for (const payment of payments) {
       if (payment.blockNumber === null) continue;
       const block = payment.blockNumber;
-      if (!hashes.has(block))
+      if (!payment.final && !hashes.has(block))
         hashes.set(
           block,
           await this.scanner.rpc(() => this.scanner.chain.getBlockHash(block)),
@@ -32,14 +35,13 @@ export class PaymentProgress {
           where: { id: payment.id },
         });
         if (
-          current.final ||
           current.blockNumber !== block ||
           current.blockHash !== payment.blockHash
         )
           return;
         const credited =
           current.stage === 'settled' || current.stage === 'notified';
-        if (hashes.get(block) !== current.blockHash) {
+        if (!current.final && hashes.get(block) !== current.blockHash) {
           const kind = credited ? 'settled_reorg' : 'payment_reorg';
           if (
             !(await tx.incident.findFirst({
@@ -118,12 +120,14 @@ export class PaymentProgress {
               data: { status: 'paid' },
             });
           }
-        } else
-          await tx.payment.update({
+        } else if (current.confirmations !== confirmations) {
+          const updated = await tx.payment.update({
             where: { id: current.id },
             data: { confirmations },
           });
-        if (block <= finalized) {
+          await savePaymentEvent(tx, updated);
+        }
+        if (!current.final && block <= finalized) {
           const finalPayment = await tx.payment.update({
             where: { id: current.id },
             data: { final: true, finalAt: this.now() },

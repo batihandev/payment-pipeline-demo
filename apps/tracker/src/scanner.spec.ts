@@ -158,3 +158,26 @@ it('rolls back payments when the cursor cannot be saved', async () => {
     await f.db.$executeRawUnsafe('DROP FUNCTION reject_cursor()');
   }
 });
+it('retains one open gap when an unchanged head repeats the same failed range', async () => {
+  f.chain.failure = () => {
+    throw new RpcError('permanent');
+  };
+  await scanner.scanOnce();
+  await scanner.scanOnce();
+  await scanner.scanOnce();
+  const gaps = await f.db.scanGap.findMany();
+  expect(
+    gaps.filter((gap) => gap.fromBlock === 15n && gap.toBlock === 20n),
+  ).toHaveLength(1);
+});
+it('rejects a minimum scan range that cannot advance beyond the configured overlap', () => {
+  expect(() => new Scanner(f.db, f.chain, { ...options, minRange: 5 })).toThrow(
+    'MIN_RANGE',
+  );
+});
+it('stores one payment and one cursor when recovery overlaps a concurrent foreground scan', async () => {
+  f.chain.logs = [log()];
+  await Promise.all([scanner.scanOnce(), scanner.scanOnce()]);
+  expect(await f.db.payment.count()).toBe(1);
+  expect((await f.db.cursor.findFirstOrThrow()).blockNumber).toBe(20n);
+});

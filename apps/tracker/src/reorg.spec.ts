@@ -92,3 +92,24 @@ it('restores the same dropped payment when its transfer is mined again', async (
     blockNumber: 21n,
   });
 });
+it('continues confirming a payment that becomes final before its confirmation threshold', async () => {
+  await progress.advance(11n, 10n);
+  expect(await f.db.payment.findFirstOrThrow()).toMatchObject({
+    stage: 'confirming',
+    final: true,
+  });
+  await progress.advance(20n, 10n);
+  expect((await f.db.payment.findFirstOrThrow()).stage).toBe('settled');
+  expect(await f.db.ledgerEntry.count()).toBe(1);
+});
+it('keeps the current confirmation count in events for a settled payment awaiting finality', async () => {
+  await progress.advance(20n, 0n);
+  await progress.advance(21n, 0n);
+  const event = await f.db.paymentEvent.findFirstOrThrow({
+    orderBy: { id: 'desc' },
+  });
+  expect(JSON.parse(event.body)).toMatchObject({
+    stage: 'settled',
+    confirmations: 11,
+  });
+});

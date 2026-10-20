@@ -142,6 +142,23 @@ export class OrderSender {
           if ((await this.load(tx, target)).sendState === 'sent') return;
           await this.update(tx, target, { sendState: 'sent' });
           if (target.kind === 'order') {
+            const observed = await tx.payment.findFirst({
+              where: {
+                provider: 'chain',
+                chainId: this.options.chainId,
+                transactionHash: { equals: hash, mode: 'insensitive' },
+              },
+            });
+            if (observed) {
+              await tx.payment.update({
+                where: { id: observed.id },
+                data: {
+                  sentAt: observed.sentAt ?? new Date(),
+                  orderId: row.id,
+                },
+              });
+              return;
+            }
             await tx.payment.upsert({
               where: {
                 provider_externalKey: {

@@ -141,3 +141,11 @@ it('rolls back stage events and the notice if credit cannot be inserted', async 
     );
   }
 });
+it('does not restart an exhausted notice after queue data is lost', async () => {
+  await order(f.db);
+  await scanner.scanOnce();
+  await progress.advance(20n);
+  await f.db.notice.updateMany({ data: { attempts: 5 } });
+  await new PaymentDelivery(f.db, redis, queue, () => now).flush();
+  expect(await queue.getJobs(['waiting', 'delayed'])).toHaveLength(0);
+});

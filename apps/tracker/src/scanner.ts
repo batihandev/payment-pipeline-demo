@@ -36,10 +36,11 @@ export class Scanner {
     this.cursorName = `chain-${options.chainId}-${options.shop.toLowerCase()}`;
     if (
       options.maxRange <= options.rescanBlocks + 1 ||
-      options.minRange > options.maxRange
+      options.minRange > options.maxRange ||
+      options.minRange <= options.rescanBlocks + 1
     )
       throw new Error(
-        'MAX_RANGE must exceed overlap and be at least MIN_RANGE',
+        'MIN_RANGE must exceed RESCAN_BLOCKS + 1; MAX_RANGE must be at least MIN_RANGE',
       );
   }
   async scanOnce(): Promise<{ number: bigint; hash: string }> {
@@ -80,15 +81,19 @@ export class Scanner {
     if (!blockHash) throw new RpcError('transient');
     await this.db.$transaction(async (tx) => {
       if (failure) {
-        await tx.scanGap.create({
-          data: {
-            fromBlock: from,
-            toBlock: to,
-            errorCategory: failure.kind,
-            attempts: 1,
-            nextRetryAt: new Date(this.now().getTime() + 60000),
-          },
+        const existingGap = await tx.scanGap.findFirst({
+          where: { fromBlock: from, toBlock: to, resolvedAt: null },
         });
+        if (!existingGap)
+          await tx.scanGap.create({
+            data: {
+              fromBlock: from,
+              toBlock: to,
+              errorCategory: failure.kind,
+              attempts: 1,
+              nextRetryAt: new Date(this.now().getTime() + 60000),
+            },
+          });
         await tx.incident.create({
           data: {
             kind: 'scan_gap',
@@ -164,6 +169,7 @@ export class Scanner {
     from: bigint,
     to: bigint,
   ): Promise<void> {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${this.cursorName}, 0))`;
     for (const log of logs) {
       if (
         log.blockNumber < from ||

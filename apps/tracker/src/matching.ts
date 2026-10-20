@@ -8,7 +8,7 @@ export async function receiveTransfer(
   externalKey: string,
   now: Date,
 ) {
-  const sent = await tx.payment.findFirst({
+  let sent = await tx.payment.findFirst({
     where: {
       provider: 'chain',
       chainId,
@@ -26,6 +26,18 @@ export async function receiveTransfer(
         },
         orderBy: { createdAt: 'desc' },
       });
+  if (order) {
+    await tx.$queryRaw`SELECT id FROM orders WHERE id = ${order.id}::uuid FOR UPDATE`;
+    sent = await tx.payment.findFirst({
+      where: {
+        provider: 'chain',
+        chainId,
+        transactionHash: { equals: log.txHash, mode: 'insensitive' },
+        stage: 'sent',
+        logIndex: null,
+      },
+    });
+  }
   const data = {
     externalKey,
     chainId,
