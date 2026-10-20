@@ -1,3 +1,4 @@
+import { publishPayment } from '../../../libs/events/src/publish-payment';
 import type { OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Queue, Worker, UnrecoverableError, type Job } from 'bullmq';
 import { Redis } from 'ioredis';
@@ -148,13 +149,13 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
             throw new UnrecoverableError('Missing purchase order id');
           const order = await this.purchases.visitor(job.data.orderId, now);
           if (!order) return;
-          await this.sender.sendForOrder(order.id, exhausted);
+          await this.sendPurchase(order.id, exhausted);
           return;
         }
         case 'send-order':
           if (!job.data.orderId)
             throw new UnrecoverableError('Missing purchase order id');
-          await this.sender.sendForOrder(job.data.orderId, exhausted);
+          await this.sendPurchase(job.data.orderId, exhausted);
           return;
         default:
           throw new UnrecoverableError('Unknown buyer job');
@@ -163,6 +164,29 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
       if (error instanceof RpcError && error.kind === 'permanent')
         throw new UnrecoverableError(error.message);
       if (error instanceof UnrecoverableError) throw error;
+      throw new RpcError('transient');
+    }
+  }
+  private async sendPurchase(
+    orderId: string,
+    exhausted: boolean,
+  ): Promise<void> {
+    await this.sender.sendForOrder(orderId, exhausted);
+    const payment = await this.db.payment.findFirst({ where: { orderId } });
+    if (!payment) return;
+    try {
+      await publishPayment(this.redis, payment);
+    } catch {
+      await this.db.incident.create({
+        data: {
+          kind: 'event_failed',
+          paymentId: payment.id,
+          whatHappened: 'Could not publish the saved payment event.',
+          howHandled: exhausted
+            ? 'Publication retries exhausted; the saved payment is available for clients to refetch.'
+            : 'Payment remains saved; retry publication with the purchase job.',
+        },
+      });
       throw new RpcError('transient');
     }
   }
