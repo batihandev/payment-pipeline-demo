@@ -1,6 +1,6 @@
 import type { Payment } from '../../../libs/db/generated/client';
 import type { Prisma } from '../../../libs/db/src';
-import { savePaymentEvent } from './payment-events';
+import { savePaymentEvent } from '../../../libs/events/src/save-payment-event';
 export async function handlePaymentReorg(
   tx: Prisma.TransactionClient,
   observed: Payment,

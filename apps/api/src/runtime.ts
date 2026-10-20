@@ -7,6 +7,7 @@ import { ViemChainClient } from '../../../libs/chain/src/viem-client';
 import { serviceLimiter } from '../../../libs/chain/src/service-limiter';
 import { registerReads, type ApiConfig } from './reads';
 import { registerEvents } from './events';
+import { registerNotices } from './notices';
 import { registerTestPurchases } from './test-purchases';
 import { Purchases, purchaseOptions } from '../../buyer/src/purchases';
 import { BuyerJobs, type BuyerJobData } from '../../buyer/src/jobs';
@@ -45,6 +46,7 @@ export class ApiRuntime implements OnModuleDestroy {
       ),
     );
     await registerEvents(app, this.redis);
+    registerNotices(app, this.db, config.NOTICE_SECRET);
     const purchases = new Purchases(this.db, purchaseOptions(config));
     const queue = this.queues.buyer as Queue<BuyerJobData>;
     registerTestPurchases(

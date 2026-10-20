@@ -1,5 +1,5 @@
 import { handlePaymentReorg } from './payment-reorg';
-import { savePaymentEvent } from './payment-events';
+import { savePaymentEvent } from '../../../libs/events/src/save-payment-event';
 import { receiveTransfer } from './matching';
 import { setTimeout } from 'node:timers/promises';
 import type {

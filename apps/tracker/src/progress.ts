@@ -1,5 +1,5 @@
 import { handlePaymentReorg } from './payment-reorg';
-import { savePaymentEvent } from './payment-events';
+import { savePaymentEvent } from '../../../libs/events/src/save-payment-event';
 import type { Hex } from '../../../libs/chain/src/chain-client';
 import type { PrismaClient } from '../../../libs/db/src';
 import type { Scanner } from './scanner';

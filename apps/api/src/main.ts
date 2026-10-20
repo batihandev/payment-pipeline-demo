@@ -13,6 +13,7 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule.forRoot(config),
     new FastifyAdapter(),
+    { rawBody: true },
   );
   await app.get(ApiRuntime).register(app.getHttpAdapter().getInstance());
   app.enableShutdownHooks();

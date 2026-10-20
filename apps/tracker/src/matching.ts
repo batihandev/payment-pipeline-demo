@@ -1,4 +1,4 @@
-import { savePaymentEvent } from './payment-events';
+import { savePaymentEvent } from '../../../libs/events/src/save-payment-event';
 import type { TransferLog } from '../../../libs/chain/src/chain-client';
 import type { Prisma } from '../../../libs/db/src';
 export async function receiveTransfer(
