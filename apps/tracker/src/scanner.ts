@@ -1,3 +1,4 @@
+import { receiveTransfer } from './matching';
 import { setTimeout } from 'node:timers/promises';
 import type {
   ChainClient,
@@ -177,20 +178,13 @@ export class Scanner {
         });
         continue;
       }
-      await tx.payment.create({
-        data: {
-          provider: 'chain',
-          externalKey,
-          chainId: this.options.chainId,
-          transactionHash: log.txHash.toLowerCase(),
-          logIndex: log.logIndex,
-          amount: log.amount,
-          blockNumber: log.blockNumber,
-          blockHash: log.blockHash,
-          stage: 'received',
-          receivedAt: this.now(),
-        },
-      });
+      await receiveTransfer(
+        tx,
+        log,
+        this.options.chainId,
+        externalKey,
+        this.now(),
+      );
     }
   }
 }

@@ -79,3 +79,19 @@ export async function clear(db: Awaited<ReturnType<typeof fixture>>['db']) {
     'TRUNCATE payments, orders, ledger_entries, incidents, cursors, scan_gaps, notices CASCADE',
   );
 }
+export async function order(
+  db: Awaited<ReturnType<typeof fixture>>['db'],
+  data = {},
+) {
+  return db.order.create({
+    data: {
+      item: 'Duck',
+      price: 99n,
+      expectedAmount: 100n,
+      source: 'visitor',
+      createdAt: now,
+      expiresAt: new Date(now.getTime() + 1800000),
+      ...data,
+    },
+  });
+}
