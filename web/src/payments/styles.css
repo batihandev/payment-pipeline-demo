@@ -110,6 +110,7 @@
 }
 .tp-green {
   --tp-stage-color: #15803d;
+  --tp-stage-text: #146f36;
   --tp-stage-tint: #e7f6ec;
 }
 .tp-purple {
@@ -118,7 +119,7 @@
 }
 .tp-stage {
   display: inline-block;
-  color: var(--tp-stage-color);
+  color: var(--tp-stage-text, var(--tp-stage-color));
   background: var(--tp-stage-tint);
   font-size: 12px;
   font-weight: 600;
@@ -163,7 +164,7 @@
   flex-wrap: wrap;
 }
 .tp-paid {
-  color: #15803d;
+  color: #146f36;
   border: 3px solid currentColor;
   border-radius: 7px;
   font-size: 18px;
@@ -221,7 +222,7 @@
   flex-direction: column;
   gap: 14px;
 }
-.tp-widget .tp-live {
+.tp-widget .tp-live-connected {
   color: #86dca3;
 }
 .tp-widget .tp-network {

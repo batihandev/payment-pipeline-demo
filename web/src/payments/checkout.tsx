@@ -7,7 +7,7 @@ import './checkout.css';
 
 export function Checkout({
   apiBaseUrl,
-  repoUrl = import.meta.env.VITE_REPO_URL,
+  repoUrl,
   onOrder,
 }: {
   apiBaseUrl: string;
@@ -70,8 +70,13 @@ export function Checkout({
       <p className="tp-disclosure">
         Test purchase · no real money · paid from the demo’s own test account
       </p>
+      {status === 'offline' && <p role="status">Demo offline</p>}
       {!opened ? (
-        <button type="button" onClick={() => setOpened(true)}>
+        <button
+          type="button"
+          disabled={status !== 'live'}
+          onClick={() => setOpened(true)}
+        >
           Open the counter
         </button>
       ) : (
@@ -125,6 +130,27 @@ export function Checkout({
                   <strong key={payment.stage} className="tp-terminal-state">
                     {view.label}
                   </strong>
+                  <div
+                    className="tp-block-stack"
+                    aria-hidden="true"
+                    style={{
+                      gridTemplateColumns: `repeat(${data.health.confirmations}, minmax(0, 1fr))`,
+                    }}
+                  >
+                    {Array.from(
+                      { length: data.health.confirmations },
+                      (_, index) => (
+                        <span
+                          key={index}
+                          className={
+                            index < payment.confirmations
+                              ? 'tp-block-confirmed'
+                              : ''
+                          }
+                        />
+                      ),
+                    )}
+                  </div>
                   <ConfirmationBar
                     payment={payment}
                     threshold={data.health.confirmations}

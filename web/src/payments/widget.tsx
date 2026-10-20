@@ -8,7 +8,9 @@ export function PaymentsWidget({ apiBaseUrl }: { apiBaseUrl: string }) {
   return (
     <section className="tp tp-widget" aria-label="Live payments widget">
       <header className="tp-row tp-between">
-        <span className="tp-live">
+        <span
+          className={`tp-live ${status === 'live' ? 'tp-live-connected' : ''}`}
+        >
           {status === 'live'
             ? 'Live payments'
             : status === 'offline'
