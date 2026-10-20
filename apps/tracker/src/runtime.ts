@@ -5,7 +5,7 @@ import type { OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { setTimeout } from 'node:timers/promises';
 import { Queue, Worker, UnrecoverableError } from 'bullmq';
 import type { z } from 'zod';
-import { RpcLimiter } from '../../../libs/chain/src/rpc-limiter';
+import { serviceLimiter } from '../../../libs/chain/src/service-limiter';
 import { ViemChainClient } from '../../../libs/chain/src/viem-client';
 import type { Address } from '../../../libs/chain/src/chain-client';
 import type { trackerSchema } from '../../../libs/config/src';
@@ -28,6 +28,10 @@ export class TrackerRuntime implements OnModuleInit, OnModuleDestroy {
     private readonly db: PrismaClient,
     private readonly config: TrackerConfig,
   ) {
+    this.redis = new Redis(config.REDIS_URL, { maxRetriesPerRequest: 1 });
+    this.redis.on('error', () =>
+      console.error('Tracker Redis connection failed.'),
+    );
     const chain = new ViemChainClient(
       {
         chainId: config.CHAIN_ID,
@@ -35,7 +39,12 @@ export class TrackerRuntime implements OnModuleInit, OnModuleDestroy {
         usdcAddress: config.USDC_ADDRESS as Address,
         shopAddress: config.SHOP_ADDRESS as Address,
       },
-      new RpcLimiter(config.RPC_REQUESTS_PER_SECOND, config.RPC_COOLDOWN_MS),
+      serviceLimiter(
+        this.redis,
+        'tracker',
+        config.RPC_REQUESTS_PER_SECOND,
+        config.RPC_COOLDOWN_MS,
+      ),
     );
     const scanner = new Scanner(db, chain, {
       startBlock: config.START_BLOCK,
@@ -57,10 +66,7 @@ export class TrackerRuntime implements OnModuleInit, OnModuleDestroy {
     const gaps = new GapRecovery(db, scanner);
     const connection = { url: config.REDIS_URL };
     this.queue = new Queue('tracker', { connection });
-    this.redis = new Redis(config.REDIS_URL, { maxRetriesPerRequest: 1 });
-    this.redis.on('error', () =>
-      console.error('Tracker Redis connection failed.'),
-    );
+
     this.noticeQueue = new Queue('shop-notices', { connection });
     this.noticeQueue.on('error', () =>
       console.error('Shop notice queue connection failed.'),

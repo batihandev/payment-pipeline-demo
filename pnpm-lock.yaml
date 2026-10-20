@@ -26,6 +26,9 @@ importers:
       bullmq:
         specifier: ^6.3.19
         version: 6.3.19(ioredis@6.0.0)(pg@8.23.1)
+      fastify:
+        specifier: ^5.12.7
+        version: 5.12.7
       ioredis:
         specifier: ^6.0.0
         version: 6.0.0

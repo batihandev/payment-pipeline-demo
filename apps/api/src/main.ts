@@ -6,13 +6,15 @@ import {
 } from '@nestjs/platform-fastify';
 import { apiSchema, validateConfig } from '../../../libs/config/src';
 import { AppModule } from './app.module';
+import { ApiRuntime } from './runtime';
 
 async function bootstrap(): Promise<void> {
   const config = validateConfig(apiSchema, process.env);
   const app = await NestFactory.create<NestFastifyApplication>(
-    AppModule,
+    AppModule.forRoot(config),
     new FastifyAdapter(),
   );
+  app.get(ApiRuntime).register(app.getHttpAdapter().getInstance());
   app.enableShutdownHooks();
   await app.listen(config.API_PORT, '127.0.0.1');
 }

@@ -5,7 +5,7 @@ import { Redis } from 'ioredis';
 import { privateKeyToAccount } from 'viem/accounts';
 import type { Hex } from 'viem';
 import type { z } from 'zod';
-import { RpcLimiter } from '../../../libs/chain/src/rpc-limiter';
+import { serviceLimiter } from '../../../libs/chain/src/service-limiter';
 import { ViemChainClient } from '../../../libs/chain/src/viem-client';
 import { RpcError } from '../../../libs/chain/src/rpc-error';
 import type { buyerSchema } from '../../../libs/config/src';
@@ -38,7 +38,9 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
     const shopKey = config.SHOP_PRIVATE_KEY as Hex;
     const buyer = privateKeyToAccount(buyerKey).address;
     const shop = privateKeyToAccount(shopKey).address;
-    const limiter = new RpcLimiter(
+    const limiter = serviceLimiter(
+      this.redis,
+      'buyer',
       config.RPC_REQUESTS_PER_SECOND,
       config.RPC_COOLDOWN_MS,
     );

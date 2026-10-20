@@ -10,6 +10,7 @@ export class RpcLimiter {
     private readonly cooldown: number,
     private readonly now = Date.now,
     private readonly sleep: (ms: number) => Promise<unknown> = setTimeout,
+    private readonly reportCooldown?: () => Promise<void>,
   ) {
     if (rate <= 0 || cooldown <= 0)
       throw new RangeError('RPC limits must be positive');
@@ -22,8 +23,10 @@ export class RpcLimiter {
       try {
         return await operation();
       } catch (error) {
-        if (error instanceof RpcError && error.kind === 'rate_limit')
+        if (error instanceof RpcError && error.kind === 'rate_limit') {
           this.cooldownUntil = this.now() + this.cooldown;
+          await this.reportCooldown?.();
+        }
         throw error;
       }
     });
