@@ -149,3 +149,41 @@ it('does not sign an unpaid order that expired before its queued send began', as
   expect(chain.signed).toBe(0);
   expect(chain.accepted.size).toBe(0);
 });
+
+it('retains a signed transfer for manual review when the provider permanently rejects broadcast', async () => {
+  const row = await order();
+  chain.fail = 'permanent-broadcast';
+  await expect(sender.sendForOrder(row.id)).rejects.toMatchObject({
+    kind: 'permanent',
+  });
+  expect(
+    await database.db.order.findUniqueOrThrow({ where: { id: row.id } }),
+  ).toMatchObject({ sendState: 'review' });
+  expect(
+    await database.db.dailyBudget.findUniqueOrThrow({ where: { day } }),
+  ).toMatchObject({ reservedCount: 1, reservedAmount: 100n });
+  expect((await database.db.incident.findFirstOrThrow()).howHandled).toContain(
+    'manual review',
+  );
+});
+it('fences simultaneous nonce allocators even when they hold separate Redis leases', async () => {
+  const secondSender = new OrderSender(
+    database.db,
+    chain,
+    chain,
+    new RedisLock(redis, 'separate-lease'),
+    { buyer, shop, chainId: 84532 },
+  );
+  const first = await order();
+  const second = await order();
+  await Promise.all([
+    sender.sendForOrder(first.id),
+    secondSender.sendForOrder(second.id),
+  ]);
+  expect(
+    (await database.db.order.findMany({ orderBy: { nonce: 'asc' } })).map(
+      (row) => row.nonce,
+    ),
+  ).toEqual([3n, 4n]);
+  expect(chain.accepted.size).toBe(2);
+});

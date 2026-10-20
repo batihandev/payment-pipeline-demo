@@ -81,3 +81,30 @@ it('records a balance lookup failure without signing or losing the next retry', 
   await sweep.run(day);
   expect(chain.accepted.size).toBe(1);
 });
+
+it('records a concurrent rebroadcast of one sweep as one completed sweep', async () => {
+  await database.db.sweep.create({ data: { id: '2026-10-20', amount: 500n } });
+  let reached = 0;
+  let release: () => void = () => undefined;
+  const prepared = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  chain.getTransactionReceipt = async () => {
+    if (++reached === 2) release();
+    await prepared;
+    return null;
+  };
+  const other = new OrderSender(
+    database.db,
+    chain,
+    chain,
+    new RedisLock(redis, 'other-sweep-lease'),
+    { buyer, shop, chainId: 84532 },
+  );
+  await Promise.all([sweep.run(day), other.sendForSweep('2026-10-20')]);
+  expect(chain.signed).toBe(1);
+  expect(chain.accepted.size).toBe(1);
+  expect(await database.db.incident.count({ where: { kind: 'swept' } })).toBe(
+    1,
+  );
+});

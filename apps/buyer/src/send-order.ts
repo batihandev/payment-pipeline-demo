@@ -67,11 +67,10 @@ export class OrderSender {
     return this.db.$transaction(
       async (tx) => {
         const address = from.toLowerCase();
-        await tx.walletNonce.upsert({
-          where: { address },
-          create: { address, nextNonce: 0n },
-          update: {},
-        });
+        await tx.$executeRaw`
+          INSERT INTO wallet_nonces (address, next_nonce) VALUES (${address}, 0)
+          ON CONFLICT (address) DO NOTHING
+        `;
         // The database row fences nonce allocation even if the Redis lease expires.
         await tx.$queryRaw`SELECT address FROM wallet_nonces WHERE address = ${address} FOR UPDATE`;
         await this.lockRow(tx, target);
@@ -139,6 +138,8 @@ export class OrderSender {
             throw new RpcError('transient');
         }
         await this.db.$transaction(async (tx) => {
+          await this.lockRow(tx, target);
+          if ((await this.load(tx, target)).sendState === 'sent') return;
           await this.update(tx, target, { sendState: 'sent' });
           if (target.kind === 'order') {
             await tx.payment.upsert({
@@ -198,7 +199,9 @@ export class OrderSender {
           });
         }
       }
-      if (exhausted && !knownFailure && row.sendState === 'pending')
+      const needsReview =
+        exhausted || (error instanceof RpcError && error.kind === 'permanent');
+      if (needsReview && !knownFailure && row.sendState === 'pending')
         await this.update(tx, target, { sendState: 'review' });
       await tx.incident.create({
         data: {
@@ -206,8 +209,8 @@ export class OrderSender {
           whatHappened: `Transfer ${target.id} failed (${error instanceof RpcError ? error.kind : 'transient'}).`,
           howHandled: knownFailure
             ? 'No transaction was broadcast; released the reservation and closed the order.'
-            : exhausted
-              ? 'Automatic retries exhausted; kept the reservation and the same signed transaction for manual review.'
+            : needsReview
+              ? 'Automatic retries stopped; kept the reservation and the same signed transaction for manual review.'
               : 'Kept the reservation; retry with backoff using the same signed transaction when present.',
         },
       });

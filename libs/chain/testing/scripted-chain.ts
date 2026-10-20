@@ -5,7 +5,9 @@ export class ScriptedChain implements ChainClient, TransferSigner {
   signed = 0;
   accepted = new Set<Hex>();
   receipts = new Set<Hex>();
-  fail: 'sign' | 'broadcast' | 'after-broadcast' | null = null;
+  fail:
+    'sign' | 'broadcast' | 'permanent-broadcast' | 'after-broadcast' | null =
+    null;
   getHead = async () => ({ number: 1n, hash: '0xaa' as Hex });
   getFinalized = async () => 0n;
   getBlockHash = async () => '0xaa' as Hex;
@@ -26,6 +28,7 @@ export class ScriptedChain implements ChainClient, TransferSigner {
   }
   async sendRawTransaction(raw: Hex): Promise<Hex> {
     if (this.fail === 'broadcast') throw new RpcError('timeout');
+    if (this.fail === 'permanent-broadcast') throw new RpcError('permanent');
     const hash = keccak256(raw);
     this.accepted.add(hash);
     if (this.fail === 'after-broadcast') {
