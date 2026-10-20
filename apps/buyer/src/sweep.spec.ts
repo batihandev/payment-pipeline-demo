@@ -1,3 +1,4 @@
+import { RpcError } from '../../../libs/chain/src/rpc-error';
 import { Redis } from 'ioredis';
 import { testDatabase } from '../../../libs/db/src/test-database';
 import { ScriptedChain } from './scripted-chain.test-support';
@@ -64,4 +65,19 @@ it('leaves an empty shop balance alone without signing a zero transfer', async (
   await sweep.run(day);
   expect(chain.signed).toBe(0);
   expect(await database.db.sweep.count()).toBe(0);
+});
+
+it('records a balance lookup failure without signing or losing the next retry', async () => {
+  chain.getBalances = async () => {
+    throw new RpcError('rate_limit');
+  };
+  await expect(sweep.run(day)).rejects.toMatchObject({ kind: 'rate_limit' });
+  expect(chain.signed).toBe(0);
+  expect(await database.db.incident.findFirstOrThrow()).toMatchObject({
+    kind: 'sweep_failed',
+    howHandled: expect.stringContaining('No transfer was signed'),
+  });
+  chain.getBalances = async () => ({ native: 1n, usdc: 500n });
+  await sweep.run(day);
+  expect(chain.accepted.size).toBe(1);
 });
