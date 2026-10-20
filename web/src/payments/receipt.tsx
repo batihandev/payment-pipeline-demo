@@ -1,0 +1,109 @@
+import type { Payment } from './types';
+import { money, shortId, stageView, utcTime, steps } from './view';
+import './styles.css';
+
+export function ConfirmationBar({
+  payment,
+  threshold,
+}: {
+  payment: Payment;
+  threshold: number;
+}) {
+  const view = stageView(payment, threshold);
+  return (
+    <div className={`tp-confirmations tp-${view.color}`}>
+      <div
+        className="tp-bar"
+        role="progressbar"
+        aria-label="Payment confirmations"
+        aria-valuemin={0}
+        aria-valuemax={threshold}
+        aria-valuenow={Math.min(payment.confirmations, threshold)}
+        aria-valuetext={view.confirmationLabel}
+      >
+        <span style={{ width: `${view.progress * 100}%` }} />
+      </div>
+      <span className="tp-mono tp-muted">{view.confirmationLabel}</span>
+    </div>
+  );
+}
+export function StepStrip({ payment }: { payment: Payment }) {
+  const step = steps.findIndex((s) => s.stage === payment.stage);
+  return (
+    <ol className="tp-strip" aria-label="Payment stages">
+      {steps.map((s, i) => (
+        <li
+          key={s.stage}
+          className={i <= step ? 'tp-reached' : ''}
+          aria-current={i === step ? 'step' : undefined}
+        >
+          {s.label === 'Shop notified' ? 'Notified' : s.label}
+        </li>
+      ))}
+    </ol>
+  );
+}
+export function Receipt({
+  payment,
+  threshold,
+  highlighted = false,
+  compact = false,
+  notes = [],
+}: {
+  payment: Payment;
+  threshold: number;
+  highlighted?: boolean;
+  compact?: boolean;
+  notes?: string[];
+}) {
+  const view = stageView(payment, threshold);
+  return (
+    <article
+      className={`tp-receipt ${highlighted ? 'tp-yours' : ''} ${compact ? 'tp-compact' : ''}`}
+    >
+      {highlighted && <span className="tp-own-label">Your test purchase</span>}
+      <div className="tp-receipt-heading">
+        <div>
+          <h3>
+            {payment.order?.item ??
+              (payment.orderId ? 'Order details pending' : 'Unmatched payment')}
+          </h3>
+          <p className="tp-mono tp-muted">
+            {payment.orderId
+              ? `Order #${shortId(payment.orderId)}`
+              : `Payment #${shortId(payment.id)}`}
+            {!compact && (payment.sentAt ?? payment.receivedAt)
+              ? ` · ${utcTime((payment.sentAt ?? payment.receivedAt) as string)} UTC`
+              : ''}
+          </p>
+        </div>
+        <strong className="tp-price">
+          {money(payment.order?.price ?? payment.amount)}
+        </strong>
+      </div>
+      <div className="tp-row">
+        <span className={`tp-stage tp-${view.color}`}>{view.label}</span>
+        {view.final && <span className="tp-stage tp-green">Final</span>}
+      </div>
+      <ConfirmationBar payment={payment} threshold={threshold} />
+      {notes.map((note, i) => (
+        <p className="tp-note" key={i}>
+          {note}
+        </p>
+      ))}
+      <div className="tp-receipt-footer tp-mono tp-muted">
+        <span>
+          {payment.blockNumber
+            ? `block ${payment.blockNumber}`
+            : 'Awaiting a block'}
+        </span>
+        {payment.explorerUrl && (
+          <a href={payment.explorerUrl} target="_blank" rel="noreferrer">
+            View on explorer
+          </a>
+        )}
+      </div>
+      {view.paid && <span className="tp-paid">PAID</span>}
+    </article>
+  );
+}
