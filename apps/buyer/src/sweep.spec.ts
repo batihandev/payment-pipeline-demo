@@ -38,6 +38,8 @@ it('sweeps the shop balance once per UTC night through the durable send path and
   await sweep.run(day);
   await sweep.run(day);
   expect(chain.signed).toBe(1);
+  expect(await chain.getBalances(shop)).toMatchObject({ usdc: 0n });
+  expect(await chain.getBalances(buyer)).toMatchObject({ usdc: 1000n });
   expect(chain.accepted.size).toBe(1);
   expect(
     await database.db.sweep.findUniqueOrThrow({ where: { id: '2026-10-20' } }),

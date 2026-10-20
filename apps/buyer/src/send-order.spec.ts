@@ -71,8 +71,17 @@ it('rebroadcasts the stored transaction after a crash before broadcast without s
     keccak256(stored.signedTransaction as Hex),
   );
   chain.fail = null;
+  sender = new OrderSender(
+    database.db,
+    chain,
+    chain,
+    new RedisLock(redis, 'restarted-buyer'),
+    { buyer, shop, chainId: 84532 },
+  );
   await sender.sendForOrder(row.id);
   expect(chain.signed).toBe(1);
+  expect(await chain.getBalances(buyer)).toMatchObject({ usdc: 400n });
+  expect(await chain.getBalances(shop)).toMatchObject({ usdc: 600n });
   expect(chain.accepted).toEqual(new Set([stored.transactionHash]));
   expect(await database.db.payment.findFirstOrThrow()).toMatchObject({
     stage: 'sent',
@@ -87,8 +96,17 @@ it('finds the landed transaction after a crash following broadcast without signi
     kind: 'timeout',
   });
   chain.fail = null;
+  sender = new OrderSender(
+    database.db,
+    chain,
+    chain,
+    new RedisLock(redis, 'restarted-buyer'),
+    { buyer, shop, chainId: 84532 },
+  );
   await sender.sendForOrder(row.id);
   expect(chain.signed).toBe(1);
+  expect(await chain.getBalances(buyer)).toMatchObject({ usdc: 400n });
+  expect(await chain.getBalances(shop)).toMatchObject({ usdc: 600n });
   expect(chain.accepted.size).toBe(1);
   expect(await database.db.payment.count()).toBe(1);
 });
