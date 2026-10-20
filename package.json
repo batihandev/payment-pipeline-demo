@@ -20,7 +20,8 @@
     "dev:api": "node --env-file=.env node_modules/@nestjs/cli/bin/nest.js start api --watch",
     "dev:web": "pnpm --filter web dev",
     "prisma": "node --env-file-if-exists=.env node_modules/prisma/build/index.js",
-    "db:migrate": "docker compose up -d --wait && pnpm prisma migrate dev"
+    "db:migrate": "docker compose up -d --wait && pnpm prisma migrate dev",
+    "wallets:new": "tsx scripts/wallets-new.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.2.0",
@@ -28,8 +29,11 @@
     "@nestjs/platform-fastify": "^12.2.0",
     "@prisma/adapter-pg": "7.10.1",
     "@prisma/client": "7.10.1",
+    "bullmq": "^6.3.19",
+    "ioredis": "^6.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
+    "viem": "^2.57.7",
     "zod": "^4.6.7"
   },
   "devDependencies": {
@@ -43,6 +47,7 @@
     "prettier": "^3.9.10",
     "prisma": "7.10.1",
     "ts-jest": "^29.4.15",
+    "tsx": "^4.23.15",
     "typescript": "6.0.3",
     "typescript-eslint": "^8.72.0"
   }
