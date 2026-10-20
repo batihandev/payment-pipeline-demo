@@ -1,9 +1,6 @@
 import { keccak256, toHex, type Address, type Hex } from 'viem';
-import type {
-  ChainClient,
-  TransferSigner,
-} from '../../../libs/chain/src/chain-client';
-import { RpcError } from '../../../libs/chain/src/rpc-error';
+import type { ChainClient, TransferSigner } from '../src/chain-client';
+import { RpcError } from '../src/rpc-error';
 export class ScriptedChain implements ChainClient, TransferSigner {
   signed = 0;
   accepted = new Set<Hex>();

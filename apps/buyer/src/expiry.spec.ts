@@ -1,4 +1,4 @@
-import { testDatabase } from '../../../libs/db/src/test-database';
+import { testDatabase } from '../../../libs/db/testing/database';
 import { expireOrders } from './expiry';
 let database: Awaited<ReturnType<typeof testDatabase>>;
 beforeAll(async () => {

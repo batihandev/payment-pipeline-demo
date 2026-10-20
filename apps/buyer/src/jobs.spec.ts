@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Queue, Worker, type Job } from 'bullmq';
-import { testDatabase } from '../../../libs/db/src/test-database';
+import { testDatabase } from '../../../libs/db/testing/database';
 import { Purchases } from './purchases';
 import { BuyerJobs, type BuyerJobData } from './jobs';
 

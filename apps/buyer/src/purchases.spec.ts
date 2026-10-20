@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { dailyTarget } from '../../../libs/core/src/pacing';
-import { testDatabase } from '../../../libs/db/src/test-database';
+import { testDatabase } from '../../../libs/db/testing/database';
 import { Purchases } from './purchases';
 
 const now = new Date('2026-10-20T12:00:00Z');

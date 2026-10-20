@@ -6,5 +6,11 @@
     "declaration": true
   },
   "include": ["libs/**/*.ts"],
-  "exclude": ["**/*.spec.ts", "libs/db/generated", "node_modules", "dist"]
+  "exclude": [
+    "**/*.spec.ts",
+    "libs/db/generated",
+    "node_modules",
+    "dist",
+    "**/testing/**"
+  ]
 }

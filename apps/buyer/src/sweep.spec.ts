@@ -1,7 +1,7 @@
 import { RpcError } from '../../../libs/chain/src/rpc-error';
 import { Redis } from 'ioredis';
-import { testDatabase } from '../../../libs/db/src/test-database';
-import { ScriptedChain } from './scripted-chain.test-support';
+import { testDatabase } from '../../../libs/db/testing/database';
+import { ScriptedChain } from '../../../libs/chain/testing/scripted-chain';
 import { RedisLock } from './redis-lock';
 import { OrderSender } from './send-order';
 import { NightlySweep } from './sweep';

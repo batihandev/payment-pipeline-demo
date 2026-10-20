@@ -9,5 +9,6 @@ module.exports = {
     'libs/**/*.ts',
     '!**/*.spec.ts',
     '!libs/db/generated/**',
+    '!**/testing/**',
   ],
 };

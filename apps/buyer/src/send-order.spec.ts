@@ -1,8 +1,8 @@
-import { ScriptedChain } from './scripted-chain.test-support';
+import { ScriptedChain } from '../../../libs/chain/testing/scripted-chain';
 import { Redis } from 'ioredis';
 import { keccak256, type Hex } from 'viem';
 import { RpcError } from '../../../libs/chain/src/rpc-error';
-import { testDatabase } from '../../../libs/db/src/test-database';
+import { testDatabase } from '../../../libs/db/testing/database';
 import { OrderSender } from './send-order';
 import { RedisLock } from './redis-lock';
 

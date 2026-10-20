@@ -1,5 +1,5 @@
 import { Redis } from 'ioredis';
-import { testDatabase } from '../../db/src/test-database';
+import { testDatabase } from '../../db/testing/database';
 import { paymentChannel, publishPayment } from './publish-payment';
 
 it('publishes the complete saved payment with integer amounts encoded as decimal strings', async () => {

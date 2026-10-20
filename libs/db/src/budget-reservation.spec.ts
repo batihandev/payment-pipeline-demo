@@ -1,41 +1,13 @@
-import { randomUUID } from 'node:crypto';
-import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { PrismaClient } from '../generated/client';
+import { testDatabase } from '../testing/database';
 import { BudgetReservation } from './budget-reservation';
 
 const day = new Date('2026-10-20T00:00:00Z');
-const schema = `budget_test_${randomUUID().replaceAll('-', '')}`;
-let db: PrismaClient;
-let admin: PrismaClient;
+let database: Awaited<ReturnType<typeof testDatabase>>;
+let db: Awaited<ReturnType<typeof testDatabase>>['db'];
 let budget: BudgetReservation;
-
 beforeAll(async () => {
-  const connectionString = process.env.TEST_DATABASE_URL;
-  if (!connectionString)
-    throw new Error(
-      'TEST_DATABASE_URL is required for Postgres reservation tests',
-    );
-  admin = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
-  await admin.$executeRawUnsafe(`CREATE SCHEMA "${schema}"`);
-  const url = new URL(connectionString);
-  url.searchParams.set('options', `-c search_path=${schema}`);
-  db = new PrismaClient({
-    adapter: new PrismaPg({ connectionString: url.toString() }, { schema }),
-  });
-  const migrations = join(__dirname, '../prisma/migrations');
-  for (const entry of readdirSync(migrations, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .sort((a, b) => a.name.localeCompare(b.name))) {
-    const sql = readFileSync(
-      join(migrations, entry.name, 'migration.sql'),
-      'utf8',
-    );
-    for (const statement of sql.split(';').filter((part) => part.trim())) {
-      await db.$executeRawUnsafe(statement);
-    }
-  }
+  database = await testDatabase();
+  db = database.db;
   budget = new BudgetReservation(db);
 }, 30000);
 
@@ -45,11 +17,7 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
-  await db?.$disconnect();
-  if (admin) {
-    await admin.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
-    await admin.$disconnect();
-  }
+  await database?.close();
 });
 
 it('accepts exactly five of twenty concurrent reservations with room for five', async () => {
