@@ -1,0 +1,251 @@
+body {
+  margin: 0;
+  background: #f4f1ea;
+}
+.tp-page {
+  max-width: 1212px;
+  padding: 40px 16px 64px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+.tp-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+.tp-header-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 680px;
+}
+.tp-header-copy h1 {
+  font-size: 44px;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+.tp-header-copy > p {
+  color: #4a4a52;
+  font-size: 17px;
+}
+.tp-online {
+  color: #146f36;
+}
+.tp-counter-link {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #17171a;
+  color: white !important;
+  text-decoration: none;
+  font-weight: 700;
+  padding: 14px 22px;
+  border-radius: 12px;
+}
+.tp-shop-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  padding: 8px 0;
+  align-items: start;
+}
+.tp-shop-row > *,
+.tp-widget-column {
+  min-width: 0;
+}
+.tp-widget-column {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  align-items: center;
+}
+.tp-widget-column > div {
+  width: 100%;
+  max-width: 460px;
+}
+.tp-widget-column h2 {
+  font-size: 26px;
+  margin: 6px 0;
+}
+.tp-eyebrow {
+  color: #9a3412;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+.tp-pipeline {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.tp-lane {
+  border: 1px solid #ddd8cc;
+  border-radius: 16px;
+  padding: 16px;
+  background: white;
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.tp-lane h2 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--tp-stage-color);
+}
+.tp-lane strong {
+  font-size: 22px;
+}
+.tp-lane p {
+  color: #5b5b63;
+  font-size: 13px;
+}
+.tp-lane a {
+  color: var(--tp-stage-color);
+  text-decoration: none;
+  font-size: 11px;
+}
+.tp-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.tp-feed,
+.tp-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.tp-feed > div {
+  scroll-margin-top: 16px;
+}
+.tp-sidebar {
+  gap: 24px;
+}
+.tp-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.tp-stats > div {
+  border: 1px solid #ddd8cc;
+  border-radius: 16px;
+  padding: 16px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tp-stats > div:first-child {
+  background: #17171a;
+  color: white;
+}
+.tp-stats strong {
+  font-size: 30px;
+  overflow-wrap: anywhere;
+  line-height: 1.2;
+}
+.tp-stats span {
+  color: #5b5b63;
+  font-size: 13px;
+}
+.tp-stats > div:first-child span {
+  color: #d4d4d8;
+}
+.tp-incidents,
+.tp-health {
+  background: white;
+  border: 1px solid #ddd8cc;
+  border-radius: 16px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.tp-incidents > p {
+  font-size: 13px;
+}
+.tp-incidents article {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  border-top: 1px solid #eeeae0;
+  padding-top: 12px;
+}
+.tp-incidents article p {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.tp-incidents .tp-handled {
+  color: #15803d;
+  font-size: 13px;
+  margin-top: 4px;
+}
+.tp-health dl {
+  margin: 0;
+  font-size: 13px;
+}
+.tp-health dl div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 0;
+}
+.tp-health dd {
+  margin: 0;
+  font-family: 'JetBrains Mono', monospace;
+  overflow-wrap: anywhere;
+}
+.tp-offline {
+  padding: 28px;
+  border: 1px solid #cfc8b8;
+  border-radius: 14px;
+  text-align: center;
+}
+.tp-page-footer {
+  color: #5b5b63;
+  padding-top: 16px;
+  border-top: 1px solid #cfc8b8;
+}
+@media (max-width: 800px) {
+  .tp-shop-row,
+  .tp-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tp-widget-column {
+    align-items: stretch;
+  }
+  .tp-widget-column > *,
+  .tp-widget {
+    max-width: 100%;
+  }
+  .tp-pipeline {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 400px) {
+  .tp-page {
+    padding-top: 24px;
+    gap: 22px;
+  }
+  .tp-header-copy h1 {
+    font-size: 36px;
+  }
+  .tp-checkout {
+    padding: 20px;
+  }
+  .tp-lane {
+    padding: 12px;
+  }
+  .tp-lane .tp-row {
+    gap: 5px;
+  }
+}
