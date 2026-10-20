@@ -31,6 +31,9 @@ it('allows the configured web origin on payment reads', async () => {
   expect(response.statusCode).toBe(200);
   expect(response.headers['access-control-allow-origin']).toBe(origin);
   expect(response.headers.vary).toContain('Origin');
+  expect(response.headers['access-control-expose-headers']).toContain(
+    'Retry-After',
+  );
 });
 it('allows browser preflight for visitor purchases from the configured origin', async () => {
   const response = await app.inject({

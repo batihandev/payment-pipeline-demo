@@ -38,7 +38,8 @@ function server() {
   const stream = new FakeEventSource();
   const client = new PaymentsClient(
     'https://api.example.com',
-    async (url) => {
+    async function (this: unknown, url) {
+      if (this !== undefined) throw new TypeError('Illegal invocation');
       const snapshot = structuredClone({
         '/payments?limit=100': payments,
         '/stats': {

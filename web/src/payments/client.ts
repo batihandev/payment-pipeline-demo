@@ -119,7 +119,8 @@ export class PaymentsClient {
       ];
       const [payments, stats, health, incidents] = await Promise.all(
         paths.map(async (path) => {
-          const response = await this.request(`${this.baseUrl}${path}`);
+          const request = this.request;
+          const response = await request(`${this.baseUrl}${path}`);
           if (!response.ok) throw new Error('Demo offline');
           return response.json() as Promise<unknown>;
         }),

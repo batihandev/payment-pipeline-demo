@@ -18,6 +18,7 @@ export async function createApi(
   app.enableCors({
     origin: [config.WEB_ORIGIN],
     methods: ['GET', 'POST', 'OPTIONS'],
+    exposedHeaders: ['Retry-After'],
   });
   await app.get(ApiRuntime).register(app.getHttpAdapter().getInstance());
   return app;
