@@ -4,8 +4,10 @@ import { trackerSchema, validateConfig } from '../../../libs/config/src';
 import { AppModule } from './app.module';
 
 async function bootstrap(): Promise<void> {
-  validateConfig(trackerSchema, process.env);
-  const app = await NestFactory.createApplicationContext(AppModule);
+  const config = validateConfig(trackerSchema, process.env);
+  const app = await NestFactory.createApplicationContext(
+    AppModule.forRoot(config),
+  );
   app.enableShutdownHooks();
 }
 
