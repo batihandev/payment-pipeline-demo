@@ -169,7 +169,7 @@ export function registerReads(
     const [unsettled, unnotified, scheduled] = await Promise.all([
       db.$queryRaw<
         { at: Date | null }[]
-      >`SELECT MIN(COALESCE(sent_at, received_at)) AS at FROM payments WHERE stage IN ('sent', 'received', 'confirming')`,
+      >`SELECT MIN(COALESCE(sent_at, received_at)) AS at FROM payments WHERE order_id IS NOT NULL AND stage IN ('sent', 'received', 'confirming')`,
       db.payment.aggregate({
         where: { stage: 'settled' },
         _min: { settledAt: true },

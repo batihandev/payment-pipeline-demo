@@ -375,11 +375,24 @@ it('reports monitoring timestamps in /health', async () => {
   await database.db.cursor.updateMany({
     data: { blockNumber: 93n, updatedAt: new Date('2026-10-22T10:00:00Z') },
   });
+  const matched = await database.db.order.create({
+    data: {
+      item: 'Duck',
+      price: 1n,
+      expectedAmount: 2n,
+      source: 'visitor',
+      expiresAt: new Date(),
+      signedTransaction: 'x',
+      createdAt: new Date('2026-10-22T07:59:00Z'),
+    },
+  });
   await payment({
+    orderId: matched.id,
     stage: 'confirming',
     receivedAt: new Date('2026-10-22T09:00:00Z'),
   });
   await payment({
+    orderId: matched.id,
     stage: 'sent',
     receivedAt: null,
     sentAt: new Date('2026-10-22T08:00:00Z'),
@@ -502,4 +515,29 @@ it('still answers /health with null Redis parts while Redis is down', async () =
     redisError: 'unavailable',
     monitoring: expect.objectContaining({ visitorPausedSince: null }),
   });
+});
+it('leaves unmatched payments out of the oldest unsettled payment', async () => {
+  await payment({
+    stage: 'received',
+    receivedAt: new Date('2026-10-01T00:00:00Z'),
+  });
+  const order = await database.db.order.create({
+    data: {
+      item: 'Duck',
+      price: 1n,
+      expectedAmount: 1n,
+      source: 'visitor',
+      expiresAt: new Date(),
+      signedTransaction: 'x',
+    },
+  });
+  await payment({
+    orderId: order.id,
+    stage: 'received',
+    receivedAt: new Date('2026-10-22T09:00:00Z'),
+  });
+  expect(
+    (await adapter.getInstance().inject('/health')).json().monitoring
+      .oldestUnsettledAt,
+  ).toBe('2026-10-22T09:00:00.000Z');
 });
