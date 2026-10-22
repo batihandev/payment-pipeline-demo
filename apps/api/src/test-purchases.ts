@@ -46,7 +46,11 @@ export function registerTestPurchases(
   const prefix = options.prefix ?? 'visitor-purchases';
   const { limits } = options;
   const clock = () => options.now?.() ?? new Date();
-  const waiting = { source: 'visitor', sendState: 'pending' } as const;
+  const waiting = {
+    source: 'visitor',
+    sendState: 'pending',
+    status: 'open',
+  } as const;
   // Admissions run one at a time so the queue check and the new position stay exact.
   let turn: Promise<unknown> = Promise.resolve();
   const exclusive = <T>(task: () => Promise<T>): Promise<T> => {

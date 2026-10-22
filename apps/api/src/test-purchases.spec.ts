@@ -10,6 +10,7 @@ import {
   type GasReading,
   type VisitorLimits,
 } from './test-purchases';
+import { proxyTrust } from './proxy';
 import { testRedisUrl } from '../../../libs/config/testing/redis';
 jest.setTimeout(120000);
 let database: Awaited<ReturnType<typeof testDatabase>>;
@@ -21,7 +22,7 @@ let purchases: Purchases;
 let limits: VisitorLimits;
 let gas: GasReading;
 let tick: number;
-function build(trustProxy: boolean) {
+function build(trustProxy: ReturnType<typeof proxyTrust>) {
   const built = new FastifyAdapter({ trustProxy });
   registerTestPurchases(
     built.getInstance(),
@@ -78,7 +79,7 @@ beforeEach(async () => {
   };
   gas = null;
   tick = 0;
-  adapter = build(false);
+  adapter = build(proxyTrust(false));
 });
 afterEach(async () => {
   await adapter.close();
@@ -227,7 +228,7 @@ it('reports queue position', async () => {
 
 it('uses the forwarded client address when TRUST_PROXY is on', async () => {
   await adapter.close();
-  adapter = build(true);
+  adapter = build(proxyTrust(true));
   limits.perMinute = 1;
   const first = await buy('10.0.0.1', { 'x-forwarded-for': '198.51.100.1' });
   const second = await buy('10.0.0.1', { 'x-forwarded-for': '198.51.100.2' });
@@ -235,4 +236,28 @@ it('uses the forwarded client address when TRUST_PROXY is on', async () => {
   expect([first.statusCode, second.statusCode, repeat.statusCode]).toEqual([
     202, 202, 429,
   ]);
+});
+
+it('trusts only the nearest proxy, so a forged leftmost address does not help', async () => {
+  await adapter.close();
+  adapter = build(proxyTrust(true));
+  limits.perMinute = 1;
+  const first = await buy('10.0.0.1', {
+    'x-forwarded-for': '6.6.6.6, 1.1.1.1',
+  });
+  const forged = await buy('10.0.0.1', {
+    'x-forwarded-for': '7.7.7.7, 1.1.1.1',
+  });
+  expect([first.statusCode, forged.statusCode]).toEqual([202, 429]);
+});
+
+it('ignores expired orders when checking the queue and counting position', async () => {
+  await seedPending(30);
+  await database.db.order.updateMany({
+    where: { expectedAmount: { lte: 5n } },
+    data: { status: 'expired' },
+  });
+  const response = await buy();
+  expect(response.statusCode).toBe(202);
+  expect(response.json().position).toBe(26);
 });

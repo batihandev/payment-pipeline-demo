@@ -6,13 +6,14 @@ import {
 } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';
 import { ApiRuntime } from './runtime';
+import { proxyTrust } from './proxy';
 import type { ApiConfig } from './reads';
 export async function createApi(
   config: ApiConfig,
 ): Promise<NestFastifyApplication> {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule.forRoot(config),
-    new FastifyAdapter({ trustProxy: config.TRUST_PROXY }),
+    new FastifyAdapter({ trustProxy: proxyTrust(config.TRUST_PROXY) }),
     { rawBody: true, logger: false },
   );
   app.enableCors({
