@@ -97,7 +97,8 @@ export class OrderSender {
           row.sendState === 'pending'
         ) {
           await this.update(tx, target, { sendState: 'failed' });
-          await new BudgetReservation(tx).release(row.createdAt, row.amount);
+          if ('source' in row && row.source === 'schedule')
+            await new BudgetReservation(tx).release(row.createdAt, row.amount);
           return this.load(tx, target);
         }
         if (row.sendState === 'failed' || row.sendState === 'sent') return row;
@@ -290,7 +291,9 @@ export class OrderSender {
       if (knownFailure && row.sendState !== 'failed') {
         await this.update(tx, target, { sendState: 'failed' });
         if (target.kind === 'order') {
-          await new BudgetReservation(tx).release(row.createdAt, row.amount);
+          // Only a scheduled order took a reservation; visitor orders never touch the budget.
+          if ('source' in row && row.source === 'schedule')
+            await new BudgetReservation(tx).release(row.createdAt, row.amount);
           await tx.order.update({
             where: { id: target.id },
             data: { status: 'expired' },

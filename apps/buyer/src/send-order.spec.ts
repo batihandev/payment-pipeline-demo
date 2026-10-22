@@ -47,13 +47,13 @@ beforeEach(async () => {
     { buyer, shop, chainId: 84532 },
   );
 });
-async function order() {
+async function order(source: 'visitor' | 'schedule' = 'visitor') {
   return database.db.order.create({
     data: {
       item: 'Duck',
       price: 99n,
       expectedAmount: 100n,
-      source: 'visitor',
+      source,
       createdAt: day,
       expiresAt: new Date(day.getTime() + 1800000),
     },
@@ -132,7 +132,7 @@ it('keeps an unknown send reserved and records a safe handling note', async () =
   });
 });
 it('releases a known unsigned failure once and never sends that order on a later retry', async () => {
-  const row = await order();
+  const row = await order('schedule');
   chain.fail = 'sign';
   await expect(sender.sendForOrder(row.id)).rejects.toBeInstanceOf(RpcError);
   chain.fail = null;
@@ -157,6 +157,42 @@ it('retains an uncertain send for manual review after automatic retries are exha
   expect(
     await database.db.dailyBudget.findUniqueOrThrow({ where: { day } }),
   ).toMatchObject({ reservedCount: 1, reservedAmount: 100n });
+});
+it('leaves the scheduled budget alone when a visitor order fails before it is signed', async () => {
+  const row = await order();
+  chain.fail = 'sign';
+  await expect(sender.sendForOrder(row.id)).rejects.toBeInstanceOf(RpcError);
+  expect(
+    await database.db.order.findUniqueOrThrow({ where: { id: row.id } }),
+  ).toMatchObject({ sendState: 'failed', status: 'expired' });
+  expect(
+    await database.db.dailyBudget.findUniqueOrThrow({ where: { day } }),
+  ).toMatchObject({ reservedCount: 1, reservedAmount: 100n });
+});
+it('leaves the scheduled budget alone when an unsent visitor order expires', async () => {
+  const row = await order();
+  await database.db.order.update({
+    where: { id: row.id },
+    data: { status: 'expired' },
+  });
+  await sender.sendForOrder(row.id);
+  expect(
+    await database.db.order.findUniqueOrThrow({ where: { id: row.id } }),
+  ).toMatchObject({ sendState: 'failed' });
+  expect(
+    await database.db.dailyBudget.findUniqueOrThrow({ where: { day } }),
+  ).toMatchObject({ reservedCount: 1, reservedAmount: 100n });
+});
+it('releases the reservation when an unsent scheduled order expires', async () => {
+  const row = await order('schedule');
+  await database.db.order.update({
+    where: { id: row.id },
+    data: { status: 'expired' },
+  });
+  await sender.sendForOrder(row.id);
+  expect(
+    await database.db.dailyBudget.findUniqueOrThrow({ where: { day } }),
+  ).toMatchObject({ reservedCount: 0, reservedAmount: 0n });
 });
 it('does not sign an unpaid order that expired before its queued send began', async () => {
   const row = await order();
