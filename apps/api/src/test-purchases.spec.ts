@@ -329,3 +329,34 @@ it('admits without waiting on a chain read that has not finished', async () => {
   expect((await buy('192.0.2.1')).statusCode).toBe(202);
   expect((await buy('192.0.2.2')).statusCode).toBe(202);
 });
+
+it('gives orders created in the same millisecond distinct positions', async () => {
+  const createdAt = new Date(now.getTime() - 1000);
+  const rows = [];
+  for (const expectedAmount of [1n, 2n, 3n])
+    rows.push(
+      await database.db.order.create({
+        data: {
+          item: 'x',
+          price: 1n,
+          expectedAmount,
+          source: 'visitor',
+          createdAt,
+          expiresAt: new Date(now.getTime() + 60000),
+        },
+      }),
+    );
+  rows.sort((a, b) => a.id.localeCompare(b.id));
+  const positions = [];
+  for (const row of rows)
+    positions.push(
+      (
+        await adapter.getInstance().inject({
+          method: 'GET',
+          url: `/test-purchases/${row.id}`,
+        })
+      ).json().position,
+    );
+  expect(positions).toEqual([1, 2, 3]);
+  expect((await buy()).json().position).toBe(4);
+});

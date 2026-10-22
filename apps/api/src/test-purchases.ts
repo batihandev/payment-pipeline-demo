@@ -67,6 +67,19 @@ export function registerTestPurchases(
     sendState: 'pending',
     status: 'open',
   } as const;
+  // Waiting orders are ordered by (createdAt, id), so two created in the same millisecond
+  // still get distinct positions.
+  const position = async (order: { id: string; createdAt: Date }) =>
+    1 +
+    (await db.order.count({
+      where: {
+        ...waiting,
+        OR: [
+          { createdAt: { lt: order.createdAt } },
+          { createdAt: order.createdAt, id: { lt: order.id } },
+        ],
+      },
+    }));
   // Admissions run one at a time so the queue check and the new position stay exact.
   let turn: Promise<unknown> = Promise.resolve();
   const exclusive = <T>(task: () => Promise<T>): Promise<T> => {
@@ -128,10 +141,9 @@ export function registerTestPurchases(
         if (!order) return reply.code(409).send({ error: 'daily_limit' });
         orderId = order.id;
         await jobs.queueSend(order.id, 'visitor');
-        const ahead = await db.order.count({
-          where: { ...waiting, createdAt: { lt: order.createdAt } },
-        });
-        return reply.code(202).send({ orderId: order.id, position: ahead + 1 });
+        return reply
+          .code(202)
+          .send({ orderId: order.id, position: await position(order) });
       } catch {
         return reply
           .code(503)
@@ -151,10 +163,7 @@ export function registerTestPurchases(
       if (!uuid.test(id)) return { position: 0 };
       const order = await db.order.findFirst({ where: { id, ...waiting } });
       if (!order) return { position: 0 };
-      const ahead = await db.order.count({
-        where: { ...waiting, createdAt: { lt: order.createdAt } },
-      });
-      return { position: ahead + 1 };
+      return { position: await position(order) };
     },
   );
 }
