@@ -51,10 +51,19 @@ it('bounds restart catch-up including overlap and spaces every RPC through the l
     ),
   ).toBe(true);
 });
-it('counts a previously stored payment once when overlap sees it again', async () => {
+it('re-reads the overlap without a duplicate incident', async () => {
   f.chain.logs = [log(19n)];
   await scanner.scanOnce();
   await scanner.scanOnce();
+  expect(await f.db.payment.count()).toBe(1);
+  expect(await f.db.incident.count({ where: { kind: 'duplicate' } })).toBe(0);
+});
+it('records a duplicate for a log seen again outside the overlap', async () => {
+  f.chain.logs = [log(19n)];
+  await scanner.scanOnce();
+  await f.db.$transaction((tx) =>
+    scanner.storeLogs(tx, f.chain.logs, 10n, 20n),
+  );
   expect(await f.db.payment.count()).toBe(1);
   expect(await f.db.incident.count({ where: { kind: 'duplicate' } })).toBe(1);
 });

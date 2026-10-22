@@ -124,7 +124,7 @@ export class Scanner {
               'Saved a gap for bounded background recovery; continued tracking new blocks.',
           },
         });
-      } else await this.storeLogs(tx, logs, from, to);
+      } else await this.storeLogs(tx, logs, from, to, cursor?.blockNumber);
       await tx.cursor.upsert({
         where: { name: this.cursorName },
         create: { name: this.cursorName, blockNumber: to, blockHash },
@@ -188,6 +188,7 @@ export class Scanner {
     logs: TransferLog[],
     from: bigint,
     to: bigint,
+    rereadThrough?: bigint,
   ): Promise<void> {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${this.cursorName}, 0))`;
     for (const log of logs) {
@@ -229,6 +230,14 @@ export class Scanner {
         await savePaymentEvent(tx, restored);
         continue;
       }
+      if (
+        exists &&
+        rereadThrough !== undefined &&
+        exists.blockHash === log.blockHash &&
+        exists.blockNumber !== null &&
+        exists.blockNumber <= rereadThrough
+      )
+        continue;
       if (exists) {
         await tx.incident.create({
           data: {
