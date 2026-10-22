@@ -20,6 +20,7 @@ import {
 import { RedisLock } from './redis-lock';
 import { OrderSender } from './send-order';
 import { NightlySweep } from './sweep';
+import { Refill } from './refill';
 import { expireOrders } from './expiry';
 
 export type BuyerConfig = z.output<typeof buyerSchema>;
@@ -31,6 +32,8 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
   private readonly jobs: BuyerJobs;
   private readonly sender: OrderSender;
   private readonly sweep: NightlySweep;
+  private readonly refill: Refill;
+  private readonly refillEveryMs: number;
   private readonly maxInFlight: number;
   constructor(
     private readonly db: PrismaClient,
@@ -74,6 +77,11 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
       chainId: config.CHAIN_ID,
     });
     this.sweep = new NightlySweep(db, chain, this.sender, shop);
+    this.refillEveryMs = config.REFILL_COOLDOWN_SECONDS * 1000;
+    this.refill = new Refill(db, chain, this.sender, buyer, shop, {
+      below: config.REFILL_BELOW,
+      cooldownMs: this.refillEveryMs,
+    });
     this.worker = new Worker<BuyerJobData>(
       'buyer',
       (job, token) => this.process(job, token),
@@ -126,6 +134,20 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
         },
       },
     );
+    await this.queue.upsertJobScheduler(
+      'buyer-refill',
+      { every: this.refillEveryMs },
+      {
+        name: 'refill-check',
+        data: {},
+        opts: {
+          ...retryOptions,
+          priority: 3,
+          removeOnComplete: 100,
+          removeOnFail: 100,
+        },
+      },
+    );
     await this.jobs.recoverPending();
     void this.worker.run().catch(() => console.error('Buyer worker stopped.'));
   }
@@ -148,6 +170,9 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
             new Date(job.opts.prevMillis ?? job.timestamp),
             exhausted,
           );
+          return;
+        case 'refill-check':
+          await this.refill.run(exhausted);
           return;
         case 'visitor-purchase': {
           if (!job.data.orderId)
