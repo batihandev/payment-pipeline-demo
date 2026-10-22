@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { paymentsClient, usePayments } from './use-payments';
+import { useQueuePosition } from './use-queue-position';
 import { ConfirmationBar, Receipt } from './receipt';
 import { money, purchaseMessage, stageView } from './view';
 import './styles.css';
@@ -19,30 +20,18 @@ export function Checkout({
   const [sending, setSending] = useState(false);
   const [orderId, setOrderId] = useState<string>();
   const [message, setMessage] = useState('');
-  const [position, setPosition] = useState(0);
+  const [accepted, setAccepted] = useState(0);
   const inFlight = useRef(false);
   const payment = data?.payments.find((p) => p.orderId === orderId);
   const view =
     payment && data ? stageView(payment, data.health.confirmations) : null;
+  const position = useQueuePosition(
+    apiBaseUrl,
+    orderId ?? null,
+    accepted,
+    Boolean(payment),
+  );
   const active = Boolean(orderId && !view?.paid);
-
-  const waiting = position > 0 && !payment;
-  useEffect(() => {
-    if (!orderId || !waiting) return;
-    const timer = setInterval(() => {
-      void fetch(
-        `${paymentsClient(apiBaseUrl).baseUrl}/test-purchases/${orderId}`,
-      )
-        .then((response) =>
-          response.ok
-            ? (response.json() as Promise<{ position?: number }>)
-            : { position: 0 },
-        )
-        .then((body) => setPosition(body.position ?? 0))
-        .catch(() => undefined);
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [apiBaseUrl, orderId, waiting]);
 
   async function purchase() {
     if (inFlight.current) return;
@@ -61,7 +50,7 @@ export function Checkout({
       };
       if (body.orderId) {
         setOrderId(body.orderId);
-        setPosition(response.ok ? (body.position ?? 0) : 0);
+        setAccepted(response.ok ? (body.position ?? 0) : 0);
         onOrder?.(body.orderId);
         setMessage(
           response.ok

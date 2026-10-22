@@ -49,7 +49,8 @@ export function SettledChart({ days }: { days: DailyStat[] }) {
         <div>
           <h2 id="chart-title">Settled payments</h2>
           <p className="tp-muted">
-            {mode === 'daily' ? 'Per day' : 'Per week'} · UTC · last 30 days
+            {mode === 'daily' ? 'Per day' : 'Per week'} · UTC · last{' '}
+            {days.length} days
           </p>
         </div>
         <div className="tp-toggle" role="group" aria-label="Chart period">
