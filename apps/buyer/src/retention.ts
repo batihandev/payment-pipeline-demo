@@ -13,7 +13,7 @@ export async function pruneOlderThan(
             OR: [{ final: true }, { stage: 'notified' }],
             settledAt: { lt: cutoff },
           },
-          { orderId: null, receivedAt: { lt: cutoff } },
+          { orderId: null, final: true, receivedAt: { lt: cutoff } },
         ],
       },
       select: { id: true },

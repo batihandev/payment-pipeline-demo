@@ -106,6 +106,7 @@ it('deletes month-old settled history', async () => {
       externalKey: 'u',
       amount: 5n,
       stage: 'received',
+      final: true,
       receivedAt: old,
     },
   });
@@ -214,4 +215,18 @@ it('keeps a payment that a newer incident still references', async () => {
   await pruneOlderThan(db, cutoff);
   expect(await db.payment.count()).toBe(1);
   expect(await db.incident.count()).toBe(1);
+});
+it('keeps an old unmatched payment that is not final', async () => {
+  const { db } = database;
+  await db.payment.create({
+    data: {
+      provider: 'chain',
+      externalKey: 'unmatched-open',
+      amount: 5n,
+      stage: 'received',
+      receivedAt: new Date(now.getTime() - 40 * 864e5),
+    },
+  });
+  await pruneOlderThan(db, cutoff);
+  expect(await db.payment.count()).toBe(1);
 });
