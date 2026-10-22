@@ -7,6 +7,7 @@ import {
 import { AppModule } from './app.module';
 import { ApiRuntime } from './runtime';
 import { proxyTrust } from './proxy';
+import { GenericErrorFilter } from './errors';
 import type { ApiConfig } from './reads';
 export async function createApi(
   config: ApiConfig,
@@ -16,6 +17,7 @@ export async function createApi(
     new FastifyAdapter({ trustProxy: proxyTrust(config.TRUST_PROXY) }),
     { rawBody: true, logger: false },
   );
+  app.useGlobalFilters(new GenericErrorFilter());
   app.enableCors({
     origin: [config.WEB_ORIGIN],
     methods: ['GET', 'POST', 'OPTIONS'],
