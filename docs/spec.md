@@ -65,7 +65,7 @@ The response returns the order id and its queue position, so the page can highli
 
 The services run on free RPC tiers, so request volume is designed to stay inside their rate limits.
 
-- **Split budget:** each service has its own limiter (`RPC_REQUESTS_PER_SECOND_TRACKER`, `_BUYER`, `_API`; defaults 2, 2 and 1), and together they stay at or below the provider's rate. The tracker's share is its own, so a burst of purchases cannot stall confirmations.
+- **Split budget:** each service has its own limiter (`RPC_REQUESTS_PER_SECOND_TRACKER`, `_BUYER`, `_API`; defaults 2, 2 and 1), and together they stay at or below the provider's rate. A limiter delays a call until its slot rather than refusing it. The tracker's share is its own, so a burst of purchases cannot stall confirmations.
 - **Adaptive polling:** the tracker polls every pass interval while any order is open or any payment is unsettled or not final, and slows to a configured idle interval otherwise.
 - **One call per pass for new payments:** a single `eth_getLogs` over the new range, filtered by contract and recipient. Confirmations come from the latest block number, not per-payment calls.
 - **About one call per send:** the buyer signs locally with a nonce allocated in the database, a fixed gas limit for a USDC transfer and a fee cached for a few seconds, then broadcasts. It checks for a receipt only when retrying. At most `MAX_IN_FLIGHT` (default 10) of a wallet's transfers wait unconfirmed at once; a send beyond that returns to its queue for a moment without counting as a failed attempt.
@@ -112,17 +112,18 @@ Stripe (phase 2): `received → processing → settled → notified`, without a 
 
 ### api
 
-| Route                     | Purpose                                                                                                                                        |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /payments?limit=`    | Recent payments with order, stage, confirmations, block, explorer URL                                                                          |
-| `GET /stats`              | For today and the last 7 days: settled count, average time to settle, duplicates skipped, failures recovered. In-memory cache with a short TTL |
-| `GET /incidents?limit=`   | Recent incidents                                                                                                                               |
-| `GET /health`             | Head, cursor, lag, open gaps, queue depth, cooldown state, balances and low-balance flags, and the monitoring signals below                    |
-| `GET /events`             | Server-sent events relayed from Redis pub/sub                                                                                                  |
-| `POST /test-purchases`    | Visitor test buy, as above                                                                                                                     |
-| `GET /test-purchases/:id` | Queue position of a waiting visitor purchase                                                                                                   |
-| `POST /shop/notices`      | Receives the signed notice. Verifies the signature and timestamp, then marks the payment notified                                              |
-| `POST /stripe/webhook`    | Phase 2                                                                                                                                        |
+| Route                     | Purpose                                                                                                                           |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /payments?limit=`    | Recent payments with order, stage, confirmations, block, explorer URL                                                             |
+| `GET /stats`              | Today: settled count, average time to settle, duplicates skipped, failures recovered. In-memory cache with a short TTL            |
+| `GET /stats/daily`        | Per UTC day for the retained period: settled count, average time to settle, scheduled and visitor purchases. Cached like `/stats` |
+| `GET /incidents?limit=`   | Recent incidents                                                                                                                  |
+| `GET /health`             | Head, cursor, lag, open gaps, queue depth, cooldown state, balances and low-balance flags, and the monitoring signals below       |
+| `GET /events`             | Server-sent events relayed from Redis pub/sub                                                                                     |
+| `POST /test-purchases`    | Visitor test buy, as above                                                                                                        |
+| `GET /test-purchases/:id` | Queue position of a waiting visitor purchase                                                                                      |
+| `POST /shop/notices`      | Receives the signed notice. Verifies the signature and timestamp, then marks the payment notified                                 |
+| `POST /stripe/webhook`    | Phase 2                                                                                                                           |
 
 CORS is allowed only for the configured web origin. With `TRUST_PROXY` set, client addresses come from the proxy's forwarding header, so per-visitor limits apply to visitors rather than to the proxy.
 
@@ -136,7 +137,7 @@ One React + Vite page with three parts:
 - **Small widget:** a dark card showing the latest payment as a receipt (item, price, order and block), a confirmation bar filling to the threshold, a PAID stamp when settled, a four-step strip and a footer of counts. It runs without interaction.
 - **Full panel:** header with a live indicator, test network label, one-line caption; a four-lane pipeline; a receipts feed with notes (for example "Seen again on a rescan. Already credited, skipped."); stats tiles; an incident log titled "What went wrong today", pairing each problem with how it was handled.
 
-Confirmation progress reads "N of 10" until the threshold, then "10+ confirmations". Stats tiles show today and the last 7 days.
+Confirmation progress reads "N of 10" until the threshold, then "10+ confirmations". The full panel adds a chart of settled payments per day and per week over the retained period, from `/stats/daily`.
 
 Data comes from the REST routes on load and `/events` afterwards. Explorer links point to the configured block explorer.
 
@@ -153,7 +154,7 @@ Data comes from the REST routes on load and `/events` afterwards. Explorer links
 
 Stats are computed from these tables, never stored as running totals.
 
-**Retention:** a nightly job deletes orders, payments, ledger entries, notices, events and incidents older than `RETENTION_DAYS` (default 7), and resolved gaps of the same age. Open orders and unsettled or non-final payments are kept until they close.
+**Retention:** a nightly job deletes orders, payments, ledger entries, notices, events and incidents older than `RETENTION_DAYS` (default 30), and resolved gaps of the same age. Open orders and unsettled or non-final payments are kept until they close.
 
 ## Monitoring
 
