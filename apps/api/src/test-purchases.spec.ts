@@ -146,7 +146,7 @@ it('limits one visitor to 10 a minute', async () => {
   expect((await buy('192.0.2.9')).statusCode).toBe(202);
 });
 
-it('limits one visitor to 100 a UTC day', async () => {
+it('limits one visitor to their per-day limit until the UTC day ends', async () => {
   limits.perMinute = 1000;
   limits.perDay = 2;
   limits.queueLimit = 1000;

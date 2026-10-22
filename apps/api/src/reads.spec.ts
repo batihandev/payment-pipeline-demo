@@ -334,7 +334,8 @@ it('puts a new sent purchase ahead of older received payments', async () => {
 });
 
 it('reports an actual rate-limit cooldown and its expiry from live Redis state', async () => {
-  const limiter = serviceLimiter(redis, 'tracker', 5, 100);
+  // A long cooldown keeps the first read inside it however slow the database answers.
+  const limiter = serviceLimiter(redis, 'tracker', 5, 60000);
   await expect(
     limiter.run(async () => {
       throw new RpcError('rate_limit');
@@ -343,7 +344,8 @@ it('reports an actual rate-limit cooldown and its expiry from live Redis state',
   const cooling = (await adapter.getInstance().inject('/health')).json();
   expect(cooling.cooldowns.tracker).toBeGreaterThan(0);
   await redis.pexpire(cooldownKey('tracker'), 1);
-  await new Promise((resolve) => setTimeout(resolve, 5));
+  while (await redis.exists(cooldownKey('tracker')))
+    await new Promise((resolve) => setTimeout(resolve, 5));
   expect(
     (await adapter.getInstance().inject('/health')).json().cooldowns.tracker,
   ).toBe(0);
