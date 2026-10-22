@@ -373,7 +373,7 @@ it('reports monitoring timestamps in /health', async () => {
     },
   });
   await database.db.cursor.updateMany({
-    data: { blockNumber: 93n, updatedAt: new Date('2026-10-22T10:00:00Z') },
+    data: { blockNumber: 93n, advancedAt: new Date('2026-10-22T10:00:00Z') },
   });
   const matched = await database.db.order.create({
     data: {

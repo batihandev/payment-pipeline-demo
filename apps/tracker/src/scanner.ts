@@ -125,11 +125,18 @@ export class Scanner {
           },
         });
       } else await this.storeLogs(tx, logs, from, to, cursor?.blockNumber);
-      await tx.cursor.upsert({
-        where: { name: this.cursorName },
-        create: { name: this.cursorName, blockNumber: to, blockHash },
-        update: { blockNumber: to, blockHash },
+      // advancedAt moves only with a higher block, so a rescan of the same blocks or a step
+      // back after a reorg does not look like progress.
+      const advanced = await tx.cursor.updateMany({
+        where: { name: this.cursorName, blockNumber: { lt: to } },
+        data: { blockNumber: to, blockHash, advancedAt: this.now() },
       });
+      if (advanced.count === 0)
+        await tx.cursor.upsert({
+          where: { name: this.cursorName },
+          create: { name: this.cursorName, blockNumber: to, blockHash },
+          update: { blockNumber: to, blockHash },
+        });
     });
     return head;
   }

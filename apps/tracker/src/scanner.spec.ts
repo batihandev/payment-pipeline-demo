@@ -33,6 +33,29 @@ it('stores duplicate and out-of-order logs once and advances to the range end', 
   });
   expect(await f.db.incident.count({ where: { kind: 'duplicate' } })).toBe(1);
 });
+it('records when the cursor last moved to a higher block, not when it was rewritten', async () => {
+  const before = new Date('2026-10-01T00:00:00Z');
+  await f.db.cursor.create({
+    data: {
+      name: scanner.cursorName,
+      blockNumber: 100n,
+      blockHash: hash(100n),
+      advancedAt: before,
+    },
+  });
+  f.chain.head = 100n;
+  await scanner.scanOnce();
+  expect(await f.db.cursor.findFirstOrThrow()).toMatchObject({
+    blockNumber: 100n,
+    advancedAt: before,
+  });
+  f.chain.head = 110n;
+  await scanner.scanOnce();
+  expect(await f.db.cursor.findFirstOrThrow()).toMatchObject({
+    blockNumber: 110n,
+    advancedAt: now,
+  });
+});
 it('bounds restart catch-up including overlap and spaces every RPC through the limiter', async () => {
   await f.db.cursor.create({
     data: {

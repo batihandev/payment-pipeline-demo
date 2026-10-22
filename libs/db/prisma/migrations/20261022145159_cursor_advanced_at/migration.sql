@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "cursors" ADD COLUMN     "advanced_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;

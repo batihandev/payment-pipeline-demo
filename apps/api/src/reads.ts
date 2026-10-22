@@ -267,7 +267,7 @@ export function registerReads(
       redisError: live.status === 'rejected' ? 'unavailable' : null,
       monitoring: {
         ...monitoring,
-        cursorAdvancedAt: cursor?.updatedAt ?? null,
+        cursorAdvancedAt: cursor?.advancedAt ?? null,
         visitorPausedSince: pausedSince
           ? new Date(Number(pausedSince)).toISOString()
           : null,
