@@ -57,6 +57,17 @@ it('refills when the buyer is below the threshold', async () => {
     sendState: 'sent',
   });
   expect(chain.signed).toBe(1);
+  const incident = await database.db.incident.findFirstOrThrow();
+  expect(incident).toMatchObject({
+    kind: 'refilled',
+    whatHappened: 'Refilled the buyer with 38000000 micro-units from the shop.',
+  });
+  expect(incident.howHandled).toContain(
+    'for refill refill:2026-10-22T10:00:00.000Z',
+  );
+  expect(`${incident.whatHappened} ${incident.howHandled}`).not.toMatch(
+    /sweep|swept/i,
+  );
 });
 it('does nothing above the threshold', async () => {
   usdc[buyer] = 5_000_000n;

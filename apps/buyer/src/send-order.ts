@@ -274,12 +274,19 @@ export class OrderSender {
               update: {},
             });
           } else {
+            const refill = row.id.startsWith('refill:');
             await tx.incident.create({
-              data: {
-                kind: 'swept',
-                whatHappened: `Swept ${row.amount} micro-units from shop to buyer.`,
-                howHandled: `Stored transfer ${hash} for sweep ${row.id}.`,
-              },
+              data: refill
+                ? {
+                    kind: 'refilled',
+                    whatHappened: `Refilled the buyer with ${row.amount} micro-units from the shop.`,
+                    howHandled: `Stored transfer ${hash} for refill ${row.id}.`,
+                  }
+                : {
+                    kind: 'swept',
+                    whatHappened: `Swept ${row.amount} micro-units from shop to buyer.`,
+                    howHandled: `Stored transfer ${hash} for sweep ${row.id}.`,
+                  },
             });
           }
         });
