@@ -1,6 +1,6 @@
 # testnet-payments: design spec
 
-Date: 2026-10-20, revised 2026-10-22. Status: draft.
+Date: 2026-10-20, revised 2026-10-22. Status: current.
 
 ## Purpose
 
