@@ -84,71 +84,154 @@ export function registerReads(
         }),
       ),
   );
-  let cache: { expires: number; value: unknown } | undefined;
-  let loading: Promise<unknown> | undefined;
-  app.get('/stats', async () => {
-    const now = state.now ?? Date.now;
-    if (cache && now() < cache.expires) return cache.value;
-    loading ??= (async () => {
+  const cached = (ttl: number, compute: () => Promise<unknown>) => {
+    let cache: { expires: number; value: unknown } | undefined;
+    let loading: Promise<unknown> | undefined;
+    return async () => {
+      const now = state.now ?? Date.now;
+      if (cache && now() < cache.expires) return cache.value;
+      loading ??= (async () => {
+        const value = await compute();
+        cache = { expires: now() + ttl, value };
+        return value;
+      })();
+      try {
+        return await loading;
+      } finally {
+        loading = undefined;
+      }
+    };
+  };
+  const dayMs = 86400000;
+  const utcDayStart = () => {
+    const at = (state.now ?? Date.now)();
+    return new Date(at - (at % dayMs));
+  };
+  app.get(
+    '/stats',
+    cached(5000, async () => {
+      const from = utcDayStart();
+      const to = new Date(from.getTime() + dayMs);
       const [rows, duplicatesSkipped, failuresRecovered] = await Promise.all([
         db.$queryRaw<
           { settledCount: bigint; averageTimeToSettleMs: number | null }[]
-        >`SELECT COUNT(*)::bigint AS "settledCount", AVG(EXTRACT(EPOCH FROM (p.settled_at - COALESCE(p.sent_at, p.received_at))) * 1000)::float8 AS "averageTimeToSettleMs" FROM ledger_entries l JOIN payments p ON p.id = l.payment_id`,
-        db.incident.count({ where: { kind: 'duplicate' } }),
-        db.incident.count({ where: { kind: 'gap_recovered' } }),
+        >`SELECT COUNT(*)::bigint AS "settledCount", AVG(EXTRACT(EPOCH FROM (p.settled_at - COALESCE(p.sent_at, p.received_at))) * 1000)::float8 AS "averageTimeToSettleMs" FROM ledger_entries l JOIN payments p ON p.id = l.payment_id WHERE p.settled_at >= ${from} AND p.settled_at < ${to}`,
+        db.incident.count({
+          where: { kind: 'duplicate', createdAt: { gte: from, lt: to } },
+        }),
+        db.incident.count({
+          where: { kind: 'gap_recovered', createdAt: { gte: from, lt: to } },
+        }),
       ]);
-      const value = {
+      return {
         settledCount: Number(rows[0]?.settledCount ?? 0),
         averageTimeToSettleMs: rows[0]?.averageTimeToSettleMs ?? null,
         duplicatesSkipped,
         failuresRecovered,
       };
-      cache = { expires: now() + 5000, value };
-      return value;
-    })();
-    try {
-      return await loading;
-    } finally {
-      loading = undefined;
-    }
-  });
+    }),
+  );
+  app.get(
+    '/stats/daily',
+    cached(60000, async () => {
+      const to = new Date(utcDayStart().getTime() + dayMs);
+      const from = new Date(to.getTime() - config.RETENTION_DAYS * dayMs);
+      const rows = await db.$queryRaw<
+        {
+          day: string;
+          settled: bigint;
+          scheduled: bigint;
+          visitor: bigint;
+          averageTimeToSettleMs: number | null;
+        }[]
+      >`SELECT to_char(p.settled_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day, COUNT(*)::bigint AS settled, COUNT(*) FILTER (WHERE o.source = 'schedule')::bigint AS scheduled, COUNT(*) FILTER (WHERE o.source = 'visitor')::bigint AS visitor, AVG(EXTRACT(EPOCH FROM (p.settled_at - COALESCE(p.sent_at, p.received_at))) * 1000)::float8 AS "averageTimeToSettleMs" FROM ledger_entries l JOIN payments p ON p.id = l.payment_id LEFT JOIN orders o ON o.id = p.order_id WHERE p.settled_at >= ${from} AND p.settled_at < ${to} GROUP BY 1`;
+      const byDay = new Map(rows.map((row) => [row.day, row]));
+      return Array.from({ length: config.RETENTION_DAYS }, (_, index) => {
+        const day = new Date(from.getTime() + index * dayMs)
+          .toISOString()
+          .slice(0, 10);
+        const row = byDay.get(day);
+        return {
+          day,
+          settled: Number(row?.settled ?? 0),
+          scheduled: Number(row?.scheduled ?? 0),
+          visitor: Number(row?.visitor ?? 0),
+          averageTimeToSettleMs: row?.averageTimeToSettleMs ?? null,
+        };
+      });
+    }),
+  );
+  const readMonitoring = async () => {
+    const [unsettled, unnotified, scheduled, pausedSince] = await Promise.all([
+      db.$queryRaw<
+        { at: Date | null }[]
+      >`SELECT MIN(COALESCE(sent_at, received_at)) AS at FROM payments WHERE stage IN ('sent', 'received', 'confirming')`,
+      db.payment.aggregate({
+        where: { stage: 'settled' },
+        _min: { settledAt: true },
+      }),
+      db.order.findFirst({
+        where: { source: 'schedule' },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      }),
+      state.redis.get('visitor-paused-since'),
+    ]);
+    return {
+      oldestUnsettledAt: unsettled[0]?.at ?? null,
+      oldestUnnotifiedAt: unnotified._min.settledAt,
+      lastScheduledPurchaseAt: scheduled?.createdAt ?? null,
+      visitorPausedSince: pausedSince
+        ? new Date(Number(pausedSince)).toISOString()
+        : null,
+    };
+  };
   app.get('/health', async (_request, reply) => {
     try {
-      const [head, cursor, openGaps, buyer, shop, depths, cooldowns] =
-        await Promise.all([
-          state.chain.getHead(),
-          db.cursor.findUnique({
-            where: {
-              name: `chain-${config.CHAIN_ID}-${config.SHOP_ADDRESS.toLowerCase()}`,
-            },
+      const [
+        head,
+        cursor,
+        openGaps,
+        buyer,
+        shop,
+        depths,
+        cooldowns,
+        monitoring,
+      ] = await Promise.all([
+        state.chain.getHead(),
+        db.cursor.findUnique({
+          where: {
+            name: `chain-${config.CHAIN_ID}-${config.SHOP_ADDRESS.toLowerCase()}`,
+          },
+        }),
+        db.scanGap.count({ where: { resolvedAt: null } }),
+        state.chain.getBalances(config.BUYER_ADDRESS as `0x${string}`),
+        state.chain.getBalances(config.SHOP_ADDRESS as `0x${string}`),
+        Promise.all(
+          Object.entries(state.queues).map(async ([name, queue]) => {
+            const counts = await queue.getJobCounts(
+              'waiting',
+              'prioritized',
+              'active',
+              'delayed',
+            );
+            return [
+              name,
+              Object.values(counts).reduce((sum, n) => sum + n, 0),
+            ] as const;
           }),
-          db.scanGap.count({ where: { resolvedAt: null } }),
-          state.chain.getBalances(config.BUYER_ADDRESS as `0x${string}`),
-          state.chain.getBalances(config.SHOP_ADDRESS as `0x${string}`),
-          Promise.all(
-            Object.entries(state.queues).map(async ([name, queue]) => {
-              const counts = await queue.getJobCounts(
-                'waiting',
-                'prioritized',
-                'active',
-                'delayed',
-              );
-              return [
+        ),
+        Promise.all(
+          ['buyer', 'tracker', 'api'].map(
+            async (name) =>
+              [
                 name,
-                Object.values(counts).reduce((sum, n) => sum + n, 0),
-              ] as const;
-            }),
+                Math.max(0, await state.redis.pttl(cooldownKey(name))),
+              ] as const,
           ),
-          Promise.all(
-            ['buyer', 'tracker', 'api'].map(
-              async (name) =>
-                [
-                  name,
-                  Math.max(0, await state.redis.pttl(cooldownKey(name))),
-                ] as const,
-            ),
-          ),
-        ]);
+        ),
+        readMonitoring(),
+      ]);
       const balances = (balance: { native: bigint; usdc: bigint }) => ({
         ...balance,
         lowNative: balance.native < config.LOW_NATIVE_BALANCE,
@@ -167,6 +250,10 @@ export function registerReads(
         queueDepth: Object.fromEntries(depths),
         cooldowns: Object.fromEntries(cooldowns),
         balances: { buyer: balances(buyer), shop: balances(shop) },
+        monitoring: {
+          ...monitoring,
+          cursorAdvancedAt: cursor?.updatedAt ?? null,
+        },
       });
     } catch {
       return reply
