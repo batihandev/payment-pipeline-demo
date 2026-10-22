@@ -1,4 +1,10 @@
-import type { Payment } from './types';
+import type { Health, Payment } from './types';
+
+/** The spec's default confirmation count, used until the first /health read arrives. */
+const DEFAULT_CONFIRMATIONS = 10;
+export function confirmationsNeeded(health: Health | null): number {
+  return health?.confirmations ?? DEFAULT_CONFIRMATIONS;
+}
 
 export const steps = [
   {

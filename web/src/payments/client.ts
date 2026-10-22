@@ -1,4 +1,6 @@
-import type { Dashboard, Payment, Snapshot } from './types';
+import type { Dashboard, Health, Payment, Snapshot } from './types';
+
+export const HEALTH_EVERY_MS = 15000;
 
 export type EventStream = Pick<
   EventSource,
@@ -12,6 +14,8 @@ export class PaymentsClient {
   private buffered: Payment[] = [];
   private loading = false;
   private retry?: ReturnType<typeof setTimeout>;
+  private health: Health | null = null;
+  private healthTimer?: ReturnType<typeof setInterval>;
   readonly baseUrl: string;
   constructor(
     baseUrl: string,
@@ -32,6 +36,7 @@ export class PaymentsClient {
         this.stream?.close();
         this.stream = undefined;
         clearTimeout(this.retry);
+        clearInterval(this.healthTimer);
         this.loading = false;
       }
     };
@@ -75,6 +80,27 @@ export class PaymentsClient {
       }
     };
     void this.refresh();
+    void this.refreshHealth();
+    this.healthTimer = setInterval(() => {
+      void this.refreshHealth();
+    }, HEALTH_EVERY_MS);
+  }
+  // Health is polled on its own timer, not per event, and a failed read keeps the last one:
+  // it describes the services behind the demo and never takes the page offline.
+  private async refreshHealth(): Promise<void> {
+    const request = this.request;
+    try {
+      const response = await request(`${this.baseUrl}/health`);
+      if (!response.ok) return;
+      this.health = (await response.json()) as Health;
+    } catch {
+      return;
+    }
+    if (!this.listeners.size || !this.snapshot.data) return;
+    this.update({
+      ...this.snapshot,
+      data: { ...this.snapshot.data, health: this.health },
+    });
   }
   private merge(data: Dashboard, events: Payment[]): Dashboard {
     const rows = new Map(data.payments.map((p) => [p.id, p]));
@@ -115,10 +141,9 @@ export class PaymentsClient {
         '/payments?limit=100',
         '/stats',
         '/stats/daily',
-        '/health',
         '/incidents?limit=100',
       ];
-      const [payments, stats, daily, health, incidents] = await Promise.all(
+      const [payments, stats, daily, incidents] = await Promise.all(
         paths.map(async (path) => {
           const request = this.request;
           const response = await request(`${this.baseUrl}${path}`);
@@ -127,7 +152,13 @@ export class PaymentsClient {
         }),
       );
       if (generation !== this.generation) return;
-      const data = { payments, stats, daily, health, incidents } as Dashboard;
+      const data = {
+        payments,
+        stats,
+        daily,
+        incidents,
+        health: this.health,
+      } as Dashboard;
       this.update({ status: 'live', data: this.merge(data, this.buffered) });
       this.buffered = [];
     } catch {

@@ -4,7 +4,13 @@ import { PaymentsWidget } from './payments/widget';
 import { SettledChart } from './payments/chart';
 import { Receipt } from './payments/receipt';
 import { usePayments } from './payments/use-payments';
-import { isVisitorOrder, shortId, steps, utcTime } from './payments/view';
+import {
+  confirmationsNeeded,
+  isVisitorOrder,
+  shortId,
+  steps,
+  utcTime,
+} from './payments/view';
 import './panel.css';
 
 export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
@@ -68,7 +74,7 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
         <p role="status">Loading the payment trail…</p>
       ) : (
         <>
-          {Object.entries(data.health.balances)
+          {Object.entries(data.health?.balances ?? {})
             .filter(([, b]) => b.lowNative || b.lowUsdc)
             .map(([account]) => (
               <p key={account} className="tp-note" role="status">
@@ -89,7 +95,7 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
                   </div>
                   <p>
                     {step.stage === 'confirming'
-                      ? `Waiting for ${data.health.confirmations} blocks on top`
+                      ? `Waiting for ${confirmationsNeeded(data.health)} blocks on top`
                       : step.hint}
                   </p>
                   <div className="tp-row">
@@ -122,7 +128,7 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
                 <div id={`payment-${payment.id}`} key={payment.id}>
                   <Receipt
                     payment={payment}
-                    threshold={data.health.confirmations}
+                    threshold={confirmationsNeeded(data.health)}
                     highlighted={isVisitorOrder(payment, visitorOrders)}
                     notes={data.incidents
                       .filter((i) => i.paymentId === payment.id)
@@ -173,39 +179,43 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
                     </article>
                   ))}
               </section>
-              <section className="tp-health" aria-label="Tracker health">
-                <h2>Behind the counter</h2>
-                <dl>
-                  {[
-                    ['Head', data.health.head],
-                    [
-                      'Scanned through',
-                      data.health.cursor ?? 'Not initialized',
-                    ],
-                    ['Blocks behind', data.health.lag ?? 'Unknown'],
-                    ['Open scan gaps', data.health.openGaps],
-                    [
-                      'Queued work',
-                      Object.values(data.health.queueDepth).reduce(
-                        (a, b) => a + b,
-                        0,
-                      ),
-                    ],
-                  ].map(([label, value]) => (
-                    <div key={label}>
-                      <dt>{label}</dt>
-                      <dd>{value}</dd>
-                    </div>
-                  ))}
-                </dl>
-                {Object.entries(data.health.cooldowns)
-                  .filter(([, ms]) => ms > 0)
-                  .map(([name, ms]) => (
-                    <p className="tp-note" key={name}>
-                      {name}: cooling down for {Math.ceil(ms / 1000)}s
-                    </p>
-                  ))}
-              </section>
+              {data.health && (
+                <section className="tp-health" aria-label="Tracker health">
+                  <h2>Behind the counter</h2>
+                  <dl>
+                    {[
+                      ['Head', data.health.head ?? 'Unknown'],
+                      [
+                        'Scanned through',
+                        data.health.cursor ?? 'Not initialized',
+                      ],
+                      ['Blocks behind', data.health.lag ?? 'Unknown'],
+                      ['Open scan gaps', data.health.openGaps],
+                      [
+                        'Queued work',
+                        data.health.queueDepth
+                          ? Object.values(data.health.queueDepth).reduce(
+                              (a, b) => a + b,
+                              0,
+                            )
+                          : 'Unknown',
+                      ],
+                    ].map(([label, value]) => (
+                      <div key={label}>
+                        <dt>{label}</dt>
+                        <dd>{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  {Object.entries(data.health.cooldowns ?? {})
+                    .filter(([, ms]) => ms > 0)
+                    .map(([name, ms]) => (
+                      <p className="tp-note" key={name}>
+                        {name}: cooling down for {Math.ceil(ms / 1000)}s
+                      </p>
+                    ))}
+                </section>
+              )}
             </aside>
           </div>
         </>

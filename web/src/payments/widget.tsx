@@ -1,5 +1,6 @@
 import { usePayments } from './use-payments';
 import { Receipt, StepStrip } from './receipt';
+import { confirmationsNeeded } from './view';
 import './styles.css';
 
 export function PaymentsWidget({ apiBaseUrl }: { apiBaseUrl: string }) {
@@ -30,7 +31,7 @@ export function PaymentsWidget({ apiBaseUrl }: { apiBaseUrl: string }) {
               <Receipt
                 key={payment.id}
                 payment={payment}
-                threshold={data.health.confirmations}
+                threshold={confirmationsNeeded(data.health)}
                 compact
               />
               <StepStrip payment={payment} />

@@ -4,11 +4,15 @@ import type { Redis } from 'ioredis';
 import type { z } from 'zod';
 import type { apiSchema } from '../../../libs/config/src';
 import type { PrismaClient } from '../../../libs/db/src';
-import type { ChainClient } from '../../../libs/chain/src/chain-client';
 import { cooldownKey } from '../../../libs/chain/src/service-limiter';
+import type {
+  Balance,
+  ChainErrorCategory,
+  ChainSnapshot,
+} from './chain-snapshot';
 export type ApiConfig = z.output<typeof apiSchema>;
 export type ReadState = {
-  chain: Pick<ChainClient, 'getHead' | 'getBalances'>;
+  snapshot: Pick<ChainSnapshot, 'current'>;
   redis: Redis;
   queues: Record<string, Queue>;
   now?: () => number;
@@ -162,7 +166,7 @@ export function registerReads(
     }),
   );
   const readMonitoring = async () => {
-    const [unsettled, unnotified, scheduled, pausedSince] = await Promise.all([
+    const [unsettled, unnotified, scheduled] = await Promise.all([
       db.$queryRaw<
         { at: Date | null }[]
       >`SELECT MIN(COALESCE(sent_at, received_at)) AS at FROM payments WHERE stage IN ('sent', 'received', 'confirming')`,
@@ -175,90 +179,99 @@ export function registerReads(
         orderBy: { createdAt: 'desc' },
         select: { createdAt: true },
       }),
-      state.redis.get('visitor-paused-since'),
     ]);
     return {
       oldestUnsettledAt: unsettled[0]?.at ?? null,
       oldestUnnotifiedAt: unnotified._min.settledAt,
       lastScheduledPurchaseAt: scheduled?.createdAt ?? null,
-      visitorPausedSince: pausedSince
-        ? new Date(Number(pausedSince)).toISOString()
-        : null,
     };
   };
+  const readRedis = () =>
+    Promise.all([
+      Promise.all(
+        Object.entries(state.queues).map(async ([name, queue]) => {
+          const counts = await queue.getJobCounts(
+            'waiting',
+            'prioritized',
+            'active',
+            'delayed',
+          );
+          return [
+            name,
+            Object.values(counts).reduce((sum, n) => sum + n, 0),
+          ] as const;
+        }),
+      ),
+      Promise.all(
+        ['buyer', 'tracker', 'api'].map(
+          async (name) =>
+            [
+              name,
+              Math.max(0, await state.redis.pttl(cooldownKey(name))),
+            ] as const,
+        ),
+      ),
+      state.redis.get('visitor-paused-since'),
+    ]);
+  // Only a database failure fails /health. Redis parts are null while Redis is down, and chain
+  // parts come from the shared snapshot, so a slow or failing RPC provider never delays it.
   app.get('/health', async (_request, reply) => {
-    try {
-      const [
-        head,
-        cursor,
-        openGaps,
-        buyer,
-        shop,
-        depths,
-        cooldowns,
-        monitoring,
-      ] = await Promise.all([
-        state.chain.getHead(),
+    const [database, live] = await Promise.allSettled([
+      Promise.all([
         db.cursor.findUnique({
           where: {
             name: `chain-${config.CHAIN_ID}-${config.SHOP_ADDRESS.toLowerCase()}`,
           },
         }),
         db.scanGap.count({ where: { resolvedAt: null } }),
-        state.chain.getBalances(config.BUYER_ADDRESS as `0x${string}`),
-        state.chain.getBalances(config.SHOP_ADDRESS as `0x${string}`),
-        Promise.all(
-          Object.entries(state.queues).map(async ([name, queue]) => {
-            const counts = await queue.getJobCounts(
-              'waiting',
-              'prioritized',
-              'active',
-              'delayed',
-            );
-            return [
-              name,
-              Object.values(counts).reduce((sum, n) => sum + n, 0),
-            ] as const;
-          }),
-        ),
-        Promise.all(
-          ['buyer', 'tracker', 'api'].map(
-            async (name) =>
-              [
-                name,
-                Math.max(0, await state.redis.pttl(cooldownKey(name))),
-              ] as const,
-          ),
-        ),
         readMonitoring(),
-      ]);
-      const balances = (balance: { native: bigint; usdc: bigint }) => ({
-        ...balance,
-        lowNative: balance.native < config.LOW_NATIVE_BALANCE,
-        lowUsdc: balance.usdc < config.LOW_USDC_BALANCE,
-      });
-      return json({
-        confirmations: config.CONFIRMATIONS,
-        head: head.number,
-        cursor: cursor?.blockNumber ?? null,
-        lag: cursor
-          ? head.number > cursor.blockNumber
-            ? head.number - cursor.blockNumber
-            : 0n
-          : null,
-        openGaps,
-        queueDepth: Object.fromEntries(depths),
-        cooldowns: Object.fromEntries(cooldowns),
-        balances: { buyer: balances(buyer), shop: balances(shop) },
-        monitoring: {
-          ...monitoring,
-          cursorAdvancedAt: cursor?.updatedAt ?? null,
-        },
-      });
-    } catch {
+      ]),
+      readRedis(),
+    ]);
+    if (database.status === 'rejected')
       return reply
         .code(503)
         .send({ error: 'Live health state is unavailable' });
-    }
+    const [cursor, openGaps, monitoring] = database.value;
+    const [depths, cooldowns, pausedSince] =
+      live.status === 'fulfilled' ? live.value : [null, null, null];
+    const { reading, error } = state.snapshot.current();
+    const chain = error ? null : reading;
+    const chainError: ChainErrorCategory | null =
+      error ?? (reading ? null : 'not_loaded');
+    const balances = (balance: Balance) => ({
+      ...balance,
+      lowNative: balance.native < config.LOW_NATIVE_BALANCE,
+      lowUsdc: balance.usdc < config.LOW_USDC_BALANCE,
+    });
+    return json({
+      confirmations: config.CONFIRMATIONS,
+      head: chain?.head ?? null,
+      cursor: cursor?.blockNumber ?? null,
+      lag:
+        chain && cursor
+          ? chain.head > cursor.blockNumber
+            ? chain.head - cursor.blockNumber
+            : 0n
+          : null,
+      openGaps,
+      queueDepth: depths && Object.fromEntries(depths),
+      cooldowns: cooldowns && Object.fromEntries(cooldowns),
+      balances: chain
+        ? {
+            buyer: balances(chain.balances.buyer),
+            shop: balances(chain.balances.shop),
+          }
+        : null,
+      chainError,
+      redisError: live.status === 'rejected' ? 'unavailable' : null,
+      monitoring: {
+        ...monitoring,
+        cursorAdvancedAt: cursor?.updatedAt ?? null,
+        visitorPausedSince: pausedSince
+          ? new Date(Number(pausedSince)).toISOString()
+          : null,
+      },
+    });
   });
 }

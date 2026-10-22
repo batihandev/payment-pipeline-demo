@@ -11,6 +11,7 @@ import {
 } from '../../../libs/chain/src/service-limiter';
 import { RpcError } from '../../../libs/chain/src/rpc-error';
 import { testRedisUrl } from '../../../libs/config/testing/redis';
+import { ChainSnapshot } from './chain-snapshot';
 
 const config = apiSchema.parse({
   DATABASE_URL: 'postgresql://unused/unused',
@@ -30,6 +31,8 @@ let redis: Redis;
 let queue: Queue;
 const today = Date.parse('2026-10-22T12:00:00Z');
 let time = today;
+let chainCalls: string[];
+let snapshot: ChainSnapshot;
 beforeAll(async () => {
   database = await testDatabase();
   redis = new Redis(config.REDIS_URL);
@@ -48,15 +51,29 @@ beforeEach(async () => {
     'TRUNCATE payments, orders, ledger_entries, incidents, cursors, scan_gaps CASCADE',
   );
   time = today;
+  chainCalls = [];
+  snapshot = new ChainSnapshot(
+    {
+      getHead: async () => {
+        chainCalls.push('getHead');
+        return { number: 100n, hash: '0x01' };
+      },
+      getBalances: async (address) => {
+        chainCalls.push('getBalances');
+        return address === config.BUYER_ADDRESS
+          ? { native: 1n, usdc: 20000000n }
+          : { native: 2000000000000000n, usdc: 2n };
+      },
+    },
+    {
+      buyer: config.BUYER_ADDRESS as `0x${string}`,
+      shop: config.SHOP_ADDRESS as `0x${string}`,
+    },
+  );
+  await snapshot.refresh();
   adapter = new FastifyAdapter();
   registerReads(adapter.getInstance(), database.db, config, {
-    chain: {
-      getHead: async () => ({ number: 100n, hash: '0x01' }),
-      getBalances: async (address) =>
-        address === config.BUYER_ADDRESS
-          ? { native: 1n, usdc: 20000000n }
-          : { native: 2000000000000000n, usdc: 2n },
-    },
+    snapshot,
     redis,
     queues: { buyer: queue },
     now: () => time,
@@ -413,4 +430,76 @@ it('reports monitoring timestamps in /health', async () => {
   } finally {
     await redis.del('visitor-paused-since');
   }
+});
+it('answers /health from a fresh chain snapshot without RPC calls', async () => {
+  const calls = chainCalls.length;
+  const response = await adapter.getInstance().inject('/health');
+  expect(response.statusCode).toBe(200);
+  expect(response.json()).toMatchObject({ head: '100', chainError: null });
+  expect(chainCalls).toHaveLength(calls);
+});
+it('returns monitoring with null chain fields when the chain read fails', async () => {
+  snapshot = new ChainSnapshot(
+    {
+      getHead: async () => {
+        throw new RpcError('timeout');
+      },
+      getBalances: async () => ({ native: 1n, usdc: 1n }),
+    },
+    {
+      buyer: config.BUYER_ADDRESS as `0x${string}`,
+      shop: config.SHOP_ADDRESS as `0x${string}`,
+    },
+  );
+  await adapter.close();
+  adapter = new FastifyAdapter();
+  registerReads(adapter.getInstance(), database.db, config, {
+    snapshot,
+    redis,
+    queues: { buyer: queue },
+    now: () => time,
+  });
+  const before = (await adapter.getInstance().inject('/health')).json();
+  expect(before).toMatchObject({
+    head: null,
+    lag: null,
+    balances: null,
+    chainError: 'not_loaded',
+    openGaps: 0,
+  });
+  await snapshot.refresh();
+  const response = await adapter.getInstance().inject('/health');
+  expect(response.statusCode).toBe(200);
+  expect(response.json()).toMatchObject({
+    confirmations: 7,
+    head: null,
+    lag: null,
+    balances: null,
+    chainError: 'timeout',
+    openGaps: 0,
+    cooldowns: { buyer: 0, tracker: 0, api: 0 },
+    monitoring: expect.objectContaining({ oldestUnsettledAt: null }),
+  });
+});
+it('still answers /health with null Redis parts while Redis is down', async () => {
+  const down = async () => {
+    throw new Error('connection refused');
+  };
+  await adapter.close();
+  adapter = new FastifyAdapter();
+  registerReads(adapter.getInstance(), database.db, config, {
+    snapshot,
+    redis: { pttl: down, get: down } as unknown as Redis,
+    queues: {},
+    now: () => time,
+  });
+  const response = await adapter.getInstance().inject('/health');
+  expect(response.statusCode).toBe(200);
+  expect(response.json()).toMatchObject({
+    head: '100',
+    queueDepth: null,
+    cooldowns: null,
+    redisError: 'unavailable',
+    monitoring: expect.objectContaining({ visitorPausedSince: null }),
+  });
 });

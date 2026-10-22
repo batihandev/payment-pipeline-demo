@@ -84,6 +84,8 @@ Set `TRUST_PROXY=true` when the API runs behind exactly one reverse proxy or tun
 
 Each condition must hold for its whole window, so failures that the services recover from on their own do not alert.
 
+Head and balances come from one chain reading that the API refreshes at most every 10 seconds, so `/health` never waits on the RPC provider. Before the first reading, or when the latest read failed, they are `null` and `chainError` names the error category. Queue depth and cooldowns are `null` while Redis is down. `/health` answers `503` only when the database is down.
+
 ## Web views
 
 The dashboard at `/` has a checkout card, a small widget and a full panel. The full panel charts settled payments per day and per week from `/stats/daily`. The widget can also be shown alone at `/?view=widget`.

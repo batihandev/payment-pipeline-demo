@@ -12,6 +12,7 @@ import {
 } from './test-purchases';
 import { proxyTrust } from './proxy';
 import { testRedisUrl } from '../../../libs/config/testing/redis';
+import { ChainSnapshot, buyerGas } from './chain-snapshot';
 jest.setTimeout(120000);
 let database: Awaited<ReturnType<typeof testDatabase>>;
 let redis: Redis;
@@ -22,7 +23,10 @@ let purchases: Purchases;
 let limits: VisitorLimits;
 let gas: GasReading;
 let tick: number;
-function build(trustProxy: ReturnType<typeof proxyTrust>) {
+function build(
+  trustProxy: ReturnType<typeof proxyTrust>,
+  latestBuyerGas: () => Promise<GasReading> = async () => gas,
+) {
   const built = new FastifyAdapter({ trustProxy });
   registerTestPurchases(
     built.getInstance(),
@@ -33,7 +37,7 @@ function build(trustProxy: ReturnType<typeof proxyTrust>) {
     {
       prefix,
       limits,
-      latestBuyerGas: async () => gas,
+      latestBuyerGas,
       now: () => new Date(now.getTime() + tick++),
     },
   );
@@ -260,4 +264,44 @@ it('ignores expired orders when checking the queue and counting position', async
   const response = await buy();
   expect(response.statusCode).toBe(202);
   expect(response.json().position).toBe(26);
+});
+
+it('admits from a fresh chain snapshot without an RPC call', async () => {
+  const calls: string[] = [];
+  const snapshot = new ChainSnapshot(
+    {
+      getHead: async () => {
+        calls.push('getHead');
+        return { number: 1n, hash: '0x01' };
+      },
+      getBalances: async () => {
+        calls.push('getBalances');
+        return { native: limits.gasFloor - 1n, usdc: 0n };
+      },
+    },
+    { buyer: `0x${'11'.repeat(20)}`, shop: `0x${'22'.repeat(20)}` },
+    { now: () => now.getTime() },
+  );
+  await snapshot.refresh();
+  const before = calls.length;
+  await adapter.close();
+  adapter = build(proxyTrust(false), buyerGas(snapshot));
+  const response = await buy();
+  expect(response.statusCode).toBe(503);
+  expect(response.json()).toEqual({ error: 'paused' });
+  expect(calls).toHaveLength(before);
+});
+
+it('admits without waiting on a chain read that has not finished', async () => {
+  const snapshot = new ChainSnapshot(
+    {
+      getHead: () => new Promise<never>(() => {}),
+      getBalances: () => new Promise<never>(() => {}),
+    },
+    { buyer: `0x${'11'.repeat(20)}`, shop: `0x${'22'.repeat(20)}` },
+  );
+  await adapter.close();
+  adapter = build(proxyTrust(false), buyerGas(snapshot));
+  expect((await buy('192.0.2.1')).statusCode).toBe(202);
+  expect((await buy('192.0.2.2')).statusCode).toBe(202);
 });

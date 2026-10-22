@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { paymentsClient, usePayments } from './use-payments';
 import { useQueuePosition } from './use-queue-position';
 import { ConfirmationBar, Receipt } from './receipt';
-import { money, purchaseMessage, stageView } from './view';
+import { confirmationsNeeded, money, purchaseMessage, stageView } from './view';
 import './styles.css';
 import './checkout.css';
 
@@ -24,7 +24,9 @@ export function Checkout({
   const inFlight = useRef(false);
   const payment = data?.payments.find((p) => p.orderId === orderId);
   const view =
-    payment && data ? stageView(payment, data.health.confirmations) : null;
+    payment && data
+      ? stageView(payment, confirmationsNeeded(data.health))
+      : null;
   const position = useQueuePosition(
     apiBaseUrl,
     orderId ?? null,
@@ -150,11 +152,11 @@ export function Checkout({
                     className="tp-block-stack"
                     aria-hidden="true"
                     style={{
-                      gridTemplateColumns: `repeat(${data.health.confirmations}, minmax(0, 1fr))`,
+                      gridTemplateColumns: `repeat(${confirmationsNeeded(data.health)}, minmax(0, 1fr))`,
                     }}
                   >
                     {Array.from(
-                      { length: data.health.confirmations },
+                      { length: confirmationsNeeded(data.health) },
                       (_, index) => (
                         <span
                           key={index}
@@ -169,7 +171,7 @@ export function Checkout({
                   </div>
                   <ConfirmationBar
                     payment={payment}
-                    threshold={data.health.confirmations}
+                    threshold={confirmationsNeeded(data.health)}
                   />
                   {view.final && <span>Final</span>}
                 </div>
@@ -186,7 +188,7 @@ export function Checkout({
                 <div className="tp-printed-receipt">
                   <Receipt
                     payment={payment}
-                    threshold={data.health.confirmations}
+                    threshold={confirmationsNeeded(data.health)}
                     highlighted
                   />
                 </div>

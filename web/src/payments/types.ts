@@ -29,22 +29,24 @@ export type DailyStat = {
 };
 export type Health = {
   confirmations: number;
-  head: string;
+  head: string | null;
   cursor: string | null;
   lag: string | null;
   openGaps: number;
-  queueDepth: Record<string, number>;
-  cooldowns: Record<string, number>;
+  queueDepth: Record<string, number> | null;
+  cooldowns: Record<string, number> | null;
   balances: Record<
     string,
     { native: string; usdc: string; lowNative: boolean; lowUsdc: boolean }
-  >;
+  > | null;
+  chainError: string | null;
 };
 export type Dashboard = {
   payments: Payment[];
   stats: Stats;
   daily: DailyStat[];
-  health: Health;
+  /** Null until the first /health read arrives. */
+  health: Health | null;
   incidents: Incident[];
 };
 export type Snapshot = {
