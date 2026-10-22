@@ -8,12 +8,11 @@ export async function pruneOlderThan(
       where: {
         // Incidents newer than the cutoff still reference their payment.
         incidents: { none: { createdAt: { gte: cutoff } } },
+        // Only final payments go: settled ones by settle time, unmatched ones by receive time.
+        final: true,
         OR: [
-          {
-            OR: [{ final: true }, { stage: 'notified' }],
-            settledAt: { lt: cutoff },
-          },
-          { orderId: null, final: true, receivedAt: { lt: cutoff } },
+          { settledAt: { lt: cutoff } },
+          { orderId: null, receivedAt: { lt: cutoff } },
         ],
       },
       select: { id: true },

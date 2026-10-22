@@ -230,3 +230,23 @@ it('keeps an old unmatched payment that is not final', async () => {
   await pruneOlderThan(db, cutoff);
   expect(await db.payment.count()).toBe(1);
 });
+it('keeps an old notified payment and its order until the payment is final', async () => {
+  const { db } = database;
+  const o = await order('paid', old);
+  const p = await settled(o.id, old, { final: false });
+  const counts = await pruneOlderThan(db, cutoff);
+  expect(counts).toMatchObject({
+    payments: 0,
+    ledgerEntries: 0,
+    notices: 0,
+    events: 0,
+    orders: 0,
+  });
+  expect(await db.payment.findUnique({ where: { id: p.id } })).not.toBeNull();
+  expect(await db.order.count()).toBe(1);
+  await db.payment.update({ where: { id: p.id }, data: { final: true } });
+  await expect(pruneOlderThan(db, cutoff)).resolves.toMatchObject({
+    payments: 1,
+    orders: 1,
+  });
+});
