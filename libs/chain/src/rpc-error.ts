@@ -1,3 +1,5 @@
+import { BaseError, TimeoutError } from 'viem';
+
 export type RpcErrorKind =
   'rate_limit' | 'timeout' | 'range_too_large' | 'transient' | 'permanent';
 export class RpcError extends Error {
@@ -6,36 +8,60 @@ export class RpcError extends Error {
   }
 }
 
-export function errorDetails(error: unknown): string {
+// Each level of the cause chain: the provider's own words, plus numeric HTTP statuses and RPC
+// codes. A viem error's message also embeds the request body (addresses, block numbers), so
+// only its shortMessage and details are read.
+function chain(error: unknown): { text: string[]; codes: number[] } {
   const seen = new Set<unknown>();
-  const parts: string[] = [];
+  const text: string[] = [];
+  const codes: number[] = [];
   while (error && typeof error === 'object' && !seen.has(error)) {
     seen.add(error);
-    for (const key of ['message', 'details', 'code', 'status']) {
+    const textKeys =
+      error instanceof BaseError
+        ? ['shortMessage', 'details']
+        : ['message', 'details'];
+    for (const key of textKeys) {
       const value = Reflect.get(error, key);
-      if (typeof value === 'string' || typeof value === 'number')
-        parts.push(String(value));
+      if (typeof value === 'string') text.push(value);
+    }
+    for (const key of ['code', 'status']) {
+      const value = Reflect.get(error, key);
+      if (typeof value === 'number') codes.push(value);
+      else if (typeof value === 'string') text.push(value);
     }
     error = Reflect.get(error, 'cause');
   }
-  return parts.join(' ').toLowerCase();
+  return { text, codes };
+}
+
+export function errorDetails(error: unknown): string {
+  return chain(error).text.join(' ').toLowerCase();
 }
 
 export function classifyRpcError(error: unknown): RpcError {
   if (error instanceof RpcError) return error;
+  if (
+    error instanceof BaseError &&
+    error.walk((e) => e instanceof TimeoutError)
+  )
+    return new RpcError('timeout');
+  const { codes } = chain(error);
   const details = errorDetails(error);
-  const kind: RpcErrorKind = /429|rate.?limit|too many requests/.test(details)
-    ? 'rate_limit'
-    : /timeout|timed out|etimedout/.test(details)
-      ? 'timeout'
-      : /range.*(large|wide)|too many (results|blocks)|response size/.test(
-            details,
-          )
-        ? 'range_too_large'
-        : /5\d\d|econnreset|econnrefused|socket|network|fetch failed|temporar/.test(
+  const kind: RpcErrorKind =
+    codes.includes(429) || /rate.?limit|too many requests/.test(details)
+      ? 'rate_limit'
+      : /timeout|timed out|etimedout/.test(details)
+        ? 'timeout'
+        : /range.*(large|wide)|too many (results|blocks)|response size|limited to (a )?\d+ range/.test(
               details,
             )
-          ? 'transient'
-          : 'permanent';
+          ? 'range_too_large'
+          : codes.some((code) => code >= 500 && code <= 599) ||
+              /econnreset|econnrefused|socket|network|fetch failed|temporar/.test(
+                details,
+              )
+            ? 'transient'
+            : 'permanent';
   return new RpcError(kind);
 }

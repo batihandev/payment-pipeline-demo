@@ -1,3 +1,4 @@
+import { HttpRequestError, RpcRequestError, TimeoutError } from 'viem';
 import { RpcError, classifyRpcError } from './rpc-error';
 import { RpcLimiter } from './rpc-limiter';
 
@@ -54,5 +55,48 @@ it.each([
     const error = classifyRpcError(failure);
     expect(error.kind).toBe(kind);
     expect(error.message).toBe(`RPC request failed: ${kind}`);
+  },
+);
+
+const body = {
+  method: 'eth_getLogs',
+  // The USDC address contains "538" and "5426": digits that must not read as HTTP statuses.
+  params: [
+    {
+      address: '0x036cbd53842c5426634e7929541ec2318f3dcf7e',
+      fromBlock: '0x2e72ffd',
+    },
+  ],
+};
+const url = 'https://rpc.example';
+
+it.each([
+  [
+    new RpcRequestError({
+      body,
+      url,
+      error: { code: -32614, message: 'eth_getLogs is limited to a 200 range' },
+    }),
+    'range_too_large',
+  ],
+  [
+    new RpcRequestError({
+      body,
+      url,
+      error: { code: -32602, message: 'invalid params' },
+    }),
+    'permanent',
+  ],
+  [new HttpRequestError({ body, url, status: 429 }), 'rate_limit'],
+  [new HttpRequestError({ body, url, status: 502 }), 'transient'],
+  [
+    new HttpRequestError({ body, url, status: 400, details: 'bad request' }),
+    'permanent',
+  ],
+  [new TimeoutError({ body, url }), 'timeout'],
+] as const)(
+  'classifies viem errors by their fields, not the request they carry (%#)',
+  (failure, kind) => {
+    expect(classifyRpcError(failure).kind).toBe(kind);
   },
 );
