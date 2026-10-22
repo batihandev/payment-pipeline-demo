@@ -6,6 +6,7 @@ import { testDatabase } from '../../../libs/db/testing/database';
 import { Purchases } from '../../buyer/src/purchases';
 import { BuyerJobs, type BuyerJobData } from '../../buyer/src/jobs';
 import {
+  recordGasPause,
   registerTestPurchases,
   type GasReading,
   type VisitorLimits,
@@ -195,10 +196,33 @@ it('pauses below the gas floor', async () => {
   const paused = await buy();
   expect(paused.statusCode).toBe(503);
   expect(paused.json()).toEqual({ error: 'paused' });
-  expect(await redis.get('visitor-paused-since')).not.toBeNull();
   expect(await database.db.order.count()).toBe(0);
   gas = { native: limits.gasFloor, at: now.getTime() };
   expect((await buy()).statusCode).toBe(202);
+});
+
+it('records the gas-floor pause on each chain refresh, without visitor clicks', async () => {
+  let native = limits.gasFloor - 1n;
+  let time = now.getTime();
+  const snapshot = new ChainSnapshot(
+    {
+      getHead: async () => ({ number: 1n, hash: '0x01' }),
+      getBalances: async () => ({ native, usdc: 0n }),
+    },
+    { buyer: `0x${'11'.repeat(20)}`, shop: `0x${'22'.repeat(20)}` },
+    {
+      now: () => time,
+      onRefresh: recordGasPause(redis, limits.gasFloor, () => time),
+    },
+  );
+  await snapshot.refresh();
+  expect(await redis.get('visitor-paused-since')).toBe(String(now.getTime()));
+  time += 10000;
+  await snapshot.refresh();
+  expect(await redis.get('visitor-paused-since')).toBe(String(now.getTime()));
+  native = limits.gasFloor;
+  time += 10000;
+  await snapshot.refresh();
   expect(await redis.get('visitor-paused-since')).toBeNull();
 });
 

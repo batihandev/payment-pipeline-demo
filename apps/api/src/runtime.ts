@@ -8,7 +8,7 @@ import { serviceLimiter } from '../../../libs/chain/src/service-limiter';
 import { registerReads, type ApiConfig } from './reads';
 import { registerEvents } from './events';
 import { registerNotices } from './notices';
-import { registerTestPurchases } from './test-purchases';
+import { recordGasPause, registerTestPurchases } from './test-purchases';
 import { ChainSnapshot, buyerGas } from './chain-snapshot';
 import { Purchases, purchaseOptions } from '../../buyer/src/purchases';
 import { BuyerJobs, type BuyerJobData } from '../../buyer/src/jobs';
@@ -50,10 +50,14 @@ export class ApiRuntime implements OnModuleDestroy {
     registerNotices(app, this.db, config.NOTICE_SECRET);
     const purchases = new Purchases(this.db, purchaseOptions(config));
     const queue = this.queues.buyer as Queue<BuyerJobData>;
-    const snapshot = new ChainSnapshot(chain, {
-      buyer: config.BUYER_ADDRESS as `0x${string}`,
-      shop: config.SHOP_ADDRESS as `0x${string}`,
-    });
+    const snapshot = new ChainSnapshot(
+      chain,
+      {
+        buyer: config.BUYER_ADDRESS as `0x${string}`,
+        shop: config.SHOP_ADDRESS as `0x${string}`,
+      },
+      { onRefresh: recordGasPause(this.redis, config.GAS_FLOOR) },
+    );
     registerTestPurchases(
       app,
       this.redis,

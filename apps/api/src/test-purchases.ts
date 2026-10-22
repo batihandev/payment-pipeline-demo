@@ -30,6 +30,22 @@ if redis.call('INCR', KEYS[2]) == 1 then redis.call('EXPIRE', KEYS[2], 93600) en
 return {0, 0}
 `;
 
+/**
+ * Keeps `visitor-paused-since` in step with each chain reading: set when the buyer's gas
+ * falls below the floor, cleared once it is topped up.
+ */
+export function recordGasPause(
+  redis: Redis,
+  gasFloor: bigint,
+  now: () => number = Date.now,
+): (reading: { balances: { buyer: { native: bigint } } }) => Promise<void> {
+  return async (reading) => {
+    if (reading.balances.buyer.native < gasFloor)
+      await redis.set(pausedSince, now(), 'NX');
+    else await redis.del(pausedSince);
+  };
+}
+
 export function registerTestPurchases(
   app: FastifyInstance,
   redis: Redis,
@@ -61,13 +77,11 @@ export function registerTestPurchases(
 
   async function paused(now: Date): Promise<boolean> {
     const reading = await options.latestBuyerGas();
-    const low =
+    return (
       reading !== null &&
       now.getTime() - reading.at <= staleReadingMs &&
-      reading.native < limits.gasFloor;
-    if (low) await redis.set(pausedSince, now.getTime(), 'NX');
-    else await redis.del(pausedSince);
-    return low;
+      reading.native < limits.gasFloor
+    );
   }
 
   app.post('/test-purchases', (request, reply) =>
