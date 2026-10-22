@@ -9,6 +9,10 @@ export type TransferLog = {
   to: Address;
   amount: bigint;
 };
+export type TransactionReceipt = {
+  blockNumber: bigint;
+  status: 'success' | 'reverted';
+};
 export interface ChainClient {
   getHead(): Promise<{ number: bigint; hash: Hex }>;
   getFinalized(): Promise<bigint>;
@@ -16,7 +20,7 @@ export interface ChainClient {
   getTransferLogs(from: bigint, to: bigint): Promise<TransferLog[]>;
   getBalances(addr: Address): Promise<{ native: bigint; usdc: bigint }>;
   sendRawTransaction(raw: Hex): Promise<Hex>;
-  getTransactionReceipt(hash: Hex): Promise<{ blockNumber: bigint } | null>;
+  getTransactionReceipt(hash: Hex): Promise<TransactionReceipt | null>;
   /** Next nonce counting the transactions waiting in the mempool. */
   getNonce(addr: Address): Promise<number>;
   /** Next nonce counting only mined transactions. */

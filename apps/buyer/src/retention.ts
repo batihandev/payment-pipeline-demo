@@ -8,11 +8,21 @@ export async function pruneOlderThan(
       where: {
         // Incidents newer than the cutoff still reference their payment.
         incidents: { none: { createdAt: { gte: cutoff } } },
-        // Only final payments go: settled ones by settle time, unmatched ones by receive time.
-        final: true,
         OR: [
-          { settledAt: { lt: cutoff } },
-          { orderId: null, receivedAt: { lt: cutoff } },
+          // Final payments: settled ones by settle time, unmatched ones by receive time.
+          {
+            final: true,
+            OR: [
+              { settledAt: { lt: cutoff } },
+              { orderId: null, receivedAt: { lt: cutoff } },
+            ],
+          },
+          // Transfers closed because they reverted or were replaced; they can never land.
+          {
+            stage: 'sent',
+            order: { sendState: 'failed' },
+            sentAt: { lt: cutoff },
+          },
         ],
       },
       select: { id: true },

@@ -13,7 +13,12 @@ import {
   type Transport,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import type { ChainClient, TransferLog, TransferSigner } from './chain-client';
+import type {
+  ChainClient,
+  TransactionReceipt,
+  TransferLog,
+  TransferSigner,
+} from './chain-client';
 import { classifyRpcError, errorDetails, RpcError } from './rpc-error';
 import { RpcLimiter } from './rpc-limiter';
 
@@ -133,13 +138,13 @@ export class ViemChainClient implements ChainClient, TransferSigner {
       }
     });
   }
-  getTransactionReceipt(hash: Hex): Promise<{ blockNumber: bigint } | null> {
+  getTransactionReceipt(hash: Hex): Promise<TransactionReceipt | null> {
     return this.call(async () => {
       try {
-        return {
-          blockNumber: (await this.client.getTransactionReceipt({ hash }))
-            .blockNumber,
-        };
+        const { blockNumber, status } = await this.client.getTransactionReceipt(
+          { hash },
+        );
+        return { blockNumber, status };
       } catch (error) {
         if (error instanceof TransactionReceiptNotFoundError) return null;
         throw error;

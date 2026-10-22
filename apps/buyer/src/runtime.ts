@@ -165,6 +165,20 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
         },
       },
     );
+    await this.queue.upsertJobScheduler(
+      'buyer-unseen',
+      { every: 60_000 },
+      {
+        name: 'check-unseen',
+        data: {},
+        opts: {
+          ...retryOptions,
+          priority: 4,
+          removeOnComplete: 100,
+          removeOnFail: 100,
+        },
+      },
+    );
     await this.jobs.recoverPending();
     void this.worker.run().catch(() => console.error('Buyer worker stopped.'));
   }
@@ -196,6 +210,9 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
           console.log(`Retention removed ${JSON.stringify(counts)}`);
           return;
         }
+        case 'check-unseen':
+          await this.sender.checkUnseen(now);
+          return;
         case 'refill-check':
           await this.refill.run(exhausted);
           return;

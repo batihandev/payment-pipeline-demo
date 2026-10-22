@@ -306,7 +306,7 @@ it('does not re-sign when the stored transfer has landed', async () => {
   const row = await order();
   chain.getTransactionReceipt = async () => {
     chain.calls.push('getTransactionReceipt');
-    return { blockNumber: 1n };
+    return { blockNumber: 1n, status: 'success' as const };
   };
   await sender.sendForOrder(row.id);
   const sent = await database.db.order.findUniqueOrThrow({
@@ -413,4 +413,80 @@ it('counts in-flight transfers from the database after a restart', async () => {
     { buyer, shop, chainId: 84532 },
   );
   expect(await restarted.inFlight()).toBe(3);
+});
+
+describe('transfers the tracker has not seen', () => {
+  const checkedAt = new Date(Date.now() + 3 * 60 * 1000);
+  async function sentOrder(source: 'visitor' | 'schedule' = 'visitor') {
+    const row = await order(source);
+    await sender.sendForOrder(row.id);
+    chain.calls = [];
+    return database.db.order.findUniqueOrThrow({ where: { id: row.id } });
+  }
+  it('closes a transfer that reverted on chain', async () => {
+    const row = await sentOrder('schedule');
+    chain.reverted.add(row.transactionHash as Hex);
+    expect(await sender.inFlight()).toBe(1);
+    await sender.checkUnseen(checkedAt);
+    expect(
+      await database.db.order.findUniqueOrThrow({ where: { id: row.id } }),
+    ).toMatchObject({ sendState: 'failed', status: 'expired' });
+    expect(await sender.inFlight()).toBe(0);
+    const payment = await database.db.payment.findFirstOrThrow({
+      where: { orderId: row.id },
+    });
+    expect(payment.stage).toBe('sent');
+    expect(
+      await database.db.incident.findFirstOrThrow({
+        where: { kind: 'send_reverted' },
+      }),
+    ).toMatchObject({
+      paymentId: payment.id,
+      whatHappened: 'Transfer reverted on chain.',
+      howHandled: 'Closed the order; nothing was credited.',
+    });
+    expect(
+      await database.db.dailyBudget.findUniqueOrThrow({ where: { day } }),
+    ).toMatchObject({ reservedCount: 0, reservedAmount: 0n });
+  });
+  it('closes a transfer whose nonce another transaction used', async () => {
+    const row = await sentOrder();
+    chain.nonce = Number(row.nonce) + 1;
+    await sender.checkUnseen(checkedAt);
+    expect(
+      await database.db.order.findUniqueOrThrow({ where: { id: row.id } }),
+    ).toMatchObject({ sendState: 'failed', status: 'expired' });
+    expect(await sender.inFlight()).toBe(0);
+    expect(
+      await database.db.incident.count({ where: { kind: 'send_dropped' } }),
+    ).toBe(1);
+    expect(chain.calls).not.toContain('sendRawTransaction');
+    expect(
+      await database.db.dailyBudget.findUniqueOrThrow({ where: { day } }),
+    ).toMatchObject({ reservedCount: 1, reservedAmount: 100n });
+  });
+  it('rebroadcasts the stored transfer while its nonce is unused', async () => {
+    const row = await sentOrder();
+    await sender.checkUnseen(checkedAt);
+    expect(chain.calls).toEqual([
+      'getConfirmedNonce',
+      'getTransactionReceipt',
+      'sendRawTransaction',
+    ]);
+    expect(chain.signed).toBe(1);
+    expect(
+      await database.db.order.findUniqueOrThrow({ where: { id: row.id } }),
+    ).toMatchObject({ sendState: 'sent', status: 'open' });
+    expect(await sender.inFlight()).toBe(1);
+  });
+  it('leaves a landed transfer and a recent one alone', async () => {
+    const landed = await sentOrder();
+    chain.receipts.add(landed.transactionHash as Hex);
+    await sender.checkUnseen(checkedAt);
+    expect(chain.calls).not.toContain('sendRawTransaction');
+    chain.calls = [];
+    await sender.checkUnseen(new Date());
+    expect(chain.calls).toEqual([]);
+    expect(await sender.inFlight()).toBe(1);
+  });
 });

@@ -9,6 +9,7 @@ export class ScriptedChain implements ChainClient, TransferSigner {
   private readonly balances = new Map<Address, bigint>();
   accepted = new Set<Hex>();
   receipts = new Set<Hex>();
+  reverted = new Set<Hex>();
   fail:
     'sign' | 'broadcast' | 'permanent-broadcast' | 'after-broadcast' | null =
     null;
@@ -30,7 +31,11 @@ export class ScriptedChain implements ChainClient, TransferSigner {
   };
   getTransactionReceipt = async (hash: Hex) => {
     this.calls.push('getTransactionReceipt');
-    return this.receipts.has(hash) ? { blockNumber: 1n } : null;
+    if (this.reverted.has(hash))
+      return { blockNumber: 1n, status: 'reverted' as const };
+    return this.receipts.has(hash)
+      ? { blockNumber: 1n, status: 'success' as const }
+      : null;
   };
   async signTransfer(
     from: Address,

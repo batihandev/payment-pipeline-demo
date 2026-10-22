@@ -14,7 +14,7 @@ const buyer = privateKeyToAccount(key).address;
 const shop = `0x${'22'.repeat(20)}` as const;
 const token = `0x${'33'.repeat(20)}` as const;
 const hash = `0x${'aa'.repeat(32)}` as const;
-function client(fail = false) {
+function client(fail = false, receipt: unknown = null) {
   return new ViemChainClient(
     {
       chainId: 84532,
@@ -30,7 +30,7 @@ function client(fail = false) {
         if (method === 'eth_getTransactionCount') return '0x7';
         if (method === 'eth_getBalance') return '0x64';
         if (method === 'eth_call') return `0x${'0'.repeat(62)}c8`;
-        if (method === 'eth_getTransactionReceipt') return null;
+        if (method === 'eth_getTransactionReceipt') return receipt;
         if (method === 'eth_sendRawTransaction')
           throw { code: -32000, message: 'already known' };
         if (method === 'eth_gasPrice') return '0xa';
@@ -67,6 +67,30 @@ it('treats an already known raw transaction as its original hash', async () => {
 });
 it('returns no receipt when the transaction has not landed', async () => {
   expect(await client().getTransactionReceipt(hash)).toBeNull();
+});
+it('reports whether a landed transaction succeeded or reverted', async () => {
+  const receipt = (status: string) => ({
+    blockHash: `0x${'bb'.repeat(32)}`,
+    blockNumber: '0x5',
+    contractAddress: null,
+    cumulativeGasUsed: '0x1',
+    effectiveGasPrice: '0x1',
+    from: buyer,
+    gasUsed: '0x1',
+    logs: [],
+    logsBloom: `0x${'00'.repeat(256)}`,
+    status,
+    to: token,
+    transactionHash: hash,
+    transactionIndex: '0x0',
+    type: '0x0',
+  });
+  expect(
+    await client(false, receipt('0x1')).getTransactionReceipt(hash),
+  ).toEqual({ blockNumber: 5n, status: 'success' });
+  expect(
+    await client(false, receipt('0x0')).getTransactionReceipt(hash),
+  ).toEqual({ blockNumber: 5n, status: 'reverted' });
 });
 it('sanitizes RPC failures at the transport boundary', async () => {
   await expect(client(true).getNonce(buyer)).rejects.toMatchObject({

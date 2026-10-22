@@ -19,6 +19,7 @@ class NonceResynced extends RpcError {
   }
 }
 type Target = { kind: 'order' | 'sweep'; id: string };
+const UNSEEN_AFTER_MS = 2 * 60 * 1000;
 type SenderOptions = { buyer: Address; shop: Address; chainId: number };
 export class OrderSender {
   constructor(
@@ -35,6 +36,81 @@ export class OrderSender {
         sendState: 'sent',
         payments: { some: { stage: 'sent' } },
       },
+    });
+  }
+  /**
+   * Closes or rebroadcasts buyer transfers the tracker has not seen two minutes after sending.
+   * A transfer that reverted, or whose nonce another transaction used, can never pay its order,
+   * so the order is closed and leaves the in-flight count. Otherwise the stored transfer is
+   * broadcast again, which is idempotent.
+   */
+  async checkUnseen(now = new Date()): Promise<void> {
+    const orders = await this.db.order.findMany({
+      where: {
+        sendState: 'sent',
+        payments: {
+          some: {
+            stage: 'sent',
+            sentAt: { lt: new Date(now.getTime() - UNSEEN_AFTER_MS) },
+          },
+        },
+      },
+      orderBy: { nonce: 'asc' },
+    });
+    if (!orders.length) return;
+    // Read before the receipts, as in broadcast(), to narrow the lagging-node window.
+    const confirmed = BigInt(
+      await this.chain.getConfirmedNonce(this.options.buyer),
+    );
+    for (const order of orders) {
+      if (!order.transactionHash || !order.signedTransaction) continue;
+      const receipt = await this.chain.getTransactionReceipt(
+        order.transactionHash as Hex,
+      );
+      if (receipt?.status === 'reverted')
+        await this.closeUnseen(order.id, {
+          kind: 'send_reverted',
+          whatHappened: 'Transfer reverted on chain.',
+        });
+      else if (receipt) continue;
+      else if (order.nonce !== null && confirmed > order.nonce)
+        await this.closeUnseen(order.id, {
+          kind: 'send_dropped',
+          whatHappened:
+            'Another transfer used this nonce, so it can never land.',
+        });
+      else await this.chain.sendRawTransaction(order.signedTransaction as Hex);
+    }
+  }
+  private async closeUnseen(
+    orderId: string,
+    incident: { kind: string; whatHappened: string },
+  ): Promise<void> {
+    await this.db.$transaction(async (tx) => {
+      await this.lockRow(tx, { kind: 'order', id: orderId });
+      const order = await tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: { payments: true },
+      });
+      const payment = order.payments.find((p) => p.stage === 'sent');
+      // The tracker may have seen the transfer since the check began.
+      if (order.sendState !== 'sent' || !payment) return;
+      await tx.order.update({
+        where: { id: orderId },
+        data: { sendState: 'failed', status: 'expired' },
+      });
+      if (order.source === 'schedule')
+        await new BudgetReservation(tx).release(
+          order.createdAt,
+          order.expectedAmount,
+        );
+      await tx.incident.create({
+        data: {
+          ...incident,
+          paymentId: payment.id,
+          howHandled: 'Closed the order; nothing was credited.',
+        },
+      });
     });
   }
   sendForOrder(orderId: string, exhausted = false): Promise<void> {

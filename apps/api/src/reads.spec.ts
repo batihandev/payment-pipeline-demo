@@ -541,3 +541,27 @@ it('leaves unmatched payments out of the oldest unsettled payment', async () => 
       .oldestUnsettledAt,
   ).toBe('2026-10-22T09:00:00.000Z');
 });
+it('leaves transfers closed as reverted or dropped out of the oldest unsettled payment', async () => {
+  const closed = await database.db.order.create({
+    data: {
+      item: 'Duck',
+      price: 1n,
+      expectedAmount: 1n,
+      source: 'visitor',
+      status: 'expired',
+      sendState: 'failed',
+      expiresAt: new Date(),
+      signedTransaction: 'x',
+    },
+  });
+  await payment({
+    orderId: closed.id,
+    stage: 'sent',
+    receivedAt: null,
+    sentAt: new Date('2026-10-01T00:00:00Z'),
+  });
+  expect(
+    (await adapter.getInstance().inject('/health')).json().monitoring
+      .oldestUnsettledAt,
+  ).toBeNull();
+});

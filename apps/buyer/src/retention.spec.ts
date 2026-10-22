@@ -250,3 +250,59 @@ it('keeps an old notified payment and its order until the payment is final', asy
     orders: 1,
   });
 });
+it('deletes an old transfer that was closed because it can never land', async () => {
+  const { db } = database;
+  const o = await db.order.create({
+    data: {
+      item: 'Item',
+      status: 'expired',
+      sendState: 'failed',
+      createdAt: old,
+      expiresAt: old,
+      price: 100n,
+      expectedAmount: 101n,
+      source: 'visitor',
+    },
+  });
+  await db.payment.create({
+    data: {
+      provider: 'chain',
+      externalKey: `sent:${o.id}`,
+      orderId: o.id,
+      amount: 101n,
+      stage: 'sent',
+      sentAt: old,
+    },
+  });
+  await expect(pruneOlderThan(db, cutoff)).resolves.toMatchObject({
+    payments: 1,
+    orders: 1,
+  });
+});
+it('keeps an old transfer that is still in flight', async () => {
+  const { db } = database;
+  const o = await db.order.create({
+    data: {
+      item: 'Item',
+      status: 'expired',
+      sendState: 'sent',
+      createdAt: old,
+      expiresAt: old,
+      price: 100n,
+      expectedAmount: 101n,
+      source: 'visitor',
+    },
+  });
+  await db.payment.create({
+    data: {
+      provider: 'chain',
+      externalKey: `sent:${o.id}`,
+      orderId: o.id,
+      amount: 101n,
+      stage: 'sent',
+      sentAt: old,
+    },
+  });
+  await pruneOlderThan(db, cutoff);
+  expect(await db.payment.count()).toBe(1);
+});
