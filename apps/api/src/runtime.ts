@@ -8,7 +8,7 @@ import { serviceLimiter } from '../../../libs/chain/src/service-limiter';
 import { registerReads, type ApiConfig } from './reads';
 import { registerEvents } from './events';
 import { registerNotices } from './notices';
-import { registerTestPurchases } from './test-purchases';
+import { registerTestPurchases, type GasReading } from './test-purchases';
 import { Purchases, purchaseOptions } from '../../buyer/src/purchases';
 import { BuyerJobs, type BuyerJobData } from '../../buyer/src/jobs';
 export class ApiRuntime implements OnModuleDestroy {
@@ -49,11 +49,39 @@ export class ApiRuntime implements OnModuleDestroy {
     registerNotices(app, this.db, config.NOTICE_SECRET);
     const purchases = new Purchases(this.db, purchaseOptions(config));
     const queue = this.queues.buyer as Queue<BuyerJobData>;
+    let gas: { reading: GasReading; checked: number } = {
+      reading: null,
+      checked: 0,
+    };
+    const latestBuyerGas = async (): Promise<GasReading> => {
+      const at = Date.now();
+      if (at - gas.checked < 10000) return gas.reading;
+      try {
+        const { native } = await chain.getBalances(
+          config.BUYER_ADDRESS as `0x${string}`,
+        );
+        gas = { reading: { native, at }, checked: at };
+      } catch {
+        gas = { ...gas, checked: at };
+      }
+      return gas.reading;
+    };
     registerTestPurchases(
       app,
       this.redis,
+      this.db,
       purchases,
       new BuyerJobs(this.db, purchases, queue),
+      {
+        latestBuyerGas,
+        limits: {
+          perMinute: config.VISITOR_PER_MINUTE,
+          perDay: config.VISITOR_PER_DAY,
+          queueLimit: config.VISITOR_QUEUE_LIMIT,
+          dailyLimit: config.VISITOR_DAILY_LIMIT,
+          gasFloor: config.GAS_FLOOR,
+        },
+      },
     );
     registerReads(app, this.db, config, {
       chain,

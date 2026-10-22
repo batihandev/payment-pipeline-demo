@@ -12,7 +12,7 @@ export async function createApi(
 ): Promise<NestFastifyApplication> {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule.forRoot(config),
-    new FastifyAdapter(),
+    new FastifyAdapter({ trustProxy: config.TRUST_PROXY }),
     { rawBody: true, logger: false },
   );
   app.enableCors({
