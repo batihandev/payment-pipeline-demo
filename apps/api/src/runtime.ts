@@ -41,7 +41,7 @@ export class ApiRuntime implements OnModuleDestroy {
       serviceLimiter(
         this.redis,
         'api',
-        config.RPC_REQUESTS_PER_SECOND,
+        config.RPC_REQUESTS_PER_SECOND_API,
         config.RPC_COOLDOWN_MS,
       ),
     );

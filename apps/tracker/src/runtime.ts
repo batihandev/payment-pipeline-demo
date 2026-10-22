@@ -42,7 +42,7 @@ export class TrackerRuntime implements OnModuleInit, OnModuleDestroy {
       serviceLimiter(
         this.redis,
         'tracker',
-        config.RPC_REQUESTS_PER_SECOND,
+        config.RPC_REQUESTS_PER_SECOND_TRACKER,
         config.RPC_COOLDOWN_MS,
       ),
     );

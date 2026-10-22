@@ -41,7 +41,7 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
     const limiter = serviceLimiter(
       this.redis,
       'buyer',
-      config.RPC_REQUESTS_PER_SECOND,
+      config.RPC_REQUESTS_PER_SECOND_BUYER,
       config.RPC_COOLDOWN_MS,
     );
     const chain = new ViemChainClient(

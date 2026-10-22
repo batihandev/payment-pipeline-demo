@@ -12,15 +12,16 @@ const chain = {
   CHAIN_ID: positiveInteger,
   RPC_URL: z.url({ protocol: /^https?$/ }),
   USDC_ADDRESS: address,
-  RPC_REQUESTS_PER_SECOND: positiveInteger.default(5),
   RPC_COOLDOWN_MS: positiveInteger.default(30_000),
 };
 
 const confirmations = { CONFIRMATIONS: positiveInteger.default(10) };
 
+const retention = { RETENTION_DAYS: positiveInteger.default(30) };
+
 const purchase = {
-  DAILY_COUNT_CAP: positiveInteger.default(20),
-  DAILY_AMOUNT_CAP: microUnits.default(100_000_000n),
+  DAILY_COUNT_CAP: positiveInteger.default(100),
+  DAILY_AMOUNT_CAP: microUnits.default(200_000_000n),
   ORDER_TTL_MINUTES: positiveInteger.default(30),
   QUIET_START_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(0),
   QUIET_END_HOUR_UTC: z.coerce.number().int().min(0).max(23).default(7),
@@ -32,6 +33,11 @@ export const buyerSchema = z.object({
   BUYER_PRIVATE_KEY: privateKey,
   SHOP_PRIVATE_KEY: privateKey,
   ...purchase,
+  ...retention,
+  MAX_IN_FLIGHT: positiveInteger.default(10),
+  REFILL_BELOW: microUnits.default(5_000_000n),
+  REFILL_COOLDOWN_SECONDS: positiveInteger.default(20),
+  RPC_REQUESTS_PER_SECOND_BUYER: positiveInteger.default(2),
 });
 
 export const trackerSchema = z.object({
@@ -52,6 +58,7 @@ export const trackerSchema = z.object({
   IDLE_POLL_MS: positiveInteger.default(30_000),
   RPC_MAX_ATTEMPTS: positiveInteger.default(3),
   GAP_MAX_ATTEMPTS: positiveInteger.default(5),
+  RPC_REQUESTS_PER_SECOND_TRACKER: positiveInteger.default(2),
 });
 
 export const apiSchema = z.object({
@@ -59,6 +66,7 @@ export const apiSchema = z.object({
   ...purchase,
   ...connection,
   ...chain,
+  ...retention,
   API_PORT: positiveInteger.max(65535).default(3000),
   BUYER_ADDRESS: address,
   SHOP_ADDRESS: address,
@@ -69,6 +77,16 @@ export const apiSchema = z.object({
     .default('https://sepolia.basescan.org'),
   LOW_NATIVE_BALANCE: microUnits.default(1_000_000_000_000_000n),
   LOW_USDC_BALANCE: microUnits.default(10_000_000n),
+  VISITOR_PER_MINUTE: positiveInteger.default(10),
+  VISITOR_PER_DAY: positiveInteger.default(100),
+  VISITOR_QUEUE_LIMIT: positiveInteger.default(30),
+  VISITOR_DAILY_LIMIT: positiveInteger.default(2000),
+  GAS_FLOOR: microUnits.default(200_000_000_000_000n),
+  TRUST_PROXY: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+  RPC_REQUESTS_PER_SECOND_API: positiveInteger.default(1),
 });
 
 export function validateConfig<T extends z.ZodType>(

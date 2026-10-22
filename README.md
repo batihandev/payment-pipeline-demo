@@ -55,6 +55,21 @@ PostgreSQL binds to `127.0.0.1:55432` and Redis to `127.0.0.1:56379`. `pnpm db:m
 | Tracker      | `SHOP_ADDRESS`, `NOTICE_SECRET`, `SHOP_NOTICE_URL`                 |
 | API          | `BUYER_ADDRESS`, `SHOP_ADDRESS`, `NOTICE_SECRET`, `WEB_ORIGIN`     |
 
+Optional settings and their defaults:
+
+| Setting                                             | Default         | Meaning                                                                                         |
+| --------------------------------------------------- | --------------- | ----------------------------------------------------------------------------------------------- |
+| `RPC_REQUESTS_PER_SECOND_TRACKER`, `_BUYER`, `_API` | 2, 2, 1         | Each service's own RPC request rate; together they stay within the provider's rate              |
+| `DAILY_COUNT_CAP`, `DAILY_AMOUNT_CAP`               | 100, 200000000  | Scheduled purchases per UTC day and their total in micro-units (200 USDC)                       |
+| `VISITOR_PER_MINUTE`, `VISITOR_PER_DAY`             | 10, 100         | Visitor purchase limits per client                                                              |
+| `VISITOR_QUEUE_LIMIT`                               | 30              | Visitor purchases waiting at once                                                               |
+| `VISITOR_DAILY_LIMIT`                               | 2000            | Visitor purchases per UTC day across all clients                                                |
+| `GAS_FLOOR`                                         | 200000000000000 | Native balance floor in wei (0.0002 ETH)                                                        |
+| `REFILL_BELOW`, `REFILL_COOLDOWN_SECONDS`           | 5000000, 20     | Buyer USDC balance in micro-units (5 USDC) that triggers a refill, and the wait between refills |
+| `MAX_IN_FLIGHT`                                     | 10              | Buyer purchases in flight at once                                                               |
+| `RETENTION_DAYS`                                    | 30              | Days that records are kept                                                                      |
+| `TRUST_PROXY`                                       | `false`         | Set `true` to read the client address from proxy headers                                        |
+
 `NOTICE_SECRET` must contain at least 32 characters. Missing or invalid variables are reported together by name without printing their values. `TEST_DATABASE_URL` points database tests at the local PostgreSQL instance; tests needing isolation create and reset their own schema. `TEST_REDIS_URL` points Redis and queue tests at a Redis database separate from `REDIS_URL`, because they clear their queues. `VITE_API_URL` supplies the web app's API origin.
 
 ## Workspace and checks
