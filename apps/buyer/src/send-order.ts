@@ -13,6 +13,11 @@ import {
 } from '../../../libs/db/src';
 import { RedisLock } from './redis-lock';
 
+class NonceResynced extends RpcError {
+  constructor() {
+    super('transient');
+  }
+}
 type Target = { kind: 'order' | 'sweep'; id: string };
 type SenderOptions = { buyer: Address; shop: Address; chainId: number };
 export class OrderSender {
@@ -194,7 +199,9 @@ export class OrderSender {
         });
       });
     } catch (error) {
-      await this.recordFailure(target, error, exhausted);
+      // A resync already recorded its own incident; the transfer was replaced, not kept.
+      if (!(error instanceof NonceResynced))
+        await this.recordFailure(target, error, exhausted);
       throw error instanceof RpcError ? error : new RpcError('transient');
     }
   }
@@ -212,21 +219,31 @@ export class OrderSender {
     } catch (error) {
       if (!(error instanceof RpcError) || error.kind !== 'nonce_too_low')
         throw error;
-      if (await this.chain.getTransactionReceipt(hash)) return hash;
+      // The mined nonce is read first: a lagging node can answer "no receipt" for a transfer
+      // that another node has already mined, but it cannot report a nonce past one it lacks.
       if (
         row.nonce === null ||
         BigInt(await this.chain.getConfirmedNonce(from)) <= row.nonce
       )
         throw error;
+      if (await this.chain.getTransactionReceipt(hash)) return hash;
       const pending = BigInt(await this.chain.getNonce(from));
       const address = from.toLowerCase();
-      await this.db.$transaction(
+      const reset = await this.db.$transaction(
         async (tx) => {
           await tx.$queryRaw`SELECT address FROM wallet_nonces WHERE address = ${address} FOR UPDATE`;
           await this.lockRow(tx, target);
+          if ((await this.load(tx, target)).transactionHash !== hash)
+            return false;
+          const allocated = await tx.walletNonce.findUniqueOrThrow({
+            where: { address },
+          });
           await tx.walletNonce.update({
             where: { address },
-            data: { nextNonce: pending },
+            data: {
+              nextNonce:
+                pending > allocated.nextNonce ? pending : allocated.nextNonce,
+            },
           });
           await this.update(tx, target, {
             nonce: null,
@@ -241,9 +258,11 @@ export class OrderSender {
                 'Moved the nonce forward and signed the transfer again.',
             },
           });
+          return true;
         },
         { timeout: 60000 },
       );
+      if (reset) throw new NonceResynced();
       throw new RpcError('transient');
     }
   }

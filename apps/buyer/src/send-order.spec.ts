@@ -268,13 +268,87 @@ it('does not re-sign when the stored transfer has landed', async () => {
     data: { address: buyer, nextNonce: 1n },
   });
   const row = await order();
-  chain.getTransactionReceipt = async () => ({ blockNumber: 1n });
+  chain.getTransactionReceipt = async () => {
+    chain.calls.push('getTransactionReceipt');
+    return { blockNumber: 1n };
+  };
   await sender.sendForOrder(row.id);
   const sent = await database.db.order.findUniqueOrThrow({
     where: { id: row.id },
   });
   expect(sent).toMatchObject({ sendState: 'sent', nonce: 1n });
   expect(chain.signed).toBe(1);
+  expect(chain.calls).toEqual([
+    'sendRawTransaction',
+    'getConfirmedNonce',
+    'getTransactionReceipt',
+  ]);
+  expect(
+    await database.db.incident.count({ where: { kind: 'nonce_resynced' } }),
+  ).toBe(0);
+});
+it('keeps the nonce row from moving backwards on resync', async () => {
+  await database.db.walletNonce.create({
+    data: { address: buyer, nextNonce: 1n },
+  });
+  const row = await order();
+  chain.fail = 'broadcast';
+  await expect(sender.sendForOrder(row.id)).rejects.toMatchObject({
+    kind: 'timeout',
+  });
+  await database.db.walletNonce.update({
+    where: { address: buyer },
+    data: { nextNonce: 10n },
+  });
+  chain.fail = null;
+  await expect(sender.sendForOrder(row.id)).rejects.toMatchObject({
+    kind: 'transient',
+  });
+  expect(
+    (
+      await database.db.walletNonce.findUniqueOrThrow({
+        where: { address: buyer },
+      })
+    ).nextNonce,
+  ).toBe(10n);
+  expect(
+    await database.db.incident.count({ where: { kind: 'nonce_resynced' } }),
+  ).toBe(1);
+  expect(
+    await database.db.incident.count({ where: { kind: 'send_failed' } }),
+  ).toBe(1);
+});
+it('does not clear a transfer that another sender replaced', async () => {
+  await database.db.walletNonce.create({
+    data: { address: buyer, nextNonce: 1n },
+  });
+  const row = await order();
+  const replacement = `0x${'ab'.repeat(32)}`;
+  chain.getTransactionReceipt = async () => {
+    await database.db.order.update({
+      where: { id: row.id },
+      data: { transactionHash: replacement },
+    });
+    return null;
+  };
+  chain.fail = 'broadcast';
+  await expect(sender.sendForOrder(row.id)).rejects.toMatchObject({
+    kind: 'timeout',
+  });
+  chain.fail = null;
+  const before = await database.db.order.findUniqueOrThrow({
+    where: { id: row.id },
+  });
+  await expect(sender.sendForOrder(row.id)).rejects.toMatchObject({
+    kind: 'transient',
+  });
+  expect(
+    await database.db.order.findUniqueOrThrow({ where: { id: row.id } }),
+  ).toMatchObject({
+    nonce: 1n,
+    signedTransaction: before.signedTransaction,
+    transactionHash: replacement,
+  });
   expect(
     await database.db.incident.count({ where: { kind: 'nonce_resynced' } }),
   ).toBe(0);
