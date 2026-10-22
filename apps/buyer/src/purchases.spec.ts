@@ -64,24 +64,52 @@ it('applies quiet-window pacing while visitor purchases skip the pacing draw', a
   const visitor = await purchases.visitor(randomUUID(), now);
   expect(visitor).toMatchObject({ source: 'visitor', status: 'open' });
 });
-it('creates only one visitor order when concurrent clicks compete for the last reservation', async () => {
+it('creates a visitor order when the daily budget is spent', async () => {
   await database.db.dailyBudget.create({
-    data: { day, targetCount: 1, targetAmount: 100000000n },
+    data: {
+      day,
+      targetCount: 1,
+      targetAmount: 100000000n,
+      reservedCount: 1,
+      reservedAmount: 100000000n,
+    },
   });
+  const order = await purchases.visitor(randomUUID(), now);
+  expect(order).toMatchObject({ source: 'visitor', status: 'open' });
+  expect(
+    await database.db.dailyBudget.findUniqueOrThrow({ where: { day } }),
+  ).toMatchObject({ reservedCount: 1, reservedAmount: 100000000n });
+});
+it('refuses visitors past the daily visitor limit', async () => {
+  await purchases.pace(now);
+  expect(await purchases.visitor(randomUUID(), now, 2)).not.toBeNull();
+  expect(await purchases.visitor(randomUUID(), now, 2)).not.toBeNull();
+  expect(await purchases.visitor(randomUUID(), now, 2)).toBeNull();
+  expect(await purchases.visitorsToday(now)).toBe(2);
+  expect(await database.db.order.count()).toBe(3);
+});
+it('counts visitor orders only for the UTC day of now', async () => {
+  await purchases.visitor(randomUUID(), new Date('2026-10-19T23:59:00Z'));
+  expect(await purchases.visitorsToday(now)).toBe(0);
+  expect(await purchases.visitor(randomUUID(), now, 1)).not.toBeNull();
+});
+it('creates only the allowed number of visitor orders when clicks compete for the limit', async () => {
   const results = await Promise.all([
-    purchases.visitor(randomUUID(), now),
-    purchases.visitor(randomUUID(), now),
+    purchases.visitor(randomUUID(), now, 1),
+    purchases.visitor(randomUUID(), now, 1),
   ]);
   expect(results.filter(Boolean)).toHaveLength(1);
   expect(await database.db.order.count()).toBe(1);
 });
-it('never reserves twice when a visitor job is retried with the same order id', async () => {
+it('returns the existing visitor order on retry even at the limit and reserves nothing', async () => {
   const id = randomUUID();
-  const first = await purchases.visitor(id, now);
+  const first = await purchases.visitor(id, now, 1);
+  expect(await purchases.visitor(id, now, 1)).toEqual(first);
   expect(await purchases.visitor(id, now)).toEqual(first);
+  expect(await database.db.order.count()).toBe(1);
   expect(
     await database.db.dailyBudget.findUniqueOrThrow({ where: { day } }),
-  ).toMatchObject({ reservedCount: 1 });
+  ).toMatchObject({ reservedCount: 0, reservedAmount: 0n });
 });
 it('keeps offsets unique among orders from the last 24 hours including expired orders', async () => {
   const old = await purchases.visitor(
@@ -96,14 +124,6 @@ it('keeps offsets unique among orders from the last 24 hours including expired o
   const next = await purchases.visitor(randomUUID(), now);
   expect(next?.expectedAmount).not.toBe(old.expectedAmount);
 });
-it('refuses a visitor order when its exact amount exceeds the remaining amount budget', async () => {
-  await database.db.dailyBudget.create({
-    data: { day, targetCount: 20, targetAmount: 1n },
-  });
-  expect(await purchases.visitor(randomUUID(), now)).toBeNull();
-  expect(await database.db.order.count()).toBe(0);
-});
-
 it('initializes a missing daily target once when first purchases start concurrently', async () => {
   await Promise.all(
     Array.from({ length: 20 }, () => purchases.ensureBudget(now)),

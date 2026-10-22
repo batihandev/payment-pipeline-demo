@@ -79,15 +79,41 @@ export class Purchases {
       return null;
     return this.create('schedule', id, now);
   }
-  visitor(orderId: string, now = new Date()) {
-    return this.create('visitor', orderId, now);
+  visitor(orderId: string, now = new Date(), dailyLimit?: number) {
+    return this.create('visitor', orderId, now, dailyLimit);
   }
-  private async create(source: 'visitor' | 'schedule', id: string, now: Date) {
+  visitorsToday(now: Date) {
+    return this.countVisitors(this.db, now);
+  }
+  private countVisitors(
+    db: Prisma.TransactionClient | PrismaClient,
+    now: Date,
+  ) {
+    const start = utcDay(now);
+    return db.order.count({
+      where: {
+        source: 'visitor',
+        createdAt: { gte: start, lt: new Date(start.getTime() + 86400000) },
+      },
+    });
+  }
+  private async create(
+    source: 'visitor' | 'schedule',
+    id: string,
+    now: Date,
+    dailyLimit?: number,
+  ) {
     await this.ensureBudget(now);
     return this.db.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(84532001)`;
       const existing = await tx.order.findUnique({ where: { id } });
       if (existing) return existing;
+      if (
+        source === 'visitor' &&
+        dailyLimit !== undefined &&
+        (await this.countVisitors(tx, now)) >= dailyLimit
+      )
+        return null;
       return this.reserveOrder(tx, source, id, now);
     });
   }
@@ -111,7 +137,10 @@ export class Purchases {
       item.priceCents,
       allocateOffset(taken, this.rng),
     );
-    if (!(await new BudgetReservation(tx).reserve(utcDay(now), amount)))
+    if (
+      source === 'schedule' &&
+      !(await new BudgetReservation(tx).reserve(utcDay(now), amount))
+    )
       return null;
     return tx.order.create({
       data: {

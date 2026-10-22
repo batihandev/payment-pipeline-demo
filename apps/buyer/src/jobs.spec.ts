@@ -93,7 +93,7 @@ it('runs a visitor purchase ahead of queued scheduled sends without pacing or a 
       await database.db.dailyBudget.findUniqueOrThrow({
         where: { day: new Date('2026-10-20') },
       }),
-    ).toMatchObject({ reservedCount: 1 });
+    ).toMatchObject({ reservedCount: 0 });
   } finally {
     await worker.close();
   }
