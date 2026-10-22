@@ -48,6 +48,7 @@ function server() {
           duplicatesSkipped: 0,
           failuresRecovered: 0,
         },
+        '/stats/daily': [],
         '/incidents?limit=100': [],
         '/health': {
           confirmations: 7,
@@ -105,6 +106,7 @@ describe('live payments', () => {
       ]),
     );
     expect(s.client.getSnapshot().data?.stats.settledCount).toBe(1);
+    expect(s.client.getSnapshot().data?.daily).toEqual([]);
     stop();
   });
   it('buffers events during reconnect and applies them after the snapshot without losing order details', async () => {

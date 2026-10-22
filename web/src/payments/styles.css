@@ -212,6 +212,7 @@
   letter-spacing: 0.05em;
 }
 .tp-widget {
+  box-sizing: border-box;
   padding: 18px;
   background: #17171a;
   color: white;

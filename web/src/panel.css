@@ -249,3 +249,7 @@ body {
     gap: 5px;
   }
 }
+.tp-stats-title {
+  font-size: 14px;
+  margin: 0;
+}

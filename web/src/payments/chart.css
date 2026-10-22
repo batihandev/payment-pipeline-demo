@@ -1,0 +1,91 @@
+.tp-chart {
+  background: #fff;
+  border: 1px solid #ddd8cc;
+  border-radius: 16px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.tp-chart svg {
+  width: 100%;
+  max-width: 720px;
+  height: auto;
+}
+.tp-toggle {
+  display: inline-flex;
+  border: 1px solid #17171a;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.tp-toggle button {
+  border: 0;
+  border-radius: 0;
+  padding: 6px 14px;
+  font: inherit;
+  font-size: 13px;
+  background: transparent;
+  color: #17171a;
+  cursor: pointer;
+}
+.tp-toggle button[aria-pressed='true'] {
+  background: #17171a;
+  color: #fff;
+}
+.tp-chart-grid {
+  stroke: #ddd8cc;
+  stroke-width: 1;
+}
+.tp-chart-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  fill: #5b5b63;
+}
+.tp-chart-time {
+  fill: #6d28d9;
+}
+.tp-chart-scheduled {
+  fill: #1d4ed8;
+}
+.tp-chart-visitor {
+  fill: #c2410c;
+}
+.tp-chart-line {
+  fill: none;
+  stroke: #6d28d9;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.tp-chart-dot {
+  fill: #6d28d9;
+}
+.tp-chart-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 12px;
+  color: #5b5b63;
+}
+.tp-chart-legend li::before {
+  content: '';
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 2px;
+  background: currentColor;
+}
+.tp-chart-legend .tp-chart-key-scheduled::before {
+  background: #1d4ed8;
+}
+.tp-chart-legend .tp-chart-key-visitor::before {
+  background: #c2410c;
+}
+.tp-chart-legend .tp-chart-key-line::before {
+  background: #6d28d9;
+  height: 3px;
+  vertical-align: middle;
+}

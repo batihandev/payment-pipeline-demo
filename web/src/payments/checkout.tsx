@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { paymentsClient, usePayments } from './use-payments';
 import { ConfirmationBar, Receipt } from './receipt';
 import { money, purchaseMessage, stageView } from './view';
@@ -19,11 +19,30 @@ export function Checkout({
   const [sending, setSending] = useState(false);
   const [orderId, setOrderId] = useState<string>();
   const [message, setMessage] = useState('');
+  const [position, setPosition] = useState(0);
   const inFlight = useRef(false);
   const payment = data?.payments.find((p) => p.orderId === orderId);
   const view =
     payment && data ? stageView(payment, data.health.confirmations) : null;
   const active = Boolean(orderId && !view?.paid);
+
+  const waiting = position > 0 && !payment;
+  useEffect(() => {
+    if (!orderId || !waiting) return;
+    const timer = setInterval(() => {
+      void fetch(
+        `${paymentsClient(apiBaseUrl).baseUrl}/test-purchases/${orderId}`,
+      )
+        .then((response) =>
+          response.ok
+            ? (response.json() as Promise<{ position?: number }>)
+            : { position: 0 },
+        )
+        .then((body) => setPosition(body.position ?? 0))
+        .catch(() => undefined);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [apiBaseUrl, orderId, waiting]);
 
   async function purchase() {
     if (inFlight.current) return;
@@ -37,10 +56,12 @@ export function Checkout({
       });
       const body = (await response.json()) as {
         orderId?: string;
+        position?: number;
         error?: string;
       };
       if (body.orderId) {
         setOrderId(body.orderId);
+        setPosition(response.ok ? (body.position ?? 0) : 0);
         onOrder?.(body.orderId);
         setMessage(
           response.ok
@@ -50,7 +71,11 @@ export function Checkout({
         await client.refresh();
       } else if (!response.ok)
         setMessage(
-          purchaseMessage(response.status, response.headers.get('retry-after')),
+          purchaseMessage(
+            response.status,
+            body.error,
+            response.headers.get('retry-after'),
+          ),
         );
       else setMessage('Demo offline');
     } catch {
@@ -105,13 +130,15 @@ export function Checkout({
             {status === 'offline'
               ? 'Demo offline'
               : message ||
-                (sending
-                  ? 'Requesting a test purchase…'
-                  : orderId && !payment
-                    ? 'Order accepted. Waiting for the payment to be sent.'
-                    : status === 'loading'
-                      ? 'Connecting to the demo…'
-                      : '')}
+                (position > 1 && !payment
+                  ? `Queued · ${position - 1} ahead`
+                  : sending
+                    ? 'Requesting a test purchase…'
+                    : orderId && !payment
+                      ? 'Order accepted. Waiting for the payment to be sent.'
+                      : status === 'loading'
+                        ? 'Connecting to the demo…'
+                        : '')}
           </div>
           {payment && data && view && (
             <>

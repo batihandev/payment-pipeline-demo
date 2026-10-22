@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { stageView, isVisitorOrder, purchaseMessage, money } from './view';
+import {
+  stageView,
+  isVisitorOrder,
+  purchaseMessage,
+  money,
+  confirmationLabel,
+} from './view';
 
 describe('payment views', () => {
   it.each([
@@ -17,7 +23,7 @@ describe('payment views', () => {
         label,
         step,
         paid,
-        confirmationLabel: '3 of 7 confirmations',
+        confirmationLabel: '3 of 7',
       });
     },
   );
@@ -28,7 +34,7 @@ describe('payment views', () => {
       paid: true,
       final: false,
       progress: 1,
-      confirmationLabel: '24 of 7 confirmations',
+      confirmationLabel: '7+ confirmations',
     });
     expect(
       stageView({ stage: 'received', confirmations: 0, final: false }, 7)
@@ -46,11 +52,30 @@ describe('payment views', () => {
     expect(isVisitorOrder({ orderId: null }, new Set(['mine']))).toBe(false);
     expect(isVisitorOrder({ orderId: 'mine' }, new Set())).toBe(false);
   });
-  it('explains the exhausted budget and uses the server cooldown in seconds', () => {
-    expect(purchaseMessage(409, null)).toContain('budget');
-    expect(purchaseMessage(429, '17')).toContain('17 seconds');
-    expect(purchaseMessage(429, null)).not.toContain('NaN');
-    expect(purchaseMessage(503, null)).toBe('Demo offline');
+  it('counts confirmations up to the threshold, then stops counting', () => {
+    expect(confirmationLabel(4, 10)).toBe('4 of 10');
+    expect(confirmationLabel(10, 10)).toBe('10+ confirmations');
+    expect(confirmationLabel(1806, 10)).toBe('10+ confirmations');
+  });
+  it('says which limit applies and when it lifts', () => {
+    expect(purchaseMessage(429, 'rate_limited', '17')).toBe(
+      "You've made a lot of test purchases. Try again in 17 seconds.",
+    );
+    expect(purchaseMessage(429, 'rate_limited', '1.2')).toContain('2 seconds');
+    expect(purchaseMessage(429, 'rate_limited', null)).not.toContain('NaN');
+    expect(purchaseMessage(429, 'busy', '2')).toBe(
+      'Lots of test purchases right now. Try again in a moment.',
+    );
+    expect(purchaseMessage(409, 'daily_limit', null)).toBe(
+      "Today's test purchases are used up. Back at 00:00 UTC.",
+    );
+    expect(purchaseMessage(503, 'paused', null)).toBe(
+      'The demo account is being topped up. Try again soon.',
+    );
+    expect(purchaseMessage(503, 'purchases_unavailable', null)).toBe(
+      'Demo offline',
+    );
+    expect(purchaseMessage(500, undefined, null)).toBe('Demo offline');
   });
   it('formats large micro-unit prices without floating-point rounding', () => {
     expect(money('14000000')).toBe('$14.00');

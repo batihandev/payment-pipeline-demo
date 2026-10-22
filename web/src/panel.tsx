@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Checkout } from './payments/checkout';
 import { PaymentsWidget } from './payments/widget';
+import { SettledChart } from './payments/chart';
 import { Receipt } from './payments/receipt';
 import { usePayments } from './payments/use-payments';
 import { isVisitorOrder, shortId, steps, utcTime } from './payments/view';
@@ -112,6 +113,7 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
             {data.payments.some((p) => p.stage === 'sent') &&
               ` ${data.payments.filter((p) => p.stage === 'sent').length} sent; awaiting the tracker.`}
           </p>
+          <SettledChart days={data.daily} />
           <div className="tp-detail-grid">
             <section aria-labelledby="receipts-title" className="tp-feed">
               <h2 id="receipts-title">Receipts</h2>
@@ -130,7 +132,8 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
               ))}
             </section>
             <aside className="tp-sidebar">
-              <section aria-label="Statistics" className="tp-stats">
+              <h2 className="tp-stats-title">Today · UTC</h2>
+              <section aria-label="Today's statistics" className="tp-stats">
                 {[
                   [String(data.stats.settledCount), 'payments settled'],
                   [

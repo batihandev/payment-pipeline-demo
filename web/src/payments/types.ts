@@ -20,6 +20,13 @@ export type Stats = {
   duplicatesSkipped: number;
   failuresRecovered: number;
 };
+export type DailyStat = {
+  day: string;
+  settled: number;
+  scheduled: number;
+  visitor: number;
+  averageTimeToSettleMs: number | null;
+};
 export type Health = {
   confirmations: number;
   head: string;
@@ -36,6 +43,7 @@ export type Health = {
 export type Dashboard = {
   payments: Payment[];
   stats: Stats;
+  daily: DailyStat[];
   health: Health;
   incidents: Incident[];
 };

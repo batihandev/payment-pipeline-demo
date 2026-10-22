@@ -114,10 +114,11 @@ export class PaymentsClient {
       const paths = [
         '/payments?limit=100',
         '/stats',
+        '/stats/daily',
         '/health',
         '/incidents?limit=100',
       ];
-      const [payments, stats, health, incidents] = await Promise.all(
+      const [payments, stats, daily, health, incidents] = await Promise.all(
         paths.map(async (path) => {
           const request = this.request;
           const response = await request(`${this.baseUrl}${path}`);
@@ -126,7 +127,7 @@ export class PaymentsClient {
         }),
       );
       if (generation !== this.generation) return;
-      const data = { payments, stats, health, incidents } as Dashboard;
+      const data = { payments, stats, daily, health, incidents } as Dashboard;
       this.update({ status: 'live', data: this.merge(data, this.buffered) });
       this.buffered = [];
     } catch {

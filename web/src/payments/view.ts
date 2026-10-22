@@ -26,6 +26,14 @@ export const steps = [
     color: 'purple',
   },
 ] as const;
+export function confirmationLabel(
+  confirmations: number,
+  threshold: number,
+): string {
+  return confirmations < threshold
+    ? `${confirmations} of ${threshold}`
+    : `${threshold}+ confirmations`;
+}
 export function stageView(
   payment: Pick<Payment, 'stage' | 'confirmations' | 'final'>,
   threshold: number,
@@ -43,7 +51,7 @@ export function stageView(
     paid: payment.stage === 'settled' || payment.stage === 'notified',
     final: payment.final,
     progress: Math.min(1, Math.max(0, payment.confirmations / threshold)),
-    confirmationLabel: `${payment.confirmations} of ${threshold} confirmations`,
+    confirmationLabel: confirmationLabel(payment.confirmations, threshold),
   };
 }
 export function isVisitorOrder(
@@ -58,16 +66,21 @@ export function money(value: string): string {
 }
 export function purchaseMessage(
   status: number,
+  error: string | undefined,
   retryAfter: string | null,
 ): string {
-  if (status === 409)
-    return "Today's test purchase budget is spent. Please come back tomorrow (UTC).";
-  if (status === 429) {
+  if (status === 429 && error === 'rate_limited') {
     const seconds = Number(retryAfter);
     return Number.isFinite(seconds) && seconds > 0
-      ? `A little pause between purchases. Try again in ${Math.ceil(seconds)} seconds.`
-      : 'A little pause between purchases. Please try again shortly.';
+      ? `You've made a lot of test purchases. Try again in ${Math.ceil(seconds)} seconds.`
+      : "You've made a lot of test purchases. Try again shortly.";
   }
+  if (status === 429 && error === 'busy')
+    return 'Lots of test purchases right now. Try again in a moment.';
+  if (status === 409 && error === 'daily_limit')
+    return "Today's test purchases are used up. Back at 00:00 UTC.";
+  if (status === 503 && error === 'paused')
+    return 'The demo account is being topped up. Try again soon.';
   return 'Demo offline';
 }
 export function shortId(id: string): string {
