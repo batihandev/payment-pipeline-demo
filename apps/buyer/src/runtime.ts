@@ -11,7 +11,12 @@ import { RpcError } from '../../../libs/chain/src/rpc-error';
 import type { buyerSchema } from '../../../libs/config/src';
 import type { PrismaClient } from '../../../libs/db/src';
 import { Purchases, purchaseOptions } from './purchases';
-import { BuyerJobs, retryOptions, type BuyerJobData } from './jobs';
+import {
+  BuyerJobs,
+  holdWhenFull,
+  retryOptions,
+  type BuyerJobData,
+} from './jobs';
 import { RedisLock } from './redis-lock';
 import { OrderSender } from './send-order';
 import { NightlySweep } from './sweep';
@@ -26,6 +31,7 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
   private readonly jobs: BuyerJobs;
   private readonly sender: OrderSender;
   private readonly sweep: NightlySweep;
+  private readonly maxInFlight: number;
   constructor(
     private readonly db: PrismaClient,
     config: BuyerConfig,
@@ -54,6 +60,7 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
       },
       limiter,
     );
+    this.maxInFlight = config.MAX_IN_FLIGHT;
     this.purchases = new Purchases(db, purchaseOptions(config));
     const connection = { url: config.REDIS_URL };
     this.queue = new Queue<BuyerJobData>('buyer', { connection });
@@ -69,7 +76,7 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
     this.sweep = new NightlySweep(db, chain, this.sender, shop);
     this.worker = new Worker<BuyerJobData>(
       'buyer',
-      (job) => this.process(job),
+      (job, token) => this.process(job, token),
       { connection, concurrency: 1, autorun: false },
     );
     this.worker.on('error', () =>
@@ -122,7 +129,9 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
     await this.jobs.recoverPending();
     void this.worker.run().catch(() => console.error('Buyer worker stopped.'));
   }
-  private async process(job: Job<BuyerJobData>): Promise<void> {
+  private async process(job: Job<BuyerJobData>, token?: string): Promise<void> {
+    if (job.name === 'send-order' || job.name === 'visitor-purchase')
+      await holdWhenFull(job, token, this.sender, this.maxInFlight);
     const now = new Date();
     const exhausted = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
     try {

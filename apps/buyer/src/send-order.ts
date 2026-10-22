@@ -28,6 +28,15 @@ export class OrderSender {
     private readonly lock: RedisLock,
     private readonly options: SenderOptions,
   ) {}
+  /** Buyer-wallet transfers broadcast but not yet seen by the tracker. */
+  inFlight(): Promise<number> {
+    return this.db.order.count({
+      where: {
+        sendState: 'sent',
+        payments: { some: { stage: 'sent' } },
+      },
+    });
+  }
   sendForOrder(orderId: string, exhausted = false): Promise<void> {
     return this.send({ kind: 'order', id: orderId }, exhausted);
   }

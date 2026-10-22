@@ -1,4 +1,4 @@
-import type { Queue } from 'bullmq';
+import { DelayedError, type Job, type Queue } from 'bullmq';
 import type { PrismaClient } from '../../../libs/db/src';
 import { Purchases } from './purchases';
 export type BuyerJobData = { orderId?: string; day?: string };
@@ -6,6 +6,18 @@ export const retryOptions = {
   attempts: 5,
   backoff: { type: 'exponential', delay: 1000, jitter: 0.5 },
 } as const;
+export const IN_FLIGHT_DELAY_MS = 500;
+/** Puts a send back in the queue, without using an attempt, while the wallet is at its cap. */
+export async function holdWhenFull(
+  job: Job<BuyerJobData>,
+  token: string | undefined,
+  sender: { inFlight(): Promise<number> },
+  maxInFlight: number,
+): Promise<void> {
+  if ((await sender.inFlight()) < maxInFlight) return;
+  await job.moveToDelayed(Date.now() + IN_FLIGHT_DELAY_MS, token);
+  throw new DelayedError();
+}
 export class BuyerJobs {
   constructor(
     private readonly db: PrismaClient,

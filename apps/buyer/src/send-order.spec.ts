@@ -353,3 +353,28 @@ it('does not clear a transfer that another sender replaced', async () => {
     await database.db.incident.count({ where: { kind: 'nonce_resynced' } }),
   ).toBe(0);
 });
+async function sendThree() {
+  const rows = [await order(), await order(), await order()];
+  for (const row of rows) await sender.sendForOrder(row.id);
+  return rows;
+}
+it('counts broadcast transfers the tracker has not seen', async () => {
+  const rows = await sendThree();
+  expect(await sender.inFlight()).toBe(3);
+  await database.db.payment.updateMany({
+    where: { orderId: rows[0]?.id },
+    data: { stage: 'received' },
+  });
+  expect(await sender.inFlight()).toBe(2);
+});
+it('counts in-flight transfers from the database after a restart', async () => {
+  await sendThree();
+  const restarted = new OrderSender(
+    database.db,
+    chain,
+    chain,
+    new RedisLock(redis, 'restarted-buyer'),
+    { buyer, shop, chainId: 84532 },
+  );
+  expect(await restarted.inFlight()).toBe(3);
+});

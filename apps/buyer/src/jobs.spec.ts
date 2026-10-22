@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { Queue, Worker, type Job } from 'bullmq';
 import { testDatabase } from '../../../libs/db/testing/database';
 import { Purchases } from './purchases';
-import { BuyerJobs, type BuyerJobData } from './jobs';
+import { BuyerJobs, holdWhenFull, type BuyerJobData } from './jobs';
+import { OrderSender } from './send-order';
 import { testRedisUrl } from '../../../libs/config/testing/redis';
 
 let database: Awaited<ReturnType<typeof testDatabase>>;
@@ -110,4 +111,74 @@ it('recovers an order whose process stopped after reservation and before enqueue
 it('keeps a scheduled send inside the current minute when the pacing job starts late', async () => {
   const row = await jobs.pace(new Date('2026-10-20T12:00:50Z'));
   expect((await queue.getJob(`send-${row?.id}`))?.delay).toBe(2500);
+});
+
+it('delays a send while 10 are in flight without using an attempt', async () => {
+  const ids: string[] = [];
+  for (let i = 0; i < 10; i++) {
+    const row = await database.db.order.create({
+      data: {
+        item: 'Duck',
+        price: 99n,
+        expectedAmount: 100n,
+        source: 'schedule',
+        sendState: 'sent',
+        createdAt: now,
+        expiresAt: new Date(now.getTime() + 1800000),
+        payments: {
+          create: {
+            provider: 'chain',
+            externalKey: `sent:${randomUUID()}`,
+            amount: 100n,
+            stage: 'sent',
+          },
+        },
+      },
+    });
+    ids.push(row.id);
+  }
+  const sender = new OrderSender(
+    database.db,
+    {} as never,
+    {} as never,
+    {} as never,
+    { buyer: `0x${'11'.repeat(20)}`, shop: `0x${'22'.repeat(20)}`, chainId: 1 },
+  );
+  await queue.add('send-order', { orderId: ids[0] }, { attempts: 1 });
+  let sent = false;
+  let delays = 0;
+  const worker = new Worker(
+    queue.name,
+    async (job: Job<BuyerJobData>, token?: string) => {
+      try {
+        await holdWhenFull(job, token, sender, 10);
+      } catch (error) {
+        delays += 1;
+        throw error;
+      }
+      sent = true;
+    },
+    { connection: { url: testRedisUrl() }, autorun: false },
+  );
+  try {
+    const done = new Promise<void>((resolve, reject) => {
+      worker.once('completed', () => resolve());
+      worker.once('error', reject);
+    });
+    const running = worker.run();
+    while (delays === 0) await new Promise((r) => setTimeout(r, 50));
+    expect(sent).toBe(false);
+    expect((await queue.getJobs(['delayed']))[0]?.attemptsMade).toBe(0);
+    await database.db.payment.updateMany({
+      where: { orderId: ids[1] },
+      data: { stage: 'received' },
+    });
+    await done;
+    await worker.close();
+    await running;
+    expect(sent).toBe(true);
+    expect((await queue.getJobs(['completed']))[0]?.attemptsMade).toBe(1);
+  } finally {
+    await worker.close();
+  }
 });
