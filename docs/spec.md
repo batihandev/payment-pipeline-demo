@@ -1,6 +1,6 @@
 # testnet-payments: design spec
 
-Date: 2026-10-20. Status: draft.
+Date: 2026-10-20, revised 2026-10-22. Status: draft.
 
 ## Purpose
 
@@ -17,7 +17,7 @@ A demo of payment tracking. A bot buys silly items from a demo shop and pays in 
 
 - **Phase 1:** chain payments end to end, plus the dashboard.
 - **Phase 2:** Stripe test mode as a second payment provider writing to the same ledger.
-- **Out of scope:** deployment, more than one RPC provider, more than one chain at a time, user accounts.
+- **Out of scope:** deployment scripts, more than one RPC provider, more than one chain at a time, user accounts. The services can run behind a reverse proxy (`TRUST_PROXY`).
 
 ## Stack
 
@@ -34,33 +34,45 @@ A demo of payment tracking. A bot buys silly items from a demo shop and pays in 
 - RPC: the free public endpoint by default. An optional key-based URL (for example a free Alchemy key) is just a different `RPC_URL`.
 - Payments are transfers of Circle's testnet USDC (6 decimals). Verify the contract address against Circle's documentation before use.
 - Two wallets: **buyer** and **shop**. Keys live only in `.env`. A script `pnpm wallets:new` generates both keys and writes them to `.env` with mode 0600. It prints only the public addresses.
-- **Recycling:** a nightly job sweeps the shop's USDC back to the buyer, so USDC is claimed from a faucet once. Native gas on Base Sepolia costs almost nothing; one manual faucet claim should last months.
+- **Recycling:** a nightly job sweeps the shop's USDC back to the buyer. A **refill** does the same on demand: when the buyer's USDC falls below `REFILL_BELOW` and the shop holds USDC and enough gas, the shop sends its whole USDC balance to the buyer, at most once per `REFILL_COOLDOWN_SECONDS` (default 20). USDC only circulates between the two wallets; the running cost is gas, a fraction of a cent per purchase.
+- **Gas floor:** visitor test buys pause while the buyer's gas balance is below `GAS_FLOOR` (default 0.0002 ETH) and resume when it is topped up. The page says the demo account is being topped up, in its plain wording.
 - **Low balance:** the API reports buyer and shop balances (gas and USDC). The page shows a warning below configured thresholds. No faucet automation.
 
 ## Orders and matching
 
-- An order picks a random item from a small catalogue of silly items (for example "Gold rubber duck") with a price in USD.
-- USDC transfers carry no reference, so orders are matched by **unique amount**: price plus an offset of 1 to 9,999 micro-units, unique among open orders. Example: $14.00 becomes 14.000731 USDC.
+- An order picks a random item from a small catalogue of silly items (for example "Gold rubber duck") priced between $0.10 and $2.00.
+- USDC transfers carry no reference, so orders are matched by **unique amount**: price plus an offset of 1 to 9,999 micro-units, unique among orders of the last 24 hours. Example: $1.40 becomes 1.400731 USDC. The offsets bound orders to 9,999 a day; the visitor daily limit keeps well below it.
 - A transfer to the shop that matches no open order is stored as an **unmatched payment** and logged as an incident. It is never credited to an order.
 - An order not paid within a configured time expires.
 
 ## Pacing and test buys
 
-- A daily budget caps purchases per UTC day by count and total amount. Each day's random target is at or below the cap.
-- **Reservation:** a purchase reserves its count and amount in the `daily_budgets` row with one conditional update that fails when the cap would be exceeded. Scheduled and visitor purchases use the same reservation. Sent but unsettled purchases count against the budget. A reservation is released only when a send is known to have failed; a send with an unknown outcome keeps it.
-- **Schedule:** each minute, the buyer decides whether to buy, with a probability of the remaining budget divided by the expected purchase size and the remaining active minutes. This gives quiet and busy minutes and spreads the target over the day. A UTC quiet window overnight lowers the probability. Remaining work is recomputed from the database each minute, so a restart resumes the day instead of starting over.
-- **Visitor test buys:** `POST /test-purchases` takes one reservation from the same budget and queues the purchase. It is also limited per IP and has a global cooldown, both in Redis. When the budget is used up, the endpoint says so and nothing is sent. The response returns the order id so the page can highlight it.
+Two kinds of purchase share one send path but not their limits: **scheduled** purchases make the shop look busy through the day, and **visitor test buys** let a visitor watch a payment settle in seconds.
 
-## RPC budget and latency
+- **Daily budget (scheduled only):** caps scheduled purchases per UTC day by count and total amount. Each day's random target is at or below the cap.
+- **Reservation:** a scheduled purchase reserves its count and amount in the `daily_budgets` row with one conditional update that fails when the cap would be exceeded. Sent but unsettled purchases count against the budget. A reservation is released only when a send is known to have failed; a send with an unknown outcome keeps it.
+- **Schedule:** each minute, the buyer decides whether to buy, with a probability of the remaining budget divided by the expected purchase size and the remaining active minutes. This gives quiet and busy minutes and spreads the target over the day. A UTC quiet window overnight lowers the probability. Remaining work is recomputed from the database each minute, so a restart resumes the day instead of starting over.
+- **Visitor test buys:** `POST /test-purchases` creates an order and queues it at the highest priority. It takes no daily budget, so a visitor never waits behind the schedule. Its limits, each a configuration value, protect gas, the RPC budget and the matching offsets:
+
+| Limit                         | Default                    | Response                         |
+| ----------------------------- | -------------------------- | -------------------------------- |
+| Per visitor (IP, hashed)      | 10 a minute, 100 a UTC day | `429` with `Retry-After`         |
+| Waiting visitor purchases     | 30                         | `429` "busy", with `Retry-After` |
+| Visitor purchases per UTC day | 2,000                      | `409` until 00:00 UTC            |
+| Buyer gas below `GAS_FLOOR`   | —                          | `503` until topped up            |
+
+The response returns the order id and its queue position, so the page can highlight the order and show "queued" until it is sent.## RPC budget and latency
 
 The services run on free RPC tiers, so request volume is designed to stay inside their rate limits.
 
-- **Adaptive polling:** the tracker polls every block (about 2s on Base Sepolia) while any order is open or any payment is unsettled or not final, and slows to a configured idle interval otherwise.
+- **Split budget:** each service has its own limiter (`RPC_REQUESTS_PER_SECOND_TRACKER`, `_BUYER`, `_API`; defaults 2, 2 and 1), and together they stay at or below the provider's rate. The tracker's share is its own, so a burst of purchases cannot stall confirmations.
+- **Adaptive polling:** the tracker polls every pass interval while any order is open or any payment is unsettled or not final, and slows to a configured idle interval otherwise.
 - **One call per pass for new payments:** a single `eth_getLogs` over the new range, filtered by contract and recipient. Confirmations come from the latest block number, not per-payment calls.
-- **One request limiter per service** covers every RPC method it calls (head, logs, finality tag, balances), set below the provider's published rate. A rate-limit response starts a cooldown for that service instead of an immediate retry.
+- **About one call per send:** the buyer signs locally with a nonce allocated in the database, a fixed gas limit for a USDC transfer and a fee cached for a few seconds, then broadcasts. It checks for a receipt only when retrying. At most `MAX_IN_FLIGHT` (default 10) of a wallet's transfers wait unconfirmed at once; a send beyond that returns to its queue for a moment without counting as a failed attempt.
+- A rate-limit response starts a cooldown for that service instead of an immediate retry.
 - **Bounded catch-up:** after a restart or outage the tracker scans at most a configured number of blocks per pass, so catching up never bursts past the limit.
 - Head and finality tag are each fetched once per pass. Poll timing has a little jitter.
-- **Fast path for test buys:** a visitor test buy is a high-priority job that runs immediately. The page shows the order as `sent` as soon as the buyer has the transaction hash, before the tracker sees it in a block. With 2s blocks, the payment should reach `received` within a few seconds of the click.
+- **Fast path for test buys:** the page shows the order as `sent` as soon as the buyer has the transaction hash, before the tracker sees it in a block. With sub-second blocks on Base Sepolia, a payment settles within seconds of the click.
 
 ## Payment stages
 
@@ -82,7 +94,7 @@ Stripe (phase 2): `received → processing → settled → notified`, without a 
 - Runs the pacing schedule as a repeatable per-minute BullMQ job that queues purchase jobs with random offsets inside the minute.
 - Each purchase job: reserve the budget, create the order with its unique amount, then send.
 - **Sending is idempotent per order.** Nonces are allocated one at a time. The signed transaction and its hash are stored on the order before broadcast. A retry rebroadcasts the same signed transaction, or finds that it already landed, and never signs a second transfer for the same order.
-- Nightly sweep as a repeatable job, using the same send path.
+- Nightly sweep as a repeatable job, and the on-demand refill, both using the same send path.
 - A failed send is retried with backoff and recorded as an incident.
 
 ### tracker
@@ -90,7 +102,7 @@ Stripe (phase 2): `received → processing → settled → notified`, without a 
 - **Cursor:** the highest block up to which every block has been scanned, with that block's hash, in Postgres. It advances in the same database transaction that stores the range's payments, so a crash can never lose a payment.
 - Each pass reads `Transfer` logs to the shop address with `eth_getLogs` over ranges no larger than a configured maximum. If the provider rejects a range as too large, the range is halved and retried, down to a configured minimum.
 - **Gaps:** a range that still fails is stored as a gap with its error, attempt count and next retry time. The cursor moves past it only once the gap is stored. A BullMQ job retries gaps with bounded attempts, so one bad range cannot starve new work. Open gaps show on `/health`; a recovered gap writes an incident.
-- **Overlap:** each pass re-reads the last `RESCAN_BLOCKS` blocks. A payment seen again is skipped and counted as a duplicate. If the cursor block's stored hash no longer matches the chain, the tracker steps back and rescans.
+- **Overlap:** each pass re-reads the last `RESCAN_BLOCKS` blocks. A log re-read inside that overlap, in the same block, is expected and skipped silently. A log seen again anywhere else, such as a gap retry or a replay after a restart, is skipped and recorded as a duplicate. If the cursor block's stored hash no longer matches the chain, the tracker steps back and rescans.
 - **Credit once:** unique keys on (chain id, transaction hash, log index) for chain payments and on the payment id for ledger entries. The settle transition and the ledger insert happen in one database transaction, so a duplicate is a no-op.
 - **Confirmations:** computed from the head fetched once per pass. Payments are settled when the threshold is reached. The `finalized` tag, also fetched once per pass, sets `final`.
 - **Reorgs:** if the block hash stored for an unsettled payment no longer matches the chain, the payment is dropped back and an incident is written. Settled payments are rechecked until final; a mismatch there is recorded as an incident for manual review, not reversed automatically.
@@ -100,18 +112,19 @@ Stripe (phase 2): `received → processing → settled → notified`, without a 
 
 ### api
 
-| Route                   | Purpose                                                                                                         |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `GET /payments?limit=`  | Recent payments with order, stage, confirmations, block, explorer URL                                           |
-| `GET /stats`            | Settled count, average time to settle, duplicates skipped, failures recovered. In-memory cache with a short TTL |
-| `GET /incidents?limit=` | Recent incidents                                                                                                |
-| `GET /health`           | Head, cursor, lag, open gaps, queue depth, cooldown state, balances and low-balance flags                       |
-| `GET /events`           | Server-sent events relayed from Redis pub/sub                                                                   |
-| `POST /test-purchases`  | Visitor test buy, as above                                                                                      |
-| `POST /shop/notices`    | Receives the signed notice. Verifies the signature and timestamp, then marks the payment notified               |
-| `POST /stripe/webhook`  | Phase 2                                                                                                         |
+| Route                     | Purpose                                                                                                                                        |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /payments?limit=`    | Recent payments with order, stage, confirmations, block, explorer URL                                                                          |
+| `GET /stats`              | For today and the last 7 days: settled count, average time to settle, duplicates skipped, failures recovered. In-memory cache with a short TTL |
+| `GET /incidents?limit=`   | Recent incidents                                                                                                                               |
+| `GET /health`             | Head, cursor, lag, open gaps, queue depth, cooldown state, balances and low-balance flags, and the monitoring signals below                    |
+| `GET /events`             | Server-sent events relayed from Redis pub/sub                                                                                                  |
+| `POST /test-purchases`    | Visitor test buy, as above                                                                                                                     |
+| `GET /test-purchases/:id` | Queue position of a waiting visitor purchase                                                                                                   |
+| `POST /shop/notices`      | Receives the signed notice. Verifies the signature and timestamp, then marks the payment notified                                              |
+| `POST /stripe/webhook`    | Phase 2                                                                                                                                        |
 
-CORS is allowed only for the configured web origin.
+CORS is allowed only for the configured web origin. With `TRUST_PROXY` set, client addresses come from the proxy's forwarding header, so per-visitor limits apply to visitors rather than to the proxy.
 
 ### web
 
@@ -119,8 +132,11 @@ One React + Vite page with three parts:
 
 - **Checkout:** a "Try a test purchase" card styled as a shop counter. On click, a till drawer slides up and a random catalogue item spins in. The visitor picks how to pay; phase 1 offers only **Test network**, and phase 2 adds **Test card**. A card terminal then shows the real stages: for the test network, _Sent_, then blocks stacking to the confirmation threshold; for a test card, a card marked TEST taps the terminal, then _Processing → Approved_. A receipt prints with a PAID stamp and drops into the feed, highlighted as the visitor's. The card asks for nothing (no inputs, addresses or QR codes) and is labelled "Test purchase · no real money · paid from the demo's own test account", with a "How this works" link to the repository. Every state it shows comes from the visitor's real order.
 
+- The checkout shows "Queued · N ahead" while a visitor purchase waits, and each limit's message says which limit applies and when it lifts.
 - **Small widget:** a dark card showing the latest payment as a receipt (item, price, order and block), a confirmation bar filling to the threshold, a PAID stamp when settled, a four-step strip and a footer of counts. It runs without interaction.
 - **Full panel:** header with a live indicator, test network label, one-line caption; a four-lane pipeline; a receipts feed with notes (for example "Seen again on a rescan. Already credited, skipped."); stats tiles; an incident log titled "What went wrong today", pairing each problem with how it was handled.
+
+Confirmation progress reads "N of 10" until the threshold, then "10+ confirmations". Stats tiles show today and the last 7 days.
 
 Data comes from the REST routes on load and `/events` afterwards. Explorer links point to the configured block explorer.
 
@@ -137,6 +153,23 @@ Data comes from the REST routes on load and `/events` afterwards. Explorer links
 
 Stats are computed from these tables, never stored as running totals.
 
+**Retention:** a nightly job deletes orders, payments, ledger entries, notices, events and incidents older than `RETENTION_DAYS` (default 7), and resolved gaps of the same age. Open orders and unsettled or non-final payments are kept until they close.
+
+## Monitoring
+
+`/health` reports signals an external monitor can alert on. Each condition must hold for its whole window, so transient failures that the services recover from on their own never alert:
+
+| Signal                                                          | Alert when      |
+| --------------------------------------------------------------- | --------------- |
+| Time since the tracker cursor last advanced                     | over 1 hour     |
+| Age of the oldest payment in `sent`, `received` or `confirming` | over 1 hour     |
+| Age of the oldest settled payment not yet notified              | over 1 hour     |
+| Time since the last scheduled purchase                          | over 24 hours   |
+| Time visitor test buys have been paused by the gas floor        | over 24 hours   |
+| `/health` itself unreachable                                    | over 30 minutes |
+
+The monitor sends one message when a condition starts, one when it clears, and at most one reminder a day while it lasts.
+
 ## Phase 2: Stripe
 
 - The buyer can pay an order with Stripe test mode: create a PaymentIntent with a test card and confirm it server-side.
@@ -150,15 +183,15 @@ Stats are computed from these tables, never stored as running totals.
 
 ## Testing
 
-- Unit tests: pacing and budget reservation (including concurrent reservations at the cap), unique-amount allocation and matching, idempotent send retries, credit-once under repeated logs, cursor and overlap logic, range halving and gaps, reorg handling, notice signature verification.
+- Unit tests: pacing and budget reservation (including concurrent reservations at the cap), visitor limits and queue positions, refill triggering and cooldown, the in-flight cap, unique-amount allocation and matching, idempotent send retries, credit-once under repeated logs, cursor and overlap logic (silent re-reads versus recorded duplicates), range halving and gaps, reorg handling, notice signature verification, retention, and the monitoring signals.
 - Tracker logic runs against an RPC interface so tests can feed it scripted blocks and logs, including failures and reorgs.
 - One manual smoke run against Base Sepolia, documented in the README.
 
 ## Acceptance
 
 1. With funded wallets, the buyer sends paced purchases and the tracker settles each one exactly once, visible on the page within seconds of each stage change.
-2. A visitor test buy appears in the feed, highlighted, and counts against the daily budget. The endpoint refuses once the budget is spent.
-3. Rescans produce duplicates that are skipped and counted. Simulated failures in tests produce incidents with a handling note.
+2. A visitor test buy is sent at once, appears in the feed highlighted, and settles within seconds. It takes nothing from the daily budget. Each visitor limit refuses with its own message.
+3. Re-reads inside the rescan overlap are skipped without an incident; a log seen again outside it is skipped and counted as a duplicate. Simulated failures in tests produce incidents with a handling note.
 4. `pnpm test` and `pnpm lint` pass. `pnpm build` builds every app.
 5. No keys or secrets are committed; `.env` is ignored.
 6. The README explains what the project shows, how to run it locally, and the configuration.
