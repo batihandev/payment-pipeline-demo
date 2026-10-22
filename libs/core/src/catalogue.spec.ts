@@ -9,3 +9,10 @@ it('offers twenty distinct items with positive whole-cent prices', () => {
     expect(typeof item.priceCents).toBe('bigint');
   }
 });
+
+it('prices every item between $0.10 and $2.00', () => {
+  for (const item of catalogue) {
+    expect(item.priceCents).toBeGreaterThanOrEqual(10n);
+    expect(item.priceCents).toBeLessThanOrEqual(200n);
+  }
+});
