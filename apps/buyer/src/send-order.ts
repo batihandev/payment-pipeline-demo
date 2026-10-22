@@ -305,8 +305,10 @@ export class OrderSender {
     } catch (error) {
       if (!(error instanceof RpcError) || error.kind !== 'nonce_too_low')
         throw error;
-      // The mined nonce is read first: a lagging node can answer "no receipt" for a transfer
-      // that another node has already mined, but it cannot report a nonce past one it lacks.
+      // The mined nonce is read before the receipt, so a node that reports the nonce as used
+      // has usually mined the transfer too. This narrows the window in which a lagging node
+      // answers "no receipt" for a mined transfer, but cannot rule it out when requests reach
+      // different load-balanced backends.
       if (
         row.nonce === null ||
         BigInt(await this.chain.getConfirmedNonce(from)) <= row.nonce
