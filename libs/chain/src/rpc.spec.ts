@@ -87,6 +87,14 @@ it.each([
     }),
     'permanent',
   ],
+  [
+    new RpcRequestError({
+      body,
+      url,
+      error: { code: -32000, message: 'nonce too low' },
+    }),
+    'nonce_too_low',
+  ],
   [new HttpRequestError({ body, url, status: 429 }), 'rate_limit'],
   [new HttpRequestError({ body, url, status: 502 }), 'transient'],
   [

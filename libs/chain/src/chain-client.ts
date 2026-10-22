@@ -17,7 +17,10 @@ export interface ChainClient {
   getBalances(addr: Address): Promise<{ native: bigint; usdc: bigint }>;
   sendRawTransaction(raw: Hex): Promise<Hex>;
   getTransactionReceipt(hash: Hex): Promise<{ blockNumber: bigint } | null>;
+  /** Next nonce counting the transactions waiting in the mempool. */
   getNonce(addr: Address): Promise<number>;
+  /** Next nonce counting only mined transactions. */
+  getConfirmedNonce(addr: Address): Promise<number>;
 }
 export interface TransferSigner {
   signTransfer(

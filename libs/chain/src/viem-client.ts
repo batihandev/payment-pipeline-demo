@@ -163,6 +163,11 @@ export class ViemChainClient implements ChainClient, TransferSigner {
     });
     return value;
   }
+  getConfirmedNonce(addr: Address): Promise<number> {
+    return this.call(() =>
+      this.client.getTransactionCount({ address: addr, blockTag: 'latest' }),
+    );
+  }
   async signTransfer(
     from: Address,
     to: Address,

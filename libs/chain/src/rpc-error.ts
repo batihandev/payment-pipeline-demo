@@ -1,7 +1,12 @@
 import { BaseError, TimeoutError } from 'viem';
 
 export type RpcErrorKind =
-  'rate_limit' | 'timeout' | 'range_too_large' | 'transient' | 'permanent';
+  | 'rate_limit'
+  | 'timeout'
+  | 'range_too_large'
+  | 'nonce_too_low'
+  | 'transient'
+  | 'permanent';
 export class RpcError extends Error {
   constructor(readonly kind: RpcErrorKind) {
     super(`RPC request failed: ${kind}`);
@@ -57,11 +62,13 @@ export function classifyRpcError(error: unknown): RpcError {
               details,
             )
           ? 'range_too_large'
-          : codes.some((code) => code >= 500 && code <= 599) ||
-              /econnreset|econnrefused|socket|network|fetch failed|temporar/.test(
-                details,
-              )
-            ? 'transient'
-            : 'permanent';
+          : /nonce too low|nonce is too low|already been used/.test(details)
+            ? 'nonce_too_low'
+            : codes.some((code) => code >= 500 && code <= 599) ||
+                /econnreset|econnrefused|socket|network|fetch failed|temporar/.test(
+                  details,
+                )
+              ? 'transient'
+              : 'permanent';
   return new RpcError(kind);
 }

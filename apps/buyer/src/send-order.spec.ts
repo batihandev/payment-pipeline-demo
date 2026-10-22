@@ -230,3 +230,52 @@ it('checks the receipt on a retry', async () => {
   await sender.sendForOrder(row.id);
   expect(chain.calls).toEqual(['getTransactionReceipt', 'sendRawTransaction']);
 });
+it('resyncs a stale nonce and sends the order once', async () => {
+  await database.db.walletNonce.create({
+    data: { address: buyer, nextNonce: 1n },
+  });
+  const row = await order();
+  await expect(sender.sendForOrder(row.id)).rejects.toMatchObject({
+    kind: 'transient',
+  });
+  const reset = await database.db.order.findUniqueOrThrow({
+    where: { id: row.id },
+  });
+  expect(reset).toMatchObject({
+    nonce: null,
+    signedTransaction: null,
+    transactionHash: null,
+    sendState: 'pending',
+  });
+  await sender.sendForOrder(row.id);
+  const sent = await database.db.order.findUniqueOrThrow({
+    where: { id: row.id },
+  });
+  expect(sent).toMatchObject({ sendState: 'sent', nonce: 3n });
+  expect(chain.signedNonces).toEqual([1, 3]);
+  expect(chain.accepted).toEqual(new Set([sent.transactionHash]));
+  expect(
+    await database.db.incident.findMany({ where: { kind: 'nonce_resynced' } }),
+  ).toMatchObject([
+    {
+      whatHappened: 'Nonce was behind the chain.',
+      howHandled: 'Moved the nonce forward and signed the transfer again.',
+    },
+  ]);
+});
+it('does not re-sign when the stored transfer has landed', async () => {
+  await database.db.walletNonce.create({
+    data: { address: buyer, nextNonce: 1n },
+  });
+  const row = await order();
+  chain.getTransactionReceipt = async () => ({ blockNumber: 1n });
+  await sender.sendForOrder(row.id);
+  const sent = await database.db.order.findUniqueOrThrow({
+    where: { id: row.id },
+  });
+  expect(sent).toMatchObject({ sendState: 'sent', nonce: 1n });
+  expect(chain.signed).toBe(1);
+  expect(
+    await database.db.incident.count({ where: { kind: 'nonce_resynced' } }),
+  ).toBe(0);
+});

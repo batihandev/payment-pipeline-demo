@@ -4,6 +4,8 @@ import { RpcError } from '../src/rpc-error';
 export class ScriptedChain implements ChainClient, TransferSigner {
   signed = 0;
   calls: string[] = [];
+  nonce = 3;
+  signedNonces: number[] = [];
   private readonly balances = new Map<Address, bigint>();
   accepted = new Set<Hex>();
   receipts = new Set<Hex>();
@@ -20,7 +22,11 @@ export class ScriptedChain implements ChainClient, TransferSigner {
   });
   getNonce = async () => {
     this.calls.push('getNonce');
-    return 3;
+    return this.nonce;
+  };
+  getConfirmedNonce = async () => {
+    this.calls.push('getConfirmedNonce');
+    return this.nonce;
   };
   getTransactionReceipt = async (hash: Hex) => {
     this.calls.push('getTransactionReceipt');
@@ -34,6 +40,7 @@ export class ScriptedChain implements ChainClient, TransferSigner {
   ): Promise<Hex> {
     if (this.fail === 'sign') throw new RpcError('permanent');
     this.signed++;
+    this.signedNonces.push(nonce);
     return toHex(
       JSON.stringify({
         from,
@@ -49,6 +56,11 @@ export class ScriptedChain implements ChainClient, TransferSigner {
     if (this.fail === 'broadcast') throw new RpcError('timeout');
     if (this.fail === 'permanent-broadcast') throw new RpcError('permanent');
     const hash = keccak256(raw);
+    if (
+      !this.accepted.has(hash) &&
+      (JSON.parse(hexToString(raw)) as { nonce: number }).nonce < this.nonce
+    )
+      throw new RpcError('nonce_too_low');
     if (!this.accepted.has(hash)) {
       const transfer = JSON.parse(hexToString(raw)) as {
         from: Address;

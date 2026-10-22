@@ -137,9 +137,7 @@ export class OrderSender {
           row.sendAttempts > 0 &&
           (await this.chain.getTransactionReceipt(hash));
         if (!landed) {
-          const broadcast = await this.chain.sendRawTransaction(
-            row.signedTransaction as Hex,
-          );
+          const broadcast = await this.broadcast(target, from, row, hash);
           if (broadcast.toLowerCase() !== hash.toLowerCase())
             throw new RpcError('transient');
         }
@@ -198,6 +196,55 @@ export class OrderSender {
     } catch (error) {
       await this.recordFailure(target, error, exhausted);
       throw error instanceof RpcError ? error : new RpcError('transient');
+    }
+  }
+  // A "nonce too low" answer means another transaction used this nonce. The stored transfer is
+  // dropped only when it has no receipt and the chain's mined nonce is past it, so it can never
+  // land and the order never has two transfers that can.
+  private async broadcast(
+    target: Target,
+    from: Address,
+    row: { signedTransaction: string | null; nonce: bigint | null },
+    hash: Hex,
+  ): Promise<Hex> {
+    try {
+      return await this.chain.sendRawTransaction(row.signedTransaction as Hex);
+    } catch (error) {
+      if (!(error instanceof RpcError) || error.kind !== 'nonce_too_low')
+        throw error;
+      if (await this.chain.getTransactionReceipt(hash)) return hash;
+      if (
+        row.nonce === null ||
+        BigInt(await this.chain.getConfirmedNonce(from)) <= row.nonce
+      )
+        throw error;
+      const pending = BigInt(await this.chain.getNonce(from));
+      const address = from.toLowerCase();
+      await this.db.$transaction(
+        async (tx) => {
+          await tx.$queryRaw`SELECT address FROM wallet_nonces WHERE address = ${address} FOR UPDATE`;
+          await this.lockRow(tx, target);
+          await tx.walletNonce.update({
+            where: { address },
+            data: { nextNonce: pending },
+          });
+          await this.update(tx, target, {
+            nonce: null,
+            signedTransaction: null,
+            transactionHash: null,
+          });
+          await tx.incident.create({
+            data: {
+              kind: 'nonce_resynced',
+              whatHappened: 'Nonce was behind the chain.',
+              howHandled:
+                'Moved the nonce forward and signed the transfer again.',
+            },
+          });
+        },
+        { timeout: 60000 },
+      );
+      throw new RpcError('transient');
     }
   }
   private async recordFailure(
