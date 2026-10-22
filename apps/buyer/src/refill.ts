@@ -5,6 +5,9 @@ import type {
 import type { PrismaClient } from '../../../libs/db/src';
 import { OrderSender } from './send-order';
 
+// The scheduler fires every cooldown and job starts jitter, so allow a short margin.
+const COOLDOWN_TOLERANCE_MS = 1000;
+
 export type RefillResult =
   'sent' | 'not-needed' | 'cooling-down' | 'shop-empty';
 export type RefillOptions = {
@@ -34,7 +37,8 @@ export class Refill {
     }
     if (
       latest &&
-      now.getTime() - latest.createdAt.getTime() < this.options.cooldownMs
+      now.getTime() - latest.createdAt.getTime() <
+        this.options.cooldownMs - COOLDOWN_TOLERANCE_MS
     )
       return 'cooling-down';
     const buyer = await this.chain.getBalances(this.buyer);

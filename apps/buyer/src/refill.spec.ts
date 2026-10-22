@@ -73,6 +73,18 @@ it('waits out the cooldown', async () => {
   expect(await refill.run()).toBe('sent');
   expect(await database.db.sweep.count()).toBe(2);
 });
+it('refills again at the cooldown despite scheduler jitter', async () => {
+  expect(await refill.run()).toBe('sent');
+  clock = new Date(clock.getTime() + 20_000 - 500);
+  expect(await refill.run()).toBe('sent');
+  expect(await database.db.sweep.count()).toBe(2);
+});
+it('still waits when well inside the cooldown', async () => {
+  expect(await refill.run()).toBe('sent');
+  clock = new Date(clock.getTime() + 20_000 - 1_500);
+  expect(await refill.run()).toBe('cooling-down');
+  expect(await database.db.sweep.count()).toBe(1);
+});
 it('skips an empty shop', async () => {
   usdc[shop] = 0n;
   expect(await refill.run()).toBe('shop-empty');
