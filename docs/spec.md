@@ -49,7 +49,7 @@ A demo of payment tracking. A bot buys silly items from a demo shop and pays in 
 
 Two kinds of purchase share one send path but not their limits: **scheduled** purchases make the shop look busy through the day, and **visitor test buys** let a visitor watch a payment settle in seconds.
 
-- **Daily budget (scheduled only):** caps scheduled purchases per UTC day by count and total amount. Each day's random target is at or below the cap.
+- **Daily budget (scheduled only):** caps scheduled purchases per UTC day by count and total amount (`DAILY_COUNT_CAP`, default 100; `DAILY_AMOUNT_CAP`, default 200 USDC, so the count is what binds). Each day's target is drawn between half and all of each cap from the date and a seed, so days differ and a restart keeps the same target.
 - **Reservation:** a scheduled purchase reserves its count and amount in the `daily_budgets` row with one conditional update that fails when the cap would be exceeded. Sent but unsettled purchases count against the budget. A reservation is released only when a send is known to have failed; a send with an unknown outcome keeps it.
 - **Schedule:** each minute, the buyer decides whether to buy, with a probability of the remaining budget divided by the expected purchase size and the remaining active minutes. This gives quiet and busy minutes and spreads the target over the day. A UTC quiet window overnight lowers the probability. Remaining work is recomputed from the database each minute, so a restart resumes the day instead of starting over.
 - **Visitor test buys:** `POST /test-purchases` creates an order and queues it at the highest priority. It takes no daily budget, so a visitor never waits behind the schedule. Its limits, each a configuration value, protect gas, the RPC budget and the matching offsets:
@@ -134,10 +134,10 @@ One React + Vite page with three parts:
 - **Checkout:** a "Try a test purchase" card styled as a shop counter. On click, a till drawer slides up and a random catalogue item spins in. The visitor picks how to pay; phase 1 offers only **Test network**, and phase 2 adds **Test card**. A card terminal then shows the real stages: for the test network, _Sent_, then blocks stacking to the confirmation threshold; for a test card, a card marked TEST taps the terminal, then _Processing → Approved_. A receipt prints with a PAID stamp and drops into the feed, highlighted as the visitor's. The card asks for nothing (no inputs, addresses or QR codes) and is labelled "Test purchase · no real money · paid from the demo's own test account", with a "How this works" link to the repository. Every state it shows comes from the visitor's real order.
 
 - The checkout shows "Queued · N ahead" while a visitor purchase waits, and each limit's message says which limit applies and when it lifts.
-- **Small widget:** a dark card showing the latest payment as a receipt (item, price, order and block), a confirmation bar filling to the threshold, a PAID stamp when settled, a four-step strip and a footer of counts. It runs without interaction.
+- **Small widget:** a dark card showing the latest payment as a receipt (item, price, order and block), a confirmation bar filling to the threshold, a PAID stamp when settled, a four-step strip and a footer of counts. It runs without interaction. It also renders on its own at `/?view=widget`, the view the portfolio embeds.
 - **Full panel:** header with a live indicator, test network label, one-line caption; a four-lane pipeline; a receipts feed with notes (for example "Seen again on a rescan. Already credited, skipped."); stats tiles; an incident log titled "What went wrong today", pairing each problem with how it was handled.
 
-Confirmation progress reads "N of 10" until the threshold, then "10+ confirmations". The full panel adds a chart of settled payments per day and per week over the retained period, from `/stats/daily`.
+Confirmation progress reads "N of 10" until the threshold, then "10+ confirmations". The full panel adds a chart of settled payments per day and per week over the retained period, from `/stats/daily`, with scheduled and visitor purchases stacked and the average time to settle as a line.
 
 Data comes from the REST routes on load and `/events` afterwards. Explorer links point to the configured block explorer.
 
