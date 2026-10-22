@@ -15,6 +15,7 @@ import { Scanner } from './scanner';
 import { PaymentProgress } from './progress';
 import { PaymentDelivery } from './delivery';
 import { NoticeSender } from './notices';
+import { testRedisUrl } from '../../../libs/config/testing/redis';
 let f: Awaited<ReturnType<typeof fixture>>;
 let server: Server;
 let url: string;
@@ -107,7 +108,7 @@ it('keeps a rejected notice undelivered with a handling incident', async () => {
 });
 it('retries a shop outage through BullMQ and delivers the same payment after recovery', async () => {
   unavailable = true;
-  const connection = { url: 'redis://127.0.0.1:56379' };
+  const connection = { url: testRedisUrl() };
   const name = `notice-retries-${randomUUID()}`;
   const queue = new Queue<{ paymentId: string }>(name, { connection });
   const sender = new NoticeSender(f.db, { url, secret }, () => now);

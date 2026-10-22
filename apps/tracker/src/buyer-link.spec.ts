@@ -14,11 +14,12 @@ import {
   shop,
 } from '../testing/fixtures';
 import { Scanner } from './scanner';
+import { testRedisUrl } from '../../../libs/config/testing/redis';
 let f: Awaited<ReturnType<typeof fixture>>;
 let redis: Redis;
 beforeAll(async () => {
   f = await fixture();
-  redis = new Redis('redis://127.0.0.1:56379');
+  redis = new Redis(testRedisUrl());
 });
 afterAll(async () => {
   await redis.quit();

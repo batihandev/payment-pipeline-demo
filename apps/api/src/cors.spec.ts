@@ -1,13 +1,14 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import { apiSchema } from '../../../libs/config/src';
 import { createApi } from './application';
+import { testRedisUrl } from '../../../libs/config/testing/redis';
 let app: NestFastifyApplication;
 const origin = 'http://localhost:5173';
 beforeAll(async () => {
   app = await createApi(
     apiSchema.parse({
       DATABASE_URL: process.env.TEST_DATABASE_URL,
-      REDIS_URL: process.env.REDIS_URL ?? 'redis://127.0.0.1:56379',
+      REDIS_URL: testRedisUrl(),
       CHAIN_ID: 84532,
       RPC_URL: 'https://example.com',
       USDC_ADDRESS: `0x${'33'.repeat(20)}`,

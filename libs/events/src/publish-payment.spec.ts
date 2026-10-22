@@ -1,11 +1,12 @@
 import { Redis } from 'ioredis';
 import { testDatabase } from '../../db/testing/database';
 import { paymentChannel, publishPayment } from './publish-payment';
+import { testRedisUrl } from '../../config/testing/redis';
 
 it('publishes the complete saved payment with integer amounts encoded as decimal strings', async () => {
   const database = await testDatabase();
-  const publisher = new Redis('redis://127.0.0.1:56379');
-  const subscriber = new Redis('redis://127.0.0.1:56379');
+  const publisher = new Redis(testRedisUrl());
+  const subscriber = new Redis(testRedisUrl());
   try {
     const row = await database.db.payment.create({
       data: {

@@ -14,6 +14,7 @@ import {
 import { Scanner } from './scanner';
 import { PaymentProgress } from './progress';
 import { PaymentDelivery } from './delivery';
+import { testRedisUrl } from '../../../libs/config/testing/redis';
 let f: Awaited<ReturnType<typeof fixture>>;
 let redis: Redis;
 let queue: Queue<{ paymentId: string }>;
@@ -21,9 +22,9 @@ let scanner: Scanner;
 let progress: PaymentProgress;
 beforeAll(async () => {
   f = await fixture();
-  redis = new Redis('redis://127.0.0.1:56379');
+  redis = new Redis(testRedisUrl());
   queue = new Queue(`notices-test-${randomUUID()}`, {
-    connection: { url: 'redis://127.0.0.1:56379' },
+    connection: { url: testRedisUrl() },
   });
 });
 afterAll(async () => {
@@ -70,7 +71,7 @@ it('saves full payment snapshots for every stage change and finality without dup
 it('publishes persisted events over Redis and marks each published snapshot', async () => {
   await order(f.db);
   await scanner.scanOnce();
-  const subscriber = new Redis('redis://127.0.0.1:56379');
+  const subscriber = new Redis(testRedisUrl());
   try {
     await subscriber.subscribe(paymentChannel);
     const received = new Promise<string>((resolve) =>

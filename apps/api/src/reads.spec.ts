@@ -10,10 +10,11 @@ import {
   cooldownKey,
 } from '../../../libs/chain/src/service-limiter';
 import { RpcError } from '../../../libs/chain/src/rpc-error';
+import { testRedisUrl } from '../../../libs/config/testing/redis';
 
 const config = apiSchema.parse({
   DATABASE_URL: 'postgresql://unused/unused',
-  REDIS_URL: 'redis://127.0.0.1:56379',
+  REDIS_URL: testRedisUrl(),
   CHAIN_ID: 84532,
   CONFIRMATIONS: 7,
   RPC_URL: 'https://example.com',

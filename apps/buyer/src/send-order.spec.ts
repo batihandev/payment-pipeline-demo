@@ -5,6 +5,7 @@ import { RpcError } from '../../../libs/chain/src/rpc-error';
 import { testDatabase } from '../../../libs/db/testing/database';
 import { OrderSender } from './send-order';
 import { RedisLock } from './redis-lock';
+import { testRedisUrl } from '../../../libs/config/testing/redis';
 
 const buyer = `0x${'11'.repeat(20)}` as const;
 const shop = `0x${'22'.repeat(20)}` as const;
@@ -15,7 +16,7 @@ let chain: ScriptedChain;
 let sender: OrderSender;
 beforeAll(async () => {
   database = await testDatabase();
-  redis = new Redis('redis://127.0.0.1:56379', { maxRetriesPerRequest: 1 });
+  redis = new Redis(testRedisUrl(), { maxRetriesPerRequest: 1 });
 });
 afterAll(async () => {
   await redis.quit();

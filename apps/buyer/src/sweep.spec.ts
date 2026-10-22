@@ -5,6 +5,7 @@ import { ScriptedChain } from '../../../libs/chain/testing/scripted-chain';
 import { RedisLock } from './redis-lock';
 import { OrderSender } from './send-order';
 import { NightlySweep } from './sweep';
+import { testRedisUrl } from '../../../libs/config/testing/redis';
 const buyer = `0x${'11'.repeat(20)}` as const;
 const shop = `0x${'22'.repeat(20)}` as const;
 const day = new Date('2026-10-20');
@@ -14,7 +15,7 @@ let chain: ScriptedChain;
 let sweep: NightlySweep;
 beforeAll(async () => {
   database = await testDatabase();
-  redis = new Redis('redis://127.0.0.1:56379');
+  redis = new Redis(testRedisUrl());
 });
 afterAll(async () => {
   await redis.quit();

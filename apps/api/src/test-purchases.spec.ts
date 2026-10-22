@@ -6,6 +6,7 @@ import { testDatabase } from '../../../libs/db/testing/database';
 import { Purchases } from '../../buyer/src/purchases';
 import { BuyerJobs, type BuyerJobData } from '../../buyer/src/jobs';
 import { registerTestPurchases } from './test-purchases';
+import { testRedisUrl } from '../../../libs/config/testing/redis';
 let database: Awaited<ReturnType<typeof testDatabase>>;
 let redis: Redis;
 let queue: Queue<BuyerJobData>;
@@ -15,9 +16,9 @@ let purchases: Purchases;
 const now = new Date('2026-10-20T12:00:00Z');
 beforeAll(async () => {
   database = await testDatabase();
-  redis = new Redis(process.env.REDIS_URL ?? 'redis://127.0.0.1:56379');
+  redis = new Redis(testRedisUrl());
   queue = new Queue(`api-visitors-${randomUUID()}`, {
-    connection: { url: process.env.REDIS_URL ?? 'redis://127.0.0.1:56379' },
+    connection: { url: testRedisUrl() },
   });
 });
 afterAll(async () => {

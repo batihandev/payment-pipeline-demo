@@ -4,12 +4,13 @@ import { once } from 'node:events';
 import { publishPayment } from '../../../libs/events/src/publish-payment';
 import { testDatabase } from '../../../libs/db/testing/database';
 import { registerEvents } from './events';
+import { testRedisUrl } from '../../../libs/config/testing/redis';
 let adapter: FastifyAdapter;
 let redis: Redis;
 let database: Awaited<ReturnType<typeof testDatabase>>;
 beforeAll(async () => {
   database = await testDatabase();
-  redis = new Redis(process.env.REDIS_URL ?? 'redis://127.0.0.1:56379');
+  redis = new Redis(testRedisUrl());
 });
 afterAll(async () => {
   await redis.quit();

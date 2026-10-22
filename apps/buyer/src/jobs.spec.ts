@@ -3,6 +3,7 @@ import { Queue, Worker, type Job } from 'bullmq';
 import { testDatabase } from '../../../libs/db/testing/database';
 import { Purchases } from './purchases';
 import { BuyerJobs, type BuyerJobData } from './jobs';
+import { testRedisUrl } from '../../../libs/config/testing/redis';
 
 let database: Awaited<ReturnType<typeof testDatabase>>;
 let queue: Queue<BuyerJobData>;
@@ -19,7 +20,7 @@ beforeEach(async () => {
   await database.db.order.deleteMany();
   await database.db.dailyBudget.deleteMany();
   queue = new Queue(`buyer-test-${randomUUID()}`, {
-    connection: { host: '127.0.0.1', port: 56379 },
+    connection: { url: testRedisUrl() },
   });
   purchases = new Purchases(
     database.db,
@@ -73,7 +74,7 @@ it('runs a visitor purchase ahead of queued scheduled sends without pacing or a 
         if (row) completed.push(job.name);
       }
     },
-    { connection: { host: '127.0.0.1', port: 56379 }, autorun: false },
+    { connection: { url: testRedisUrl() }, autorun: false },
   );
   try {
     const first = new Promise<void>((resolve, reject) => {
