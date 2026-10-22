@@ -22,6 +22,7 @@ import { OrderSender } from './send-order';
 import { NightlySweep } from './sweep';
 import { Refill } from './refill';
 import { expireOrders } from './expiry';
+import { pruneOlderThan } from './retention';
 
 export type BuyerConfig = z.output<typeof buyerSchema>;
 export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
@@ -35,6 +36,7 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
   private readonly refill: Refill;
   private readonly refillEveryMs: number;
   private readonly maxInFlight: number;
+  private readonly retentionMs: number;
   constructor(
     private readonly db: PrismaClient,
     config: BuyerConfig,
@@ -64,6 +66,7 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
       limiter,
     );
     this.maxInFlight = config.MAX_IN_FLIGHT;
+    this.retentionMs = config.RETENTION_DAYS * 86_400_000;
     this.purchases = new Purchases(db, purchaseOptions(config));
     const connection = { url: config.REDIS_URL };
     this.queue = new Queue<BuyerJobData>('buyer', { connection });
@@ -135,6 +138,20 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
       },
     );
     await this.queue.upsertJobScheduler(
+      'buyer-retention',
+      { pattern: '30 3 * * *', tz: 'UTC' },
+      {
+        name: 'retention',
+        data: {},
+        opts: {
+          ...retryOptions,
+          priority: 10,
+          removeOnComplete: 100,
+          removeOnFail: 100,
+        },
+      },
+    );
+    await this.queue.upsertJobScheduler(
       'buyer-refill',
       { every: this.refillEveryMs },
       {
@@ -171,6 +188,14 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
             exhausted,
           );
           return;
+        case 'retention': {
+          const counts = await pruneOlderThan(
+            this.db,
+            new Date(now.getTime() - this.retentionMs),
+          );
+          console.log(`Retention removed ${JSON.stringify(counts)}`);
+          return;
+        }
         case 'refill-check':
           await this.refill.run(exhausted);
           return;
