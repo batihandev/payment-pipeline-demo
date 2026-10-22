@@ -206,3 +206,27 @@ it('fences simultaneous nonce allocators even when they hold separate Redis leas
   ).toEqual([3n, 4n]);
   expect(chain.accepted.size).toBe(2);
 });
+it('sends a first attempt without a receipt lookup or nonce call when the nonce row exists', async () => {
+  await database.db.walletNonce.create({
+    data: { address: buyer, nextNonce: 5n },
+  });
+  const row = await order();
+  await sender.sendForOrder(row.id);
+  expect(chain.calls).toEqual(['sendRawTransaction']);
+  expect(
+    (await database.db.order.findUniqueOrThrow({ where: { id: row.id } }))
+      .nonce,
+  ).toBe(5n);
+});
+it('checks the receipt on a retry', async () => {
+  await database.db.walletNonce.create({
+    data: { address: buyer, nextNonce: 5n },
+  });
+  const row = await order();
+  chain.fail = 'broadcast';
+  await expect(sender.sendForOrder(row.id)).rejects.toBeInstanceOf(RpcError);
+  chain.fail = null;
+  chain.calls = [];
+  await sender.sendForOrder(row.id);
+  expect(chain.calls).toEqual(['getTransactionReceipt', 'sendRawTransaction']);
+});

@@ -3,6 +3,7 @@ import type { ChainClient, TransferSigner } from '../src/chain-client';
 import { RpcError } from '../src/rpc-error';
 export class ScriptedChain implements ChainClient, TransferSigner {
   signed = 0;
+  calls: string[] = [];
   private readonly balances = new Map<Address, bigint>();
   accepted = new Set<Hex>();
   receipts = new Set<Hex>();
@@ -17,9 +18,14 @@ export class ScriptedChain implements ChainClient, TransferSigner {
     native: 1n,
     usdc: this.balances.get(address) ?? 500n,
   });
-  getNonce = async () => 3;
-  getTransactionReceipt = async (hash: Hex) =>
-    this.receipts.has(hash) ? { blockNumber: 1n } : null;
+  getNonce = async () => {
+    this.calls.push('getNonce');
+    return 3;
+  };
+  getTransactionReceipt = async (hash: Hex) => {
+    this.calls.push('getTransactionReceipt');
+    return this.receipts.has(hash) ? { blockNumber: 1n } : null;
+  };
   async signTransfer(
     from: Address,
     to: Address,
@@ -39,6 +45,7 @@ export class ScriptedChain implements ChainClient, TransferSigner {
     );
   }
   async sendRawTransaction(raw: Hex): Promise<Hex> {
+    this.calls.push('sendRawTransaction');
     if (this.fail === 'broadcast') throw new RpcError('timeout');
     if (this.fail === 'permanent-broadcast') throw new RpcError('permanent');
     const hash = keccak256(raw);

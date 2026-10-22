@@ -67,7 +67,7 @@ export class OrderSender {
     return this.db.$transaction(
       async (tx) => {
         const address = from.toLowerCase();
-        await tx.$executeRaw`
+        const created = await tx.$executeRaw`
           INSERT INTO wallet_nonces (address, next_nonce) VALUES (${address}, 0)
           ON CONFLICT (address) DO NOTHING
         `;
@@ -91,9 +91,11 @@ export class OrderSender {
           const allocated = await tx.walletNonce.findUniqueOrThrow({
             where: { address },
           });
-          const pending = BigInt(await this.chain.getNonce(from));
+          // The chain is asked only to seed a wallet that has no nonce row yet.
           const nonce =
-            pending > allocated.nextNonce ? pending : allocated.nextNonce;
+            created > 0
+              ? BigInt(await this.chain.getNonce(from))
+              : allocated.nextNonce;
           if (nonce > BigInt(Number.MAX_SAFE_INTEGER))
             throw new RpcError('permanent');
           const raw = await this.signer.signTransfer(
@@ -130,7 +132,11 @@ export class OrderSender {
           throw new Error('Signed transfer is missing');
         await this.update(this.db, target, { sendAttempts: { increment: 1 } });
         const hash = row.transactionHash as Hex;
-        if (!(await this.chain.getTransactionReceipt(hash))) {
+        // Only a retry can already have landed.
+        const landed =
+          row.sendAttempts > 0 &&
+          (await this.chain.getTransactionReceipt(hash));
+        if (!landed) {
           const broadcast = await this.chain.sendRawTransaction(
             row.signedTransaction as Hex,
           );

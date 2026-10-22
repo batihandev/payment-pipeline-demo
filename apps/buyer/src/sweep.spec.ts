@@ -92,10 +92,11 @@ it('records a concurrent rebroadcast of one sweep as one completed sweep', async
   const prepared = new Promise<void>((resolve) => {
     release = resolve;
   });
-  chain.getTransactionReceipt = async () => {
+  const broadcast = chain.sendRawTransaction.bind(chain);
+  chain.sendRawTransaction = async (raw) => {
     if (++reached === 2) release();
     await prepared;
-    return null;
+    return broadcast(raw);
   };
   const other = new OrderSender(
     database.db,

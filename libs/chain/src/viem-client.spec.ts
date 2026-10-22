@@ -6,7 +6,7 @@ import {
   parseTransaction,
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { ViemChainClient } from './viem-client';
+import { TRANSFER_GAS_LIMIT, ViemChainClient } from './viem-client';
 import { RpcLimiter } from './rpc-limiter';
 
 const key = `0x${'11'.repeat(32)}` as const;
@@ -73,4 +73,31 @@ it('sanitizes RPC failures at the transport boundary', async () => {
     kind: 'rate_limit',
     message: 'RPC request failed: rate_limit',
   });
+});
+it('signs three transfers within 5 s with one gas price call and no gas estimate', async () => {
+  const methods: string[] = [];
+  const counted = new ViemChainClient(
+    {
+      chainId: 84532,
+      rpcUrl: 'http://unused.invalid',
+      usdcAddress: token,
+      keys: [key],
+    },
+    new RpcLimiter(1000000, 1),
+    custom({
+      request: async ({ method }) => {
+        methods.push(method);
+        if (method === 'eth_gasPrice') return '0xa';
+        throw new Error(`Unexpected method ${method}`);
+      },
+    }),
+  );
+  for (const nonce of [1, 2, 3]) {
+    const tx = parseTransaction(
+      await counted.signTransfer(buyer, shop, 100n, nonce),
+    );
+    expect(tx.gas).toBe(TRANSFER_GAS_LIMIT);
+  }
+  expect(methods.filter((m) => m === 'eth_estimateGas')).toHaveLength(0);
+  expect(methods.filter((m) => m === 'eth_gasPrice')).toHaveLength(1);
 });

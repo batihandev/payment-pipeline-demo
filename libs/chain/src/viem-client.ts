@@ -24,9 +24,12 @@ type Options = {
   shopAddress?: Address;
   keys?: Hex[];
 };
+export const TRANSFER_GAS_LIMIT = 100_000n;
+const GAS_PRICE_TTL_MS = 5000;
 export class ViemChainClient implements ChainClient, TransferSigner {
   private readonly client;
   private readonly accounts;
+  private gasPrice: { at: number; value: Promise<bigint> } | null = null;
   constructor(
     private readonly options: Options,
     private readonly limiter: RpcLimiter,
@@ -148,6 +151,18 @@ export class ViemChainClient implements ChainClient, TransferSigner {
       this.client.getTransactionCount({ address: addr, blockTag: 'pending' }),
     );
   }
+  private cachedGasPrice(): Promise<bigint> {
+    const now = Date.now();
+    if (this.gasPrice && now - this.gasPrice.at < GAS_PRICE_TTL_MS)
+      return this.gasPrice.value;
+    const value = this.call(() => this.client.getGasPrice());
+    const entry = { at: now, value };
+    this.gasPrice = entry;
+    value.catch(() => {
+      if (this.gasPrice === entry) this.gasPrice = null;
+    });
+    return value;
+  }
   async signTransfer(
     from: Address,
     to: Address,
@@ -163,21 +178,13 @@ export class ViemChainClient implements ChainClient, TransferSigner {
       functionName: 'transfer',
       args: [to, amount],
     });
-    const gas = await this.call(() =>
-      this.client.estimateGas({
-        prepare: false,
-        account: account.address,
-        to: this.options.usdcAddress,
-        data,
-      }),
-    );
-    const gasPrice = await this.call(() => this.client.getGasPrice());
+    const gasPrice = await this.cachedGasPrice();
     return account.signTransaction({
       chainId: this.options.chainId,
       to: this.options.usdcAddress,
       data,
       nonce,
-      gas,
+      gas: TRANSFER_GAS_LIMIT,
       gasPrice,
       type: 'legacy',
     });
