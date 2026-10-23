@@ -547,21 +547,74 @@ describe('older receipts', () => {
     );
     stop();
   });
-  it('drops stale older receipts when the stream reopens', async () => {
+  /** Counts of the shown receipts at every update, to catch a collapse that a later update hides. */
+  function watchCounts(s: ReturnType<typeof paged>) {
+    const counts: number[] = [];
+    const stop = s.client.subscribe(() => {
+      const data = s.client.getSnapshot().data;
+      if (data) counts.push(data.receipts.length);
+    });
+    return { counts, stop };
+  }
+  it('keeps the visible receipts when the stream reopens', async () => {
     const s = paged();
-    const stop = s.client.subscribe(() => {});
+    const { counts, stop } = watchCounts(s);
+    s.stream.open();
+    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    for (let page = 0; page < 2; page++) s.client.showMoreReceipts();
+    expect(s.data().receipts).toHaveLength(60);
+    const before = counts.length;
+    s.stream.disconnect();
+    s.stream.open();
+    await vi.waitFor(() => expect(counts.length).toBeGreaterThan(before));
+    expect(Math.min(...counts.slice(before))).toBe(60);
+    expect(s.data().receipts).toHaveLength(60);
+    stop();
+  });
+  it('refreshes older receipts after the stream reopens', async () => {
+    const s = paged();
+    const { counts, stop } = watchCounts(s);
     s.stream.open();
     await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
     await s.showAll();
     s.client.showMoreReceipts();
     await vi.waitFor(() => expect(s.data().receipts).toHaveLength(120));
-    s.stream.disconnect();
-    s.stream.open();
-    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(20));
+    const stageOf = () => s.data().receipts.find((p) => p.id === 'p110')?.stage;
+    expect(stageOf()).toBe('received');
+    const before = counts.length;
+    const reads = s.older.reads;
+    const changed = rows.find((r) => r.id === 'p110');
+    if (!changed) throw new Error('No row p110');
+    changed.stage = 'settled';
+    try {
+      s.stream.disconnect();
+      s.stream.open();
+      await vi.waitFor(() => expect(stageOf()).toBe('settled'));
+    } finally {
+      changed.stage = 'received';
+    }
+    expect(s.older.reads).toBeGreaterThan(reads);
+    expect(Math.min(...counts.slice(before))).toBe(120);
     expect(s.data().olderReceipts).toBe('more');
+    s.client.showMoreReceipts();
+    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(130));
+    stop();
+  });
+  it('keeps the shown receipts when refreshing older ones fails', async () => {
+    const s = paged();
+    const { counts, stop } = watchCounts(s);
+    s.stream.open();
+    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
     await s.showAll();
     s.client.showMoreReceipts();
     await vi.waitFor(() => expect(s.data().receipts).toHaveLength(120));
+    const before = counts.length;
+    s.older.fail = true;
+    s.stream.disconnect();
+    s.stream.open();
+    await vi.waitFor(() => expect(s.data().olderFailed).toBe(true));
+    expect(Math.min(...counts.slice(before))).toBe(120);
+    expect(s.data().olderReceipts).toBe('more');
     stop();
   });
   it('says when older receipts could not load', async () => {

@@ -92,8 +92,10 @@ export class PaymentsClient {
   private olderLoading = false;
   private oldestReached = false;
   private olderFailed = false;
-  /** Changes when the older rows are dropped, so a read still in flight is ignored. */
+  /** Changes when the stream reopens, so an older read that started before it is ignored. */
   private olderEpoch = 0;
+  /** Set on a reopen: the next live list read is followed by a re-read of the older rows. */
+  private rereadOlder = false;
   readonly baseUrl: string;
   constructor(
     baseUrl: string,
@@ -212,16 +214,54 @@ export class PaymentsClient {
     this.update(this.snapshot);
   }
   /**
-   * A reload is the live list's only fresh read, so rows read with Show more are dropped with it
-   * rather than read again: they may be stale, and Show more reads them afresh when asked.
+   * A reload is the live list's only fresh read, so the older rows may be stale after it. They stay
+   * on screen, and the range the visitor has open is read again; a failure leaves them as they are.
    */
-  private dropOlderRows() {
-    this.older.clear();
-    this.olderEpoch++;
-    this.olderLoading = false;
+  private async refreshOlder(): Promise<void> {
+    const request = this.request;
+    const epoch = this.olderEpoch;
+    const target = this.receiptCount;
+    const live = this.snapshot.data?.payments ?? [];
+    if (live.length >= target || !this.canReadOlder(live)) return;
+    this.olderLoading = true;
     this.olderFailed = false;
-    this.oldestReached = false;
-    this.receiptCount = RECEIPT_PAGE;
+    this.update(this.snapshot);
+    const fresh = new Map<string, Payment>();
+    const liveIds = new Set(live.map((p) => p.id));
+    let last: Payment | undefined = live.at(-1);
+    let reached = false;
+    try {
+      while (last && live.length + fresh.size < target) {
+        const before = encodePaymentCursor(paymentCursor(last));
+        const response = await request(
+          `${this.baseUrl}/payments?limit=${RECEIPT_PAGE}&before=${before}`,
+        );
+        if (!response.ok) throw new Error('Demo offline');
+        const rows = (await response.json()) as Payment[];
+        if (epoch !== this.olderEpoch) return;
+        for (const p of rows) if (!liveIds.has(p.id)) fresh.set(p.id, p);
+        if (rows.length < RECEIPT_PAGE) {
+          reached = true;
+          break;
+        }
+        last = rows.at(-1);
+      }
+    } catch {
+      if (epoch !== this.olderEpoch) return;
+      this.olderLoading = false;
+      this.olderFailed = true;
+      this.update(this.snapshot);
+      return;
+    }
+    // Live events may have moved a row on while the pages were in flight.
+    for (const [id, p] of fresh) {
+      const held = this.older.get(id);
+      if (held && stageRank(held) > stageRank(p)) fresh.set(id, held);
+    }
+    this.older = fresh;
+    this.oldestReached = reached;
+    this.olderLoading = false;
+    this.update(this.snapshot);
   }
   private openStream() {
     this.stream = this.createStream(`${this.baseUrl}/events`);
@@ -229,7 +269,10 @@ export class PaymentsClient {
       this.generation++;
       this.loading = false;
       this.buffered = [];
-      this.dropOlderRows();
+      this.olderEpoch++;
+      this.olderLoading = false;
+      this.olderFailed = false;
+      this.rereadOlder = true;
       void this.refresh();
       this.sendOrderUpdate({ type: 'opened' });
     };
@@ -354,6 +397,10 @@ export class PaymentsClient {
       } as Feed;
       this.update({ status: 'live', data: this.merge(data, this.buffered) });
       this.buffered = [];
+      if (this.rereadOlder) {
+        this.rereadOlder = false;
+        void this.refreshOlder();
+      }
     } catch {
       if (generation !== this.generation) return;
       if (!this.snapshot.data) this.update({ status: 'offline', data: null });
