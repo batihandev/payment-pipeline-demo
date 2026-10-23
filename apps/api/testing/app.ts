@@ -3,9 +3,13 @@ import type { Type } from '@nestjs/common';
 import { Test, type TestingModuleBuilder } from '@nestjs/testing';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { apiSchema, validateConfig } from '../../../libs/config/src';
+import { restoreEnvironmentAfterAll } from '../../../libs/config/testing/environment';
 import { testRedisUrl } from '../../../libs/config/testing/redis';
+import { destroyEventStreams } from './event-stream';
 import { AppModule } from '../src/app.module';
 import { applicationOptions, configureApp } from '../src/bootstrap';
+
+restoreEnvironmentAfterAll();
 
 export const testOrigin = 'http://localhost:5173';
 
@@ -51,5 +55,10 @@ export async function createTestApp(
     module.createNestApplication<NestExpressApplication>(applicationOptions);
   configureApp(app, config);
   await app.init();
+  const close = app.close.bind(app);
+  app.close = async () => {
+    destroyEventStreams(app);
+    await close();
+  };
   return app;
 }

@@ -80,6 +80,7 @@ it('closes both workers and Redis on shutdown', async () => {
   const upkeep = module.get(UpkeepProcessor);
   const redis = module.get<Redis>(REDIS);
   let order: { id: string } | undefined;
+  let closed = false;
   try {
     await module.init();
     order = await db.order.create({
@@ -115,7 +116,6 @@ it('closes both workers and Redis on shutdown', async () => {
       log.mockRestore();
     }
 
-    let closed = false;
     const closing = module.close().then(() => (closed = true));
     await wait(500);
     expect(closed).toBe(false);
@@ -131,6 +131,7 @@ it('closes both workers and Redis on shutdown', async () => {
     expect(redis.status).toBe('end');
   } finally {
     release();
+    if (!closed) await module.close();
     if (order) {
       const admin = new PrismaClient({
         adapter: new PrismaPg({

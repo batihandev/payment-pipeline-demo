@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 import { Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { ChainClient } from '../../../libs/chain/src/chain-client';
+import { restoreEnvironmentAfterAll } from '../../../libs/config/testing/environment';
 import { testRedisUrl } from '../../../libs/config/testing/redis';
 import { PrismaService } from '../../../libs/db/src';
 import { QUEUES } from '../../../libs/queues/src';
@@ -13,6 +14,8 @@ import { AppModule } from './app.module';
 import { TrackerProcessor } from './delivery/tracker.processor';
 import { ShopNoticesProcessor } from './notices/shop-notices.processor';
 import { PollerService } from './polling/poller.service';
+
+restoreEnvironmentAfterAll();
 
 const prefix = `tracker-shutdown-test-${randomUUID()}`;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -68,6 +71,7 @@ it('stops the poll loop before closing workers, Redis and the database', async (
   const tracker = module.get(TrackerProcessor);
   const notices = module.get(ShopNoticesProcessor);
   const redis = module.get<Redis>(REDIS);
+  let closed = false;
   try {
     await module.init();
     await inPass;
@@ -110,7 +114,6 @@ it('stops the poll loop before closing workers, Redis and the database', async (
       log.mockRestore();
     }
 
-    let closed = false;
     const closing = module.close().then(() => (closed = true));
     await wait(300);
     expect(closed).toBe(false);
@@ -130,6 +133,7 @@ it('stops the poll loop before closing workers, Redis and the database', async (
     expect(redis.status).toBe('end');
   } finally {
     release();
+    if (!closed) await module.close();
     for (const name of [QUEUES.tracker, QUEUES.shopNotices]) {
       const probe = new Queue(name, {
         connection: { url: testRedisUrl() },
