@@ -12,6 +12,9 @@ const webOrigin = z
   .refine((value) => URL.canParse(value) && new URL(value).origin === value);
 const connection = {
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
+  DATABASE_POOL_MAX: positiveInteger.default(10),
+  DATABASE_CONNECT_TIMEOUT_MS: positiveInteger.default(5000),
+  DATABASE_IDLE_TIMEOUT_MS: positiveInteger.default(10_000),
   REDIS_URL: z.url({ protocol: /^rediss?$/ }),
 };
 const chain = {

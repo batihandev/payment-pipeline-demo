@@ -98,6 +98,12 @@ describe('visitor, refill and retention settings', () => {
     expect(api.RETENTION_DAYS).toBe(30);
     expect(api.CLIENT_IP_HEADER).toBe(undefined);
     expect(api.RPC_REQUESTS_PER_SECOND_API).toBe(1);
+    for (const config of [api, validateConfig(buyerSchema, minimal)])
+      expect(config).toMatchObject({
+        DATABASE_POOL_MAX: 10,
+        DATABASE_CONNECT_TIMEOUT_MS: 5000,
+        DATABASE_IDLE_TIMEOUT_MS: 10_000,
+      });
     const buyer = validateConfig(buyerSchema, minimal);
     expect(buyer.DAILY_COUNT_CAP).toBe(100);
     expect(buyer.DAILY_AMOUNT_CAP).toBe(200000000n);

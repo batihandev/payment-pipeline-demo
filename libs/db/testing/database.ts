@@ -23,6 +23,7 @@ export async function testDatabase(): Promise<{
     adapter: new PrismaPg({ connectionString: url.toString() }, { schema }),
   });
   const db = Object.assign(client, {
+    onModuleInit: async () => {},
     onModuleDestroy: async () => {
       await client.$disconnect();
     },
