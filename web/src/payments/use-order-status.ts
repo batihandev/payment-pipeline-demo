@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
+import type { OrderUpdate, PaymentsClient } from './client';
 import { paymentsClient } from './use-payments';
 
-export const orderPollMs = 1000;
-
-/** What `GET /test-purchases/:id` reports about a visitor's order. */
+/** Where a visitor's order stands: its place in the queue, and whether it closed unsent. */
 export type OrderStatus = { position: number; closed: boolean };
 
 function readStatus(body: unknown): OrderStatus | undefined {
@@ -13,67 +12,78 @@ function readStatus(body: unknown): OrderStatus | undefined {
   return { position, closed: closed === true };
 }
 
-/** Polls the order until it closes or the returned stop function is called. */
-export function startOrderPolling({
-  baseUrl,
+/**
+ * Follows an order on the event stream. `GET /test-purchases/:id` is read once at the start and
+ * again each time the stream opens, to catch up on updates it may have missed; nothing is read
+ * on a timer. A closed order stays closed.
+ */
+export function followOrder({
+  client,
   orderId,
   request = fetch,
   onStatus,
 }: {
-  baseUrl: string;
+  client: Pick<PaymentsClient, 'baseUrl' | 'onOrderUpdate'>;
   orderId: string;
   request?: typeof fetch;
   onStatus: (status: OrderStatus) => void;
 }): () => void {
   const controller = new AbortController();
-  let cancelled = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  async function poll() {
-    let status: OrderStatus | undefined;
+  let stopped = false;
+  let status: OrderStatus = { position: 0, closed: false };
+  const show = (next: OrderStatus) => {
+    if (stopped) return;
+    status = { ...next, closed: next.closed || status.closed };
+    onStatus(status);
+  };
+  async function read() {
     try {
-      const response = await request(`${baseUrl}/test-purchases/${orderId}`, {
-        signal: controller.signal,
-      });
-      if (response.ok) status = readStatus(await response.json());
+      const response = await request(
+        `${client.baseUrl}/test-purchases/${orderId}`,
+        { signal: controller.signal },
+      );
+      const read = response.ok ? readStatus(await response.json()) : undefined;
+      if (read) show(read);
     } catch {
-      // keep the last status and try again
+      // the next stream open reads it again
     }
-    if (cancelled) return;
-    if (status) {
-      onStatus(status);
-      if (status.closed) return;
-    }
-    timer = setTimeout(() => void poll(), orderPollMs);
   }
-  timer = setTimeout(() => void poll(), orderPollMs);
+  const stopListening = client.onOrderUpdate((update: OrderUpdate) => {
+    if (update.type === 'opened') void read();
+    else if (update.type === 'queue')
+      show({ ...status, position: update.waiting.indexOf(orderId) + 1 });
+    else if (update.id === orderId && update.closed)
+      show({ position: 0, closed: true });
+  });
+  void read();
   return () => {
-    cancelled = true;
-    clearTimeout(timer);
+    stopped = true;
+    stopListening();
     controller.abort();
   };
 }
 
-/** Follows a visitor's order until it is paid or closes; `paid` stops the polling. */
+/** Follows a visitor's order until it is paid; `paid` stops following it. */
 export function useOrderStatus(
   apiBaseUrl: string,
   orderId: string | null,
   initialPosition: number,
   paid: boolean,
 ): OrderStatus {
-  const [polled, setPolled] = useState<{
+  const [followed, setFollowed] = useState<{
     orderId: string;
     status: OrderStatus;
   }>();
   useEffect(() => {
     if (!orderId || paid) return;
-    return startOrderPolling({
-      baseUrl: paymentsClient(apiBaseUrl).baseUrl,
+    return followOrder({
+      client: paymentsClient(apiBaseUrl),
       orderId,
-      onStatus: (status) => setPolled({ orderId, status }),
+      onStatus: (status) => setFollowed({ orderId, status }),
     });
   }, [apiBaseUrl, orderId, paid]);
   if (!orderId || paid) return { position: 0, closed: false };
-  return polled?.orderId === orderId
-    ? polled.status
+  return followed?.orderId === orderId
+    ? followed.status
     : { position: initialPosition, closed: false };
 }
