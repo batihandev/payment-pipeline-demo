@@ -1,9 +1,9 @@
 import {
-  encodePaymentCursor,
-  paymentCursor,
-} from '../../../libs/core/src/payment-cursor';
+  PAYMENT_LIST_MAX,
+  PAYMENT_LIST_STEP,
+} from '../../../libs/core/src/payment-list';
 import { stageRank } from './use-stage-sequence';
-import type { Dashboard, Health, Payment, Snapshot } from './types';
+import type { DailyStat, Health, Payment, Snapshot, Stats } from './types';
 
 export type Rail = 'chain' | 'card';
 export type PurchaseAnswer = {
@@ -22,12 +22,19 @@ export type PurchaseAnswer = {
 };
 
 export const HEALTH_EVERY_MS = 15000;
-/** How many payments the live list holds; the pipeline counts cover these. */
-const LIVE_LIMIT = 100;
+const REFRESH_EVERY_MS = 15000;
+/** How many of the newest payments the pipeline counts cover. */
+const PIPELINE_LIMIT = 100;
 /** How many receipts show at first, and how many each Show more adds. */
-export const RECEIPT_PAGE = 20;
+export const RECEIPT_PAGE = PAYMENT_LIST_STEP;
 
-type Feed = Omit<Dashboard, 'receipts' | 'olderReceipts'>;
+/** The newest payments, as one read returned them with live events merged in. */
+type Feed = { rows: Payment[]; stats: Stats; daily: DailyStat[] };
+
+/** One read covers the receipt window and the pipeline counts. */
+function readLimit(windowSize: number): number {
+  return Math.max(windowSize, PIPELINE_LIMIT);
+}
 
 function newestFirst(a: Payment, b: Payment): number {
   return (
@@ -76,28 +83,26 @@ function readOrderUpdate(data: string): OrderUpdate | undefined {
 }
 export class PaymentsClient {
   private snapshot: Snapshot = { status: 'loading', data: null };
+  private status: Snapshot['status'] = 'loading';
+  private feed: Feed | null = null;
   private listeners = new Set<() => void>();
   private orderListeners = new Set<(update: OrderUpdate) => void>();
   private stream?: EventStream;
-  private generation = 0;
+  /** How many receipts the page shows. */
+  private windowSize = RECEIPT_PAGE;
+  /** Whether the last read filled its limit, so older payments may exist. */
+  private full = false;
+  /** Bumped by each read, reopen and unsubscribe; a read whose epoch has moved on is dropped. */
+  private epoch = 0;
+  /** The read in flight: the window size it reads, and whether Show more asked for it. */
+  private reading?: { size: number; more: boolean };
+  private olderFailed = false;
+  /** Events since the last completed read; they are applied again over its rows. */
   private buffered: Payment[] = [];
-  private loading = false;
   private retry?: ReturnType<typeof setTimeout>;
   private reopen?: ReturnType<typeof setTimeout>;
   private health: Health | null = null;
   private healthTimer?: ReturnType<typeof setInterval>;
-  private receiptCount = RECEIPT_PAGE;
-  /** Payments older than the live list: pages read with Show more, and rows it pushed out. */
-  private older = new Map<string, Payment>();
-  private olderLoading = false;
-  /** Held by whichever older read or refresh is running; a reopen drops it so a stale read cannot block the next. */
-  private olderRun = false;
-  private oldestReached = false;
-  private olderFailed = false;
-  /** Changes when the stream reopens, so an older read that started before it is ignored. */
-  private olderEpoch = 0;
-  /** Set on a reopen: the next live list read is followed by a re-read of the older rows. */
-  private rereadOlder = false;
   readonly baseUrl: string;
   constructor(
     baseUrl: string,
@@ -117,13 +122,13 @@ export class PaymentsClient {
     return () => {
       this.listeners.delete(listener);
       if (!this.listeners.size) {
-        this.generation++;
+        this.epoch++;
+        this.reading = undefined;
         this.stream?.close();
         this.stream = undefined;
         clearTimeout(this.retry);
         clearTimeout(this.reopen);
         clearInterval(this.healthTimer);
-        this.loading = false;
       }
     };
   };
@@ -137,187 +142,40 @@ export class PaymentsClient {
   private sendOrderUpdate(update: OrderUpdate) {
     for (const listener of this.orderListeners) listener(update);
   }
-  private update(snapshot: { status: Snapshot['status']; data: Feed | null }) {
+  private publish() {
+    const feed = this.feed;
     this.snapshot = {
-      status: snapshot.status,
-      data: snapshot.data && this.withReceipts(snapshot.data),
+      status: this.status,
+      data: feed && {
+        payments: feed.rows.slice(0, PIPELINE_LIMIT),
+        receipts: feed.rows.slice(0, this.windowSize),
+        olderReceipts: this.reading?.more
+          ? 'loading'
+          : this.windowSize < PAYMENT_LIST_MAX &&
+              (feed.rows.length > this.windowSize || this.full)
+            ? 'more'
+            : 'none',
+        olderFailed: this.olderFailed,
+        stats: feed.stats,
+        daily: feed.daily,
+        health: this.health,
+      },
     };
     for (const listener of this.listeners) listener();
   }
-  private withReceipts(feed: Feed): Dashboard {
-    const shown = this.snapshot.data;
-    if (this.receiptCount > RECEIPT_PAGE && shown) {
-      const live = new Set(feed.payments.map((p) => p.id));
-      for (const p of shown.payments)
-        if (!live.has(p.id)) this.older.set(p.id, p);
-    }
-    for (const p of feed.payments) this.older.delete(p.id);
-    // Keep the newest rows the list can show, plus one page of slack for the next Show more.
-    const room = Math.max(0, this.receiptCount - feed.payments.length);
-    if (this.older.size > room + RECEIPT_PAGE) {
-      const keep = [...this.older.values()]
-        .sort(newestFirst)
-        .slice(0, room + RECEIPT_PAGE);
-      this.older = new Map(keep.map((p) => [p.id, p]));
-    }
-    const all = [...feed.payments, ...this.older.values()].sort(newestFirst);
-    const canRead = this.canReadOlder(feed.payments);
-    return {
-      ...feed,
-      receipts: all.slice(0, this.receiptCount),
-      olderReceipts:
-        this.olderLoading || this.rereadPending(feed.payments)
-          ? 'loading'
-          : all.length > this.receiptCount || canRead
-            ? 'more'
-            : 'none',
-      olderFailed: this.olderFailed,
-    };
-  }
-  /** True from a reopen until the older re-read starts, or fails: Show more shows as busy. */
-  private rereadPending(live: readonly Payment[]): boolean {
-    return (
-      this.rereadOlder &&
-      !this.olderFailed &&
-      live.length < this.receiptCount &&
-      this.canReadOlder(live)
-    );
-  }
-  /** Older payments exist on the server only past a full live list, until a short page ends them. */
-  private canReadOlder(live: readonly Payment[]): boolean {
-    return !this.oldestReached && live.length >= LIVE_LIMIT;
-  }
-  /** Shows the next page of receipts, reading older payments from the API when needed. */
+  /** Reads the window one page larger; on failure the window keeps its size. */
   showMoreReceipts = (): void => {
-    const data = this.snapshot.data;
-    if (!data || this.olderLoading || data.olderReceipts === 'none') return;
-    if (this.olderRun) return;
-    if (this.rereadOlder) {
-      // The live read after a reopen failed: a click tries the re-read again.
-      if (!this.olderFailed) return;
-      this.rereadOlder = false;
-      void this.refreshOlder();
-      return;
-    }
+    if (this.snapshot.data?.olderReceipts !== 'more') return;
     this.olderFailed = false;
-    this.receiptCount += RECEIPT_PAGE;
-    const known = data.payments.length + this.older.size;
-    if (known >= this.receiptCount || !this.canReadOlder(data.payments)) {
-      this.update(this.snapshot);
-      return;
-    }
-    const last = [...data.payments, ...this.older.values()]
-      .sort(newestFirst)
-      .at(-1);
-    if (!last) return;
-    this.olderRun = true;
-    this.olderLoading = true;
-    this.update(this.snapshot);
-    void this.readOlder(encodePaymentCursor(paymentCursor(last)));
+    void this.read(this.windowSize + RECEIPT_PAGE, true);
   };
-  private async readOlder(before: string): Promise<void> {
-    const request = this.request;
-    const epoch = this.olderEpoch;
-    try {
-      const response = await request(
-        `${this.baseUrl}/payments?limit=${RECEIPT_PAGE}&before=${before}`,
-      );
-      if (!response.ok) throw new Error('Demo offline');
-      const rows = (await response.json()) as Payment[];
-      if (epoch !== this.olderEpoch) return;
-      const live = new Set(this.snapshot.data?.payments.map((p) => p.id));
-      for (const p of rows) {
-        if (live.has(p.id)) continue;
-        // A live event may have moved this row on while the page was in flight.
-        const held = this.older.get(p.id);
-        if (!held || stageRank(held) <= stageRank(p)) this.older.set(p.id, p);
-      }
-      if (rows.length < RECEIPT_PAGE) this.oldestReached = true;
-    } catch {
-      if (epoch !== this.olderEpoch) return;
-      // A failed read keeps what is shown; Show more stays available to try again.
-      this.receiptCount -= RECEIPT_PAGE;
-      this.olderFailed = true;
-    }
-    this.olderRun = false;
-    this.olderLoading = false;
-    this.update(this.snapshot);
-  }
-  /**
-   * A reload is the live list's only fresh read, so the older rows may be stale after it. They stay
-   * on screen, and the range the visitor has open is read again; a failure leaves them as they are.
-   */
-  private async refreshOlder(): Promise<void> {
-    const request = this.request;
-    const epoch = this.olderEpoch;
-    const target = this.receiptCount;
-    const live = this.snapshot.data?.payments ?? [];
-    if (live.length >= target || !this.canReadOlder(live) || this.olderRun)
-      return;
-    this.olderRun = true;
-    this.olderLoading = true;
-    this.olderFailed = false;
-    this.update(this.snapshot);
-    const fresh = new Map<string, Payment>();
-    const liveIds = new Set(live.map((p) => p.id));
-    let last: Payment | undefined = live.at(-1);
-    let reached = false;
-    // A server that keeps returning full pages must not keep the loop going.
-    const maxPages = Math.ceil((target - live.length) / RECEIPT_PAGE) + 1;
-    try {
-      for (
-        let pages = 0;
-        last && pages < maxPages && live.length + fresh.size < target;
-        pages++
-      ) {
-        const before = encodePaymentCursor(paymentCursor(last));
-        const response = await request(
-          `${this.baseUrl}/payments?limit=${RECEIPT_PAGE}&before=${before}`,
-        );
-        if (!response.ok) throw new Error('Demo offline');
-        const rows = (await response.json()) as Payment[];
-        if (epoch !== this.olderEpoch) return;
-        const known = fresh.size;
-        for (const p of rows) if (!liveIds.has(p.id)) fresh.set(p.id, p);
-        if (rows.length < RECEIPT_PAGE) {
-          reached = true;
-          break;
-        }
-        if (fresh.size === known) break;
-        last = rows.at(-1);
-      }
-    } catch {
-      if (epoch !== this.olderEpoch) return;
-      this.olderRun = false;
-      this.olderLoading = false;
-      this.olderFailed = true;
-      this.update(this.snapshot);
-      return;
-    }
-    // Merge, never replace: a row that left the live list while the pages were in flight is held
-    // but not in `fresh`. Live events may also have moved a row on past the page's copy.
-    for (const [id, p] of fresh) {
-      const held = this.older.get(id);
-      if (!held || stageRank(held) <= stageRank(p)) this.older.set(id, p);
-    }
-    this.oldestReached = reached;
-    this.olderRun = false;
-    this.olderLoading = false;
-    this.update(this.snapshot);
-  }
   private openStream() {
     this.stream = this.createStream(`${this.baseUrl}/events`);
     this.stream.onopen = () => {
-      this.generation++;
-      this.loading = false;
       this.buffered = [];
-      this.olderEpoch++;
-      this.olderRun = false;
-      this.olderLoading = false;
-      this.olderFailed = false;
-      this.rereadOlder = true;
-      if (this.snapshot.data) this.update(this.snapshot);
-      void this.refresh();
+      // Updates may have been missed: read the window again, keeping a Show more in flight.
+      const pending = this.reading?.more ? this.reading.size : undefined;
+      void this.read(pending ?? this.windowSize, pending !== undefined);
       this.sendOrderUpdate({ type: 'opened' });
     };
     for (const type of ['order', 'queue'] as const)
@@ -339,19 +197,16 @@ export class PaymentsClient {
         const payment = JSON.parse(event.data) as Payment;
         if (!payment.id || !payment.stage)
           throw new Error('Invalid payment event');
-        if (this.loading) this.buffered.push(payment);
-        else {
-          if (this.snapshot.data)
-            this.update({
-              status: 'live',
-              data: this.merge(this.snapshot.data, [payment]),
-            });
-          this.buffered.push(payment);
-          void this.refresh();
+        this.buffered.push(payment);
+        if (this.feed) {
+          this.applyEvents([payment]);
+          this.status = 'live';
+          this.publish();
         }
       } catch {
-        void this.refresh();
+        // An unreadable event is skipped; the refresh below reads the current rows.
       }
+      void this.refresh();
     };
   }
   private start() {
@@ -372,17 +227,16 @@ export class PaymentsClient {
     } catch {
       return;
     }
-    if (!this.listeners.size || !this.snapshot.data) return;
-    this.update({
-      ...this.snapshot,
-      data: { ...this.snapshot.data, health: this.health },
-    });
+    if (this.listeners.size && this.feed) this.publish();
   }
-  private merge(data: Feed, events: Payment[]): Feed {
-    const rows = new Map(data.payments.map((p) => [p.id, p]));
+  /** Merges live events into the rows; a row already further along keeps its stage. */
+  private applyEvents(events: Payment[]) {
+    if (!this.feed) return;
+    const rows = new Map(this.feed.rows.map((p) => [p.id, p]));
     for (const event of events) {
-      const previous = rows.get(event.id) ?? this.older.get(event.id);
-      const merged: Payment = {
+      const previous = rows.get(event.id);
+      if (previous && stageRank(previous) > stageRank(event)) continue;
+      rows.set(event.id, {
         ...previous,
         ...event,
         order:
@@ -394,13 +248,13 @@ export class PaymentsClient {
           (previous?.transactionHash === event.transactionHash
             ? previous.explorerUrl
             : null),
-      };
-      rows.set(event.id, merged);
-      if (this.older.has(event.id)) this.older.set(event.id, merged);
+      });
     }
-    return {
-      ...data,
-      payments: [...rows.values()].sort(newestFirst).slice(0, LIVE_LIMIT),
+    this.feed = {
+      ...this.feed,
+      rows: [...rows.values()]
+        .sort(newestFirst)
+        .slice(0, readLimit(this.windowSize)),
     };
   }
   async purchase(rail: Rail): Promise<PurchaseAnswer> {
@@ -417,13 +271,24 @@ export class PaymentsClient {
       body: (await response.json()) as PurchaseAnswer['body'],
     };
   }
+  /** Reads the window again at its size, unless a read is already in flight. */
   async refresh(): Promise<void> {
-    if (this.loading || !this.listeners.size) return;
-    this.loading = true;
+    if (this.reading || !this.listeners.size) return;
+    await this.read(this.windowSize, false);
+  }
+  /**
+   * Reads the newest `size` receipts in one request, with the statistics, and replaces the
+   * window. Starting a read drops any read still in flight. Only a Show more read that fails
+   * shows the older-receipts line; the window then keeps its previous size.
+   */
+  private async read(size: number, more: boolean): Promise<void> {
+    const epoch = ++this.epoch;
+    this.reading = { size, more };
     clearTimeout(this.retry);
-    const generation = this.generation;
+    if (more && this.feed) this.publish();
+    const limit = readLimit(size);
     try {
-      const paths = [`/payments?limit=${LIVE_LIMIT}`, '/stats', '/stats/daily'];
+      const paths = [`/payments?limit=${limit}`, '/stats', '/stats/daily'];
       const [payments, stats, daily] = await Promise.all(
         paths.map(async (path) => {
           const request = this.request;
@@ -432,34 +297,32 @@ export class PaymentsClient {
           return response.json() as Promise<unknown>;
         }),
       );
-      if (generation !== this.generation) return;
-      const data = {
-        payments,
-        stats,
-        daily,
-        health: this.health,
-      } as Feed;
-      this.update({ status: 'live', data: this.merge(data, this.buffered) });
+      if (epoch !== this.epoch) return;
+      const rows = payments as Payment[];
+      const held = new Map(this.feed?.rows.map((p) => [p.id, p]));
+      this.windowSize = size;
+      this.full = rows.length >= limit;
+      this.feed = {
+        // An event that arrived during the read may have moved a row past the read's copy.
+        rows: rows.map((p) => {
+          const known = held.get(p.id);
+          return known && stageRank(known) > stageRank(p) ? known : p;
+        }),
+        stats: stats as Stats,
+        daily: daily as DailyStat[],
+      };
+      this.applyEvents(this.buffered);
       this.buffered = [];
-      if (this.rereadOlder) {
-        this.rereadOlder = false;
-        void this.refreshOlder();
-      }
+      this.status = 'live';
     } catch {
-      if (generation !== this.generation) return;
-      if (!this.snapshot.data) this.update({ status: 'offline', data: null });
-      else if (this.rereadOlder) {
-        // The re-read cannot start: show the calm line and let Show more try again.
-        this.olderFailed = true;
-        this.update(this.snapshot);
-      }
-    } finally {
-      if (generation === this.generation) {
-        this.loading = false;
-        this.retry = setTimeout(() => {
-          void this.refresh();
-        }, 15000);
-      }
+      if (epoch !== this.epoch) return;
+      if (more) this.olderFailed = true;
+      else if (!this.feed) this.status = 'offline';
     }
+    this.reading = undefined;
+    this.retry = setTimeout(() => {
+      void this.refresh();
+    }, REFRESH_EVERY_MS);
+    this.publish();
   }
 }

@@ -354,165 +354,36 @@ describe('test purchases', () => {
     });
   });
 });
-describe('receipts', () => {
-  it('loads older receipts with Show more', async () => {
-    const at = (minutes: number) =>
-      new Date(
-        Date.parse('2026-10-20T12:00:00Z') - minutes * 60000,
-      ).toISOString();
-    const rows = Array.from({ length: 130 }, (_, i) => ({
-      ...row(`p${String(i).padStart(3, '0')}`, 'settled'),
-      sentAt: at(i),
-    }));
-    const requested: string[] = [];
-    const stream = new FakeEventSource();
-    const client = new PaymentsClient(
-      'https://api.example.com',
-      async (url) => {
-        const { pathname, searchParams } = new URL(String(url));
-        requested.push(pathname + new URL(String(url)).search);
-        if (pathname === '/payments') {
-          const before = searchParams.get('before');
-          const cursor = before ? decodeTestCursor(before) : null;
-          const index = cursor
-            ? rows.findIndex((r) => r.id === cursor.id) + 1
-            : 0;
-          return Response.json(
-            rows.slice(index, index + Number(searchParams.get('limit'))),
-          );
-        }
-        if (pathname === '/stats/daily') return Response.json([]);
-        return Response.json({});
-      },
-      () => stream,
-    );
-    const snapshot = () => {
-      const data = client.getSnapshot().data;
-      if (!data) throw new Error('No data yet');
-      return data;
-    };
-    const ids = () => snapshot().receipts.map((p) => p.id);
-    const stop = client.subscribe(() => {});
-    stream.open();
-    await vi.waitFor(() => expect(client.getSnapshot().status).toBe('live'));
-    expect(ids()).toEqual(rows.slice(0, 20).map((r) => r.id));
-    expect(snapshot().olderReceipts).toBe('more');
-
-    for (let page = 0; page < 4; page++) client.showMoreReceipts();
-    expect(ids()).toEqual(rows.slice(0, 100).map((r) => r.id));
-    expect(requested.some((path) => path.includes('before='))).toBe(false);
-
-    client.showMoreReceipts();
-    expect(snapshot().olderReceipts).toBe('loading');
-    await vi.waitFor(() => expect(ids()).toHaveLength(120));
-    expect(ids()).toEqual(rows.slice(0, 120).map((r) => r.id));
-    expect(decodeTestCursor(beforeOf(requested.at(-1) ?? ''))).toEqual({
-      at: rows[99]?.sentAt,
-      id: rows[99]?.id,
-    });
-    expect(snapshot().olderReceipts).toBe('more');
-
-    client.showMoreReceipts();
-    await vi.waitFor(() => expect(snapshot().olderReceipts).toBe('none'));
-    expect(ids()).toEqual(rows.map((r) => r.id));
-
-    stream.send({ ...row('fresh', 'received'), sentAt: at(-1) });
-    expect(ids()[0]).toBe('fresh');
-    expect(ids()).toHaveLength(131);
-    stream.send({ ...rows[125], stage: 'notified' });
-    await vi.waitFor(() =>
-      expect(snapshot().receipts.find((p) => p.id === 'p125')?.stage).toBe(
-        'notified',
-      ),
-    );
-    expect(ids()[0]).toBe('fresh');
-    stop();
-  });
-});
-describe('receipts when every payment is live', () => {
-  it('reads no older page when the live list holds every payment', async () => {
-    const rows = Array.from({ length: 45 }, (_, i) => ({
-      ...row(`p${String(i).padStart(3, '0')}`, 'settled'),
-      sentAt: new Date(
-        Date.parse('2026-10-20T12:00:00Z') - i * 60000,
-      ).toISOString(),
-    }));
-    const requested: string[] = [];
-    const stream = new FakeEventSource();
-    const client = new PaymentsClient(
-      'https://api.example.com',
-      async (url) => {
-        const { pathname, search } = new URL(String(url));
-        requested.push(pathname + search);
-        if (pathname === '/payments') return Response.json(rows);
-        if (pathname === '/stats/daily') return Response.json([]);
-        return Response.json({});
-      },
-      () => stream,
-    );
-    const stop = client.subscribe(() => {});
-    stream.open();
-    await vi.waitFor(() => expect(client.getSnapshot().status).toBe('live'));
-    client.showMoreReceipts();
-    expect(client.getSnapshot().data?.olderReceipts).toBe('more');
-    client.showMoreReceipts();
-    expect(client.getSnapshot().data?.receipts).toHaveLength(45);
-    expect(client.getSnapshot().data?.olderReceipts).toBe('none');
-    expect(requested.filter((path) => path.includes('before='))).toEqual([]);
-    stop();
-  });
-});
-describe('older receipts', () => {
+describe('receipt window', () => {
   const at = (minutes: number) =>
     new Date(
       Date.parse('2026-10-20T12:00:00Z') - minutes * 60000,
     ).toISOString();
-  const rows = Array.from({ length: 130 }, (_, i) => ({
-    ...row(`p${String(i).padStart(3, '0')}`, 'received'),
-    sentAt: at(i),
-  }));
-  /** A client over 130 payments whose older-page reads can be held, failed or answered late. */
-  function paged() {
+  /** A client over `count` payments whose `/payments` reads can be held or failed. */
+  function windowed(count = 250) {
+    const rows = Array.from({ length: count }, (_, i) => ({
+      ...row(`p${String(i).padStart(3, '0')}`, 'received'),
+      sentAt: at(i),
+    }));
     const stream = new FakeEventSource();
-    const older = {
+    const reads: string[] = [];
+    const server = {
       hold: null as Promise<void> | null,
       fail: false,
-      reads: 0,
-      repeat: [] as unknown[],
-      refreshes: 0,
-      stuck: false,
-      failLive: false,
     };
     const client = new PaymentsClient(
       'https://api.example.com',
       async (url) => {
-        const { pathname, searchParams } = new URL(String(url));
+        const { pathname, search, searchParams } = new URL(String(url));
         if (pathname === '/payments') {
-          const before = searchParams.get('before');
-          const cursor = before ? decodeTestCursor(before) : null;
-          // A stuck server ignores `before` and answers the first page again.
-          const index =
-            cursor && !older.stuck
-              ? rows.findIndex((r) => r.id === cursor.id) + 1
-              : 0;
-          const page = rows.slice(
-            index,
-            index + Number(searchParams.get('limit')),
+          reads.push(search);
+          await server.hold;
+          if (server.fail) return new Response('{}', { status: 503 });
+          return Response.json(
+            rows.slice(0, Number(searchParams.get('limit'))),
           );
-          if (!before && older.failLive)
-            return new Response('{}', { status: 503 });
-          if (before) {
-            older.reads++;
-            await older.hold;
-            if (older.stuck && older.reads > 50) throw new Error('runaway');
-            if (older.fail) return new Response('{}', { status: 503 });
-          }
-          return Response.json(before ? [...page, ...older.repeat] : page);
         }
-        if (pathname === '/stats/daily') {
-          older.refreshes++;
-          return Response.json([]);
-        }
+        if (pathname === '/stats/daily') return Response.json([]);
         return Response.json({});
       },
       () => stream,
@@ -522,40 +393,41 @@ describe('older receipts', () => {
       if (!current) throw new Error('No data yet');
       return current;
     };
-    const showAll = async () => {
-      for (let page = 0; page < 4; page++) client.showMoreReceipts();
+    const holdReads = () => {
+      let release = () => {};
+      server.hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return () => {
+        server.hold = null;
+        release();
+      };
     };
-    return { client, stream, older, data, showAll };
+    const showMore = async () => {
+      const shown = data().receipts.length;
+      client.showMoreReceipts();
+      await vi.waitFor(() =>
+        expect(data().receipts.length).toBeGreaterThan(shown),
+      );
+    };
+    const load = async () => {
+      stream.open();
+      await vi.waitFor(() => expect(client.getSnapshot().status).toBe('live'));
+    };
+    return {
+      client,
+      stream,
+      rows,
+      reads,
+      server,
+      data,
+      holdReads,
+      showMore,
+      load,
+    };
   }
-  it('keeps a newer stage when an older page arrives late', async () => {
-    const s = paged();
-    const stop = s.client.subscribe(() => {});
-    s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
-    await s.showAll();
-    s.client.showMoreReceipts();
-    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(120));
-    let release = () => {};
-    s.older.hold = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    s.older.repeat = [rows[110]];
-    s.client.showMoreReceipts();
-    await vi.waitFor(() => expect(s.older.reads).toBe(2));
-    const refreshes = s.older.refreshes;
-    s.stream.send({ ...rows[110], stage: 'settled' });
-    // The event's own refresh finishes first, so the page is the late one.
-    await vi.waitFor(() => expect(s.older.refreshes).toBe(refreshes + 1));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    release();
-    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(130));
-    expect(s.data().receipts.find((p) => p.id === 'p110')?.stage).toBe(
-      'settled',
-    );
-    stop();
-  });
   /** Counts of the shown receipts at every update, to catch a collapse that a later update hides. */
-  function watchCounts(s: ReturnType<typeof paged>) {
+  function watchCounts(s: ReturnType<typeof windowed>) {
     const counts: number[] = [];
     const stop = s.client.subscribe(() => {
       const data = s.client.getSnapshot().data;
@@ -563,220 +435,150 @@ describe('older receipts', () => {
     });
     return { counts, stop };
   }
-  it('keeps the visible receipts when the stream reopens', async () => {
-    const s = paged();
-    const { counts, stop } = watchCounts(s);
-    s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
-    for (let page = 0; page < 2; page++) s.client.showMoreReceipts();
-    expect(s.data().receipts).toHaveLength(60);
-    const before = counts.length;
-    s.stream.disconnect();
-    s.stream.open();
-    await vi.waitFor(() => expect(counts.length).toBeGreaterThan(before));
-    expect(Math.min(...counts.slice(before))).toBe(60);
-    expect(s.data().receipts).toHaveLength(60);
+  it('shows the newest 20 and adds 20 with each Show more', async () => {
+    const s = windowed();
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    const ids = () => s.data().receipts.map((p) => p.id);
+    expect(ids()).toEqual(s.rows.slice(0, 20).map((r) => r.id));
+    expect(s.data().olderReceipts).toBe('more');
+    for (const size of [40, 60, 80, 100, 120, 140]) {
+      await s.showMore();
+      expect(ids()).toEqual(s.rows.slice(0, size).map((r) => r.id));
+    }
+    // The pipeline counts still cover the newest 100.
+    expect(s.data().payments).toHaveLength(100);
+    s.stream.send({ ...row('fresh', 'received'), sentAt: at(-1) });
+    expect(ids()[0]).toBe('fresh');
+    expect(ids()).toHaveLength(140);
+    expect(s.data().payments).toHaveLength(100);
     stop();
   });
-  it('refreshes older receipts after the stream reopens', async () => {
-    const s = paged();
+  it('reads the whole window in one request', async () => {
+    const s = windowed();
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    for (let i = 0; i < 4; i++) await s.showMore();
+    const reads = s.reads.length;
+    await s.showMore();
+    expect(s.data().receipts).toHaveLength(120);
+    expect(s.reads.slice(reads)).toEqual(['?limit=120']);
+    expect(s.reads.every((search) => !search.includes('before='))).toBe(true);
+    stop();
+  });
+  it('keeps the window size across a stream reopen', async () => {
+    const s = windowed();
     const { counts, stop } = watchCounts(s);
-    s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
-    await s.showAll();
-    s.client.showMoreReceipts();
-    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(120));
-    const stageOf = () => s.data().receipts.find((p) => p.id === 'p110')?.stage;
-    expect(stageOf()).toBe('received');
-    const before = counts.length;
-    const reads = s.older.reads;
-    const changed = rows.find((r) => r.id === 'p110');
+    await s.load();
+    for (let i = 0; i < 5; i++) await s.showMore();
+    expect(s.data().receipts).toHaveLength(120);
+    const updates = counts.length;
+    const reads = s.reads.length;
+    const changed = s.rows[110];
     if (!changed) throw new Error('No row p110');
     changed.stage = 'settled';
-    try {
-      s.stream.disconnect();
-      s.stream.open();
-      await vi.waitFor(() => expect(stageOf()).toBe('settled'));
-    } finally {
-      changed.stage = 'received';
-    }
-    expect(s.older.reads).toBeGreaterThan(reads);
-    expect(Math.min(...counts.slice(before))).toBe(120);
-    expect(s.data().olderReceipts).toBe('more');
-    s.client.showMoreReceipts();
-    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(130));
-    stop();
-  });
-  it('keeps the shown receipts when refreshing older ones fails', async () => {
-    const s = paged();
-    const { counts, stop } = watchCounts(s);
-    s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
-    await s.showAll();
-    s.client.showMoreReceipts();
-    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(120));
-    const before = counts.length;
-    s.older.fail = true;
     s.stream.disconnect();
     s.stream.open();
-    await vi.waitFor(() => expect(s.data().olderFailed).toBe(true));
-    expect(Math.min(...counts.slice(before))).toBe(120);
-    expect(s.data().olderReceipts).toBe('more');
-    stop();
-  });
-  /** Opens the stream, shows 120 receipts, then reopens with older reads held until `release`. */
-  async function reopenHeld(s: ReturnType<typeof paged>) {
-    s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
-    await s.showAll();
-    s.client.showMoreReceipts();
-    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(120));
-    let release = () => {};
-    s.older.hold = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const reads = s.older.reads;
-    s.stream.disconnect();
-    return { release, reads };
-  }
-  it('keeps a receipt that left the live list while older ones were re-read', async () => {
-    const s = paged();
-    const stop = s.client.subscribe(() => {});
-    const { release, reads } = await reopenHeld(s);
-    s.stream.open();
-    await vi.waitFor(() => expect(s.older.reads).toBeGreaterThan(reads));
-    // A new payment pushes the oldest live row, p099, into the older rows.
-    s.stream.send({
-      ...row('fresh', 'received'),
-      sentAt: at(-5),
-    });
     await vi.waitFor(() =>
-      expect(s.data().payments.some((p) => p.id === 'fresh')).toBe(true),
+      expect(s.data().receipts.find((p) => p.id === 'p110')?.stage).toBe(
+        'settled',
+      ),
+    );
+    expect(s.reads.slice(reads)).toEqual(['?limit=120']);
+    expect(Math.min(...counts.slice(updates))).toBe(120);
+    expect(s.data().receipts).toHaveLength(120);
+    expect(s.data().olderReceipts).toBe('more');
+    stop();
+  });
+  it('keeps a newer stage when a window read returns late', async () => {
+    const s = windowed();
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    for (let i = 0; i < 5; i++) await s.showMore();
+    const release = s.holdReads();
+    const reads = s.reads.length;
+    s.client.showMoreReceipts();
+    await vi.waitFor(() => expect(s.reads.length).toBe(reads + 1));
+    // The read is in flight; the event moves p110 on, and the read's copy is the stale one.
+    s.stream.send({ ...s.rows[110], stage: 'settled' });
+    expect(s.data().receipts.find((p) => p.id === 'p110')?.stage).toBe(
+      'settled',
     );
     release();
-    await vi.waitFor(() => expect(s.data().olderReceipts).not.toBe('loading'));
-    expect(s.data().receipts.map((p) => p.id)).toContain('p099');
-    expect(s.data().receipts).toHaveLength(120);
-    stop();
-  });
-  it('stops re-reading when a page adds nothing new', async () => {
-    const s = paged();
-    const stop = s.client.subscribe(() => {});
-    s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
-    await s.showAll();
-    s.client.showMoreReceipts();
-    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(120));
-    const reads = s.older.reads;
-    s.older.stuck = true;
-    s.stream.disconnect();
-    s.stream.open();
-    await vi.waitFor(() => expect(s.older.reads).toBeGreaterThan(reads));
-    await vi.waitFor(() => expect(s.data().olderReceipts).not.toBe('loading'));
-    expect(s.older.reads - reads).toBeLessThanOrEqual(2);
-    expect(s.data().olderFailed).toBe(false);
-    expect(s.data().receipts).toHaveLength(120);
-    stop();
-  });
-  it('does not lose rows when Show more is pressed during a refresh', async () => {
-    const s = paged();
-    const stop = s.client.subscribe(() => {});
-    const { release, reads } = await reopenHeld(s);
-    s.stream.open();
-    // Before the re-read starts, the reopen has cleared the loading state.
-    s.client.showMoreReceipts();
-    await vi.waitFor(() => expect(s.older.reads).toBeGreaterThan(reads));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    release();
-    await vi.waitFor(() => expect(s.data().olderReceipts).not.toBe('loading'));
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(s.data().receipts).toHaveLength(120);
-    expect(s.data().olderReceipts).toBe('more');
-    s.client.showMoreReceipts();
-    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(130));
-    stop();
-  });
-  it('shows Show more as busy while receipts are re-read after a reopen', async () => {
-    const s = paged();
-    const stop = s.client.subscribe(() => {});
-    const { release, reads } = await reopenHeld(s);
-    s.stream.open();
-    // The reopen has happened and the re-read has not started yet.
-    expect(s.data().olderReceipts).toBe('loading');
-    await vi.waitFor(() => expect(s.older.reads).toBeGreaterThan(reads));
-    expect(s.data().olderReceipts).toBe('loading');
-    release();
-    await vi.waitFor(() => expect(s.data().olderReceipts).toBe('more'));
-    stop();
-  });
-  it('re-enables Show more with the calm line when the re-read fails', async () => {
-    const s = paged();
-    const stop = s.client.subscribe(() => {});
-    s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
-    await s.showAll();
-    s.client.showMoreReceipts();
-    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(120));
-    s.older.failLive = true;
-    s.stream.disconnect();
-    s.stream.open();
-    await vi.waitFor(() => expect(s.data().olderFailed).toBe(true));
-    expect(s.data().olderReceipts).toBe('more');
-    s.older.failLive = false;
-    const reads = s.older.reads;
-    s.client.showMoreReceipts();
-    await vi.waitFor(() => expect(s.older.reads).toBeGreaterThan(reads));
-    await vi.waitFor(() => expect(s.data().olderReceipts).toBe('more'));
-    expect(s.data().olderFailed).toBe(false);
-    expect(s.data().receipts).toHaveLength(120);
-    stop();
-  });
-  it('keeps older receipts bounded by what the list shows', async () => {
-    const s = paged();
-    const stop = s.client.subscribe(() => {});
-    s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
-    await s.showAll();
-    s.client.showMoreReceipts();
-    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(120));
-    for (let i = 0; i < 150; i++) {
-      s.stream.send({ ...row(`fresh${i}`, 'received'), sentAt: at(-1 - i) });
-    }
-    await vi.waitFor(() =>
-      expect(s.data().payments.some((p) => p.id === 'fresh149')).toBe(true),
+    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(140));
+    expect(s.data().receipts.find((p) => p.id === 'p110')?.stage).toBe(
+      'settled',
     );
-    const held = (s.client as unknown as { older: Map<string, unknown> }).older;
-    // 120 shown - 100 live + one page of slack
-    expect(held.size).toBeLessThanOrEqual(40);
-    expect(s.data().receipts).toHaveLength(120);
+    // A later read that still has the older stage does not undo it either.
+    await s.client.refresh();
+    expect(s.data().receipts.find((p) => p.id === 'p110')?.stage).toBe(
+      'settled',
+    );
     stop();
   });
-  it('says when older receipts could not load', async () => {
-    const s = paged();
+  it('restores the window size and shows the calm line when Show more fails', async () => {
+    const s = windowed();
     const stop = s.client.subscribe(() => {});
-    s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
-    await s.showAll();
-    s.older.fail = true;
+    await s.load();
+    for (let i = 0; i < 5; i++) await s.showMore();
+    const release = s.holdReads();
+    s.server.fail = true;
     s.client.showMoreReceipts();
+    expect(s.data().olderReceipts).toBe('loading');
+    expect(s.data().receipts).toHaveLength(120);
+    release();
     await vi.waitFor(() => expect(s.data().olderFailed).toBe(true));
     expect(s.data().olderReceipts).toBe('more');
-    expect(s.data().receipts).toHaveLength(100);
-    s.older.fail = false;
+    expect(s.data().receipts).toHaveLength(120);
+    expect(s.client.getSnapshot().status).toBe('live');
+    s.server.fail = false;
+    const reads = s.reads.length;
     s.client.showMoreReceipts();
-    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(120));
     expect(s.data().olderFailed).toBe(false);
+    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(140));
+    expect(s.reads.slice(reads)).toEqual(['?limit=140']);
+    stop();
+  });
+  it('stops offering more at 200 or when the server has no more', async () => {
+    const s = windowed();
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    for (let i = 0; i < 9; i++) await s.showMore();
+    expect(s.data().receipts).toHaveLength(200);
+    expect(s.data().olderReceipts).toBe('none');
+    const reads = s.reads.length;
+    s.client.showMoreReceipts();
+    expect(s.reads).toHaveLength(reads);
+    stop();
+
+    const few = windowed(50);
+    const stopFew = few.client.subscribe(() => {});
+    await few.load();
+    await few.showMore();
+    expect(few.data().olderReceipts).toBe('more');
+    await few.showMore();
+    expect(few.data().receipts).toHaveLength(50);
+    expect(few.data().olderReceipts).toBe('none');
+    stopFew();
+  });
+  it('does not show the older-receipts line when only the background refresh fails', async () => {
+    const s = windowed();
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    for (let i = 0; i < 2; i++) await s.showMore();
+    s.server.fail = true;
+    await s.client.refresh();
+    expect(s.data().olderFailed).toBe(false);
+    expect(s.data().olderReceipts).toBe('more');
+    expect(s.client.getSnapshot().status).toBe('live');
+    const reads = s.reads.length;
+    s.stream.disconnect();
+    s.stream.open();
+    await vi.waitFor(() => expect(s.reads.length).toBeGreaterThan(reads));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(s.data().olderFailed).toBe(false);
+    expect(s.data().olderReceipts).toBe('more');
+    expect(s.data().receipts).toHaveLength(60);
     stop();
   });
 });
-function beforeOf(path: string): string {
-  return (
-    new URL(path, 'https://api.example.com').searchParams.get('before') ?? ''
-  );
-}
-function decodeTestCursor(value: string): { at: string; id: string } {
-  return JSON.parse(atob(value.replaceAll('-', '+').replaceAll('_', '/'))) as {
-    at: string;
-    id: string;
-  };
-}
