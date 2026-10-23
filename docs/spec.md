@@ -18,7 +18,8 @@ Both rails are test-only. Stripe runs in test mode, and configuration rejects ev
 ## Scope
 
 - **Rails:** chain payments (Base Sepolia, USDC) and card payments (Stripe test mode), both writing to one ledger, plus the dashboard.
-- **Out of scope:** deployment scripts, more than one RPC provider, more than one chain at a time, user accounts, refunds and disputes, card entry by visitors. The services can run behind a reverse proxy (`TRUST_PROXY`).
+- **Out of scope:** more than one RPC provider, more than one chain at a time, user accounts, refunds and disputes, card entry by visitors.
+- **Deploy:** one compose stack in `deploy/`, with a Cloudflare Tunnel in front of the API (`CLIENT_IP_HEADER`).
 
 ## Stack
 
@@ -142,7 +143,7 @@ A stage never moves backwards: an event that would move a payment to an earlier 
 | `GET /stats/daily`             | Per UTC day for the retained period: settled count, average time to settle, scheduled and visitor purchases. Cached like `/stats` |
 | `GET /incidents?limit=`        | Recent incidents                                                                                                                  |
 | `GET /health`                  | Head, cursor, lag, open gaps, queue depth, cooldown state, balances and low-balance flags, and the monitoring signals below       |
-| `GET /events`                  | Server-sent events relayed from Redis pub/sub: payments, order changes, the visitor queue and a heartbeat                         |
+| `GET /events`                  | Server-sent events relayed from Redis pub/sub: payments, order changes, the visitor queue and a keep-alive                        |
 | `POST /test-purchases`         | Visitor test buy, as above                                                                                                        |
 | `GET /test-purchases/:id`      | Queue position of a waiting visitor purchase, and whether it closed without a payment being sent                                  |
 | `POST /shop/notices`           | Receives the signed notice. Verifies the signature and timestamp, then marks the payment notified                                 |
@@ -152,13 +153,13 @@ A stage never moves backwards: an event that would move a payment to an earlier 
 
 **Body limits:** a JSON or URL-encoded body may be 4 KB at most, except a JSON `POST /stripe/webhooks`, which accepts 64 KB. A larger body answers `413` `payload_too_large`.
 
-**Live streams:** `GET /events` allows `STREAMS_PER_IP` (default 5) open connections per client address and `STREAMS_TOTAL` (default 500) in all. A connection over either cap gets `429`, `rate_limited` and `Retry-After: 5`. A closed connection frees its slot. Payments arrive as unnamed events. Order changes arrive as named `order` events (`{id, closed}`), and the waiting visitor queue as `queue` events (`{waiting}`, the order ids oldest first), sent only when it changes. The stream sends a `heartbeat` event every 15 seconds, and a client that stops reading is dropped.
+**Live streams:** `GET /events` allows `STREAMS_PER_IP` (default 5) open connections per client address and `STREAMS_TOTAL` (default 500) in all. A connection over either cap gets `429`, `rate_limited` and `Retry-After: 5`. A closed connection frees its slot. Payments arrive as unnamed events. Order changes arrive as named `order` events (`{id, closed}`), and the waiting visitor queue as `queue` events (`{waiting}`, the order ids oldest first), sent only when it changes. The stream sends a `: keep-alive` comment every 30 seconds, under the 100 seconds after which Cloudflare closes an idle connection, and a client that stops reading is dropped.
 
 **Payments cache:** `GET /payments` keeps its first page per `limit` for 5 seconds, and concurrent requests share one database read. A payment event clears it.
 
 **Older payments:** `before` is an opaque cursor naming one payment's place in the feed order (newest send or receive time first, then id). `/payments?before=` returns the payments after it, so a page stays stable while new payments arrive. A malformed cursor answers `400` `bad_request`. Pages before a cursor are not cached.
 
-Every 4xx answers with a fixed body. Errors that reach the error filter get a fixed code for their status (for example `bad_request`, `not_found`, `rate_limited`), and routes send their own fixed codes (for example `busy`, `daily_limit`); bodies never echo messages. CORS is allowed only for the configured web origin. With `TRUST_PROXY` set, client addresses come from the proxy's forwarding header, so per-visitor limits apply to visitors rather than to the proxy.
+Every 4xx answers with a fixed body. Errors that reach the error filter get a fixed code for their status (for example `bad_request`, `not_found`, `rate_limited`), and routes send their own fixed codes (for example `busy`, `daily_limit`); bodies never echo messages. CORS is allowed only for the origins listed in `WEB_ORIGIN`. The client address is the socket address, or, with `CLIENT_IP_HEADER=cf-connecting-ip`, the address Cloudflare puts in `CF-Connecting-IP`, so per-visitor limits apply to visitors rather than to the tunnel. `X-Forwarded-For` is never read.
 
 ### web
 

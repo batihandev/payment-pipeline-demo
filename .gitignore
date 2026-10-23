@@ -7,3 +7,7 @@ coverage/
 .vite/
 libs/db/generated/
 *.tsbuildinfo
+deploy/.env
+deploy/.deploy-state
+deploy/.deploy-lock
+.superpowers/

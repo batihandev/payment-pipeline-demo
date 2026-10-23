@@ -62,7 +62,7 @@ describe('stream cap', () => {
   const idle = new Subject<MessageEvent>();
   const start = (environment: Record<string, string>) =>
     createTestApp({
-      environment: { TRUST_PROXY: 'true', ...environment },
+      environment: { CLIENT_IP_HEADER: 'cf-connecting-ip', ...environment },
       override: (builder) =>
         builder.overrideProvider(EventsService).useValue({
           stream: () => idle.asObservable(),
@@ -77,7 +77,7 @@ describe('stream cap', () => {
       response.on('data', (chunk: string) => (text += chunk));
       response.on('end', () => resolve(text));
     });
-  const from = (address: string) => ({ 'X-Forwarded-For': address });
+  const from = (address: string) => ({ 'CF-Connecting-IP': address });
 
   it('caps open streams per address and in total', async () => {
     const app = await start({ STREAMS_PER_IP: '5', STREAMS_TOTAL: '7' });
@@ -144,7 +144,8 @@ it('frees the slot when the request closes before the stream is subscribed', () 
     new StreamLimit(config),
   );
   const request = Object.assign(new EventEmitter(), {
-    ip: '7.7.7.7',
+    app: { get: () => undefined },
+    socket: { remoteAddress: '7.7.7.7' },
   }) as unknown as Request;
   controller.stream(request);
   expect(() => controller.stream(request)).toThrow();
