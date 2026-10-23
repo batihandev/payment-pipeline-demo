@@ -285,3 +285,36 @@ describe('live payments', () => {
     stop();
   });
 });
+describe('test purchases', () => {
+  it('posts the chosen rail and returns the answer with its retry hint', async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const client = new PaymentsClient(
+      'https://api.example.com/',
+      async (url, init) => {
+        calls.push({ url: String(url), init });
+        return new Response(JSON.stringify({ error: 'card_unavailable' }), {
+          status: 503,
+          headers: { 'retry-after': '5' },
+        });
+      },
+      () => new FakeEventSource(),
+    );
+    const answer = await client.purchase('card');
+    expect(calls).toEqual([
+      {
+        url: 'https://api.example.com/test-purchases',
+        init: {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ rail: 'card' }),
+        },
+      },
+    ]);
+    expect(answer).toEqual({
+      ok: false,
+      status: 503,
+      retryAfter: '5',
+      body: { error: 'card_unavailable' },
+    });
+  });
+});

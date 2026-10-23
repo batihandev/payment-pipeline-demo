@@ -32,6 +32,60 @@ export const steps = [
     color: 'purple',
   },
 ] as const;
+export const cardSteps = [
+  {
+    stage: 'sent',
+    label: 'Sent',
+    hint: 'Charge sent to the test card',
+    color: 'blue',
+  },
+  {
+    stage: 'processing',
+    label: 'Processing',
+    hint: 'Stripe is processing the charge',
+    color: 'orange',
+  },
+  steps[2],
+  steps[3],
+] as const;
+export type Step = {
+  stage: Payment['stage'];
+  label: string;
+  hint: string;
+  color: string;
+};
+export function stepsFor(provider: Payment['provider']): readonly Step[] {
+  return provider === 'stripe' ? cardSteps : steps;
+}
+export function cardAvailable(
+  health: Pick<Health, 'cardAvailable'> | null,
+): boolean {
+  return health?.cardAvailable === true;
+}
+const brandNames: Record<string, string> = {
+  amex: 'American Express',
+  diners: 'Diners Club',
+  jcb: 'JCB',
+  mastercard: 'Mastercard',
+  unionpay: 'UnionPay',
+};
+export function cardBrandName(brand: string): string {
+  return brandNames[brand] ?? brand.charAt(0).toUpperCase() + brand.slice(1);
+}
+/** "Visa ····4242", or null while the order's card is unknown. */
+export function cardLabel(payment: Pick<Payment, 'order'>): string | null {
+  const card = payment.order?.customer;
+  return card?.cardBrand && card.cardLast4
+    ? `${cardBrandName(card.cardBrand)} ····${card.cardLast4}`
+    : null;
+}
+export function railBadge(
+  payment: Pick<Payment, 'provider' | 'order'>,
+): string {
+  if (payment.provider !== 'stripe') return 'Test network';
+  const card = cardLabel(payment);
+  return card ? `Test card · ${card}` : 'Test card';
+}
 export function confirmationLabel(
   confirmations: number,
   threshold: number,
@@ -41,19 +95,21 @@ export function confirmationLabel(
     : `${threshold}+ confirmations`;
 }
 export function stageView(
-  payment: Pick<Payment, 'stage' | 'confirmations' | 'final'>,
+  payment: Pick<Payment, 'stage' | 'confirmations' | 'final'> &
+    Partial<Pick<Payment, 'provider'>>,
   threshold: number,
 ) {
-  const step = steps.findIndex((s) => s.stage === payment.stage);
+  const stages = stepsFor(payment.provider ?? 'chain');
+  const step = stages.findIndex((s) => s.stage === payment.stage);
   return {
     label:
       payment.stage === 'sent'
         ? 'Sent'
         : payment.stage === 'processing'
           ? 'Processing'
-          : (steps[step]?.label ?? payment.stage),
+          : (stages[step]?.label ?? payment.stage),
     step,
-    color: steps[step]?.color ?? 'blue',
+    color: stages[step]?.color ?? 'blue',
     paid: payment.stage === 'settled' || payment.stage === 'notified',
     final: payment.final,
     progress: Math.min(1, Math.max(0, payment.confirmations / threshold)),
@@ -87,6 +143,8 @@ export function purchaseMessage(
     return "Today's test purchases are used up. Back at 00:00 UTC.";
   if (status === 503 && error === 'paused')
     return 'The demo account is being topped up. Try again soon.';
+  if (status === 503 && error === 'card_unavailable')
+    return 'Test card payments are unavailable right now. Try the test network.';
   return 'Demo offline';
 }
 export function shortId(id: string): string {

@@ -5,6 +5,7 @@ import type { Redis } from 'ioredis';
 import { PrismaService } from '../../../../libs/db/src';
 import { cooldownKey } from '../../../../libs/chain/src/service-limiter';
 import { VISITOR_PAUSED_SINCE } from '../../../../libs/core/src/redis-keys';
+import { CustomersService } from '../../../../libs/orders/src';
 import { InjectRedis } from '../../../../libs/redis/src';
 import { ApiError } from '../common/api-error';
 import type { ApiConfig } from '../common/api-config';
@@ -24,6 +25,7 @@ export class HealthService {
     @InjectRedis() private readonly redis: Redis,
     @Inject(HEALTH_QUEUES) private readonly queues: Queue[],
     private readonly snapshot: ChainSnapshotService,
+    private readonly customers: CustomersService,
   ) {}
 
   private async readMonitoring() {
@@ -91,12 +93,13 @@ export class HealthService {
         }),
         this.db.scanGap.count({ where: { resolvedAt: null } }),
         this.readMonitoring(),
+        this.customers.cardAvailable(),
       ]),
       this.readRedis(),
     ]);
     if (database.status === 'rejected')
       throw new ApiError(503, 'Live health state is unavailable');
-    const [cursor, openGaps, monitoring] = database.value;
+    const [cursor, openGaps, monitoring, cardAvailable] = database.value;
     const [depths, cooldowns, pausedSince] =
       live.status === 'fulfilled' ? live.value : [null, null, null];
     const { reading, error } = this.snapshot.current();
@@ -128,6 +131,7 @@ export class HealthService {
           }
         : null,
       chainError,
+      cardAvailable,
       redisError: live.status === 'rejected' ? 'unavailable' : null,
       monitoring: {
         ...monitoring,

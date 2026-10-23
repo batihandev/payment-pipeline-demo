@@ -11,6 +11,7 @@ export function payment(overrides: Partial<Payment> = {}): Payment {
     confirmations: 7,
     chainId: 84532,
     blockNumber: '100',
+    receiptUrl: null,
     blockHash: null,
     transactionHash: null,
     logIndex: null,

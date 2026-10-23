@@ -38,6 +38,23 @@
 .tp-drawer > .tp-muted {
   font-size: 14px;
 }
+.tp-rails {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tp .tp-rail-button {
+  width: 100%;
+  min-height: 52px;
+  text-align: center;
+}
+.tp .tp-rail-card:not(:disabled) {
+  background: #fffaf0;
+  color: #17171a;
+}
+.tp .tp-rail-card:not(:disabled):hover {
+  background: #f4ead6;
+}
 .tp-purchase-status {
   font-size: 14px;
   color: #9a3412;
@@ -123,6 +140,97 @@
 .tp-how {
   align-self: flex-start;
   font-size: 13px;
+}
+.tp-tap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 6px 0 2px;
+}
+.tp-tap-card {
+  position: relative;
+  width: 148px;
+  max-width: 70%;
+  aspect-ratio: 1.586;
+  border-radius: 10px;
+  padding: 12px;
+  background: linear-gradient(135deg, #1e3a8a, #1d4ed8 60%, #3b82f6);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 6px 14px rgb(23 23 26 / 25%);
+  animation: tp-card-tap 0.9s ease-out;
+}
+.tp-tap-chip {
+  width: 24px;
+  height: 18px;
+  border-radius: 4px;
+  background: #e8c872;
+}
+.tp-tap-number {
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+.tp-tap-brand {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  font-size: 13px;
+  font-style: italic;
+}
+.tp-tap-waves {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+.tp-tap-waves i {
+  width: 6px;
+  border: 2px solid #c2410c;
+  border-left: 0;
+  border-radius: 0 99px 99px 0;
+  animation: tp-wave 1.2s ease-in-out infinite;
+}
+.tp-tap-waves i:nth-child(1) {
+  height: 10px;
+}
+.tp-tap-waves i:nth-child(2) {
+  height: 16px;
+  animation-delay: 0.15s;
+}
+.tp-tap-waves i:nth-child(3) {
+  height: 22px;
+  animation-delay: 0.3s;
+}
+.tp-tap-done .tp-tap-waves i {
+  border-color: #15803d;
+  animation: none;
+}
+@keyframes tp-card-tap {
+  0% {
+    transform: translate(40%, -40%) rotate(-14deg);
+    opacity: 0;
+  }
+  55% {
+    transform: translate(0, 0) rotate(0) scale(0.94);
+    opacity: 1;
+  }
+  75% {
+    transform: scale(1.02);
+  }
+  100% {
+    transform: none;
+  }
+}
+@keyframes tp-wave {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 @keyframes tp-drawer-open {
   from {

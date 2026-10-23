@@ -1,4 +1,5 @@
 import type {
+  Customer,
   Payment as DatabasePayment,
   Order,
 } from '../../../libs/db/generated/client';
@@ -12,7 +13,11 @@ type Json<T> = T extends bigint | Date
 export type Payment = Json<Omit<DatabasePayment, 'fromAddress'>> & {
   donorName: string | null;
   noteKinds: ReceiptNoteKind[];
-  order?: Json<Pick<Order, 'id' | 'item' | 'price'>> | null;
+  order?:
+    | (Json<Pick<Order, 'id' | 'item' | 'price'>> & {
+        customer?: Pick<Customer, 'cardBrand' | 'cardLast4'> | null;
+      })
+    | null;
   explorerUrl?: string | null;
 };
 export type Stats = {
@@ -41,6 +46,7 @@ export type Health = {
     { native: string; usdc: string; lowNative: boolean; lowUsdc: boolean }
   > | null;
   chainError: string | null;
+  cardAvailable: boolean;
 };
 export type Dashboard = {
   payments: Payment[];

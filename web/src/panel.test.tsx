@@ -47,6 +47,7 @@ describe('PaymentsPanel', () => {
       cooldowns: null,
       balances: { buyer: low, shop: low },
       chainError: null,
+      cardAvailable: false,
     };
     const { PaymentsPanel } = await import('./panel');
     const html = renderToStaticMarkup(<PaymentsPanel apiBaseUrl="/api" />);

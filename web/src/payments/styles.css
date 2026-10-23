@@ -100,6 +100,10 @@
   border-radius: 99px;
   white-space: nowrap;
 }
+.tp-rail {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .tp-blue {
   --tp-stage-color: #1d4ed8;
   --tp-stage-tint: #e8eeff;
@@ -226,7 +230,7 @@
 .tp-widget .tp-live-connected {
   color: #86dca3;
 }
-.tp-widget .tp-network {
+.tp-widget > header .tp-network {
   color: #d4d4d8;
   border-color: #65656b;
 }

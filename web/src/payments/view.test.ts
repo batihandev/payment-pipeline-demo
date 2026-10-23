@@ -5,7 +5,11 @@ import {
   purchaseMessage,
   money,
   confirmationLabel,
+  railBadge,
+  stepsFor,
+  cardAvailable,
 } from './view';
+import { payment } from './test-fixtures';
 
 describe('payment views', () => {
   it.each([
@@ -80,5 +84,77 @@ describe('payment views', () => {
   it('formats large micro-unit prices without floating-point rounding', () => {
     expect(money('14000000')).toBe('$14.00');
     expect(money('9007199254740991000000')).toBe('$9007199254740991.00');
+  });
+  it.each([
+    ['sent', 'Sent', 0, 'blue'],
+    ['processing', 'Processing', 1, 'orange'],
+    ['settled', 'Settled', 2, 'green'],
+    ['notified', 'Shop notified', 3, 'purple'],
+  ] as const)(
+    'maps a card payment at %s to its stage',
+    (stage, label, step, color) => {
+      expect(
+        stageView(
+          { stage, confirmations: 0, final: false, provider: 'stripe' },
+          7,
+        ),
+      ).toMatchObject({ label, step, color });
+    },
+  );
+  it('reads the card stages as Sent, Processing, Settled, Notified', () => {
+    expect(stepsFor('stripe').map((s) => s.stage)).toEqual([
+      'sent',
+      'processing',
+      'settled',
+      'notified',
+    ]);
+    expect(stepsFor('chain').map((s) => s.stage)).toEqual([
+      'received',
+      'confirming',
+      'settled',
+      'notified',
+    ]);
+  });
+  it('names the rail on a receipt', () => {
+    expect(railBadge(payment())).toBe('Test network');
+    expect(
+      railBadge(
+        payment({
+          provider: 'stripe',
+          order: {
+            id: 'o1',
+            item: 'Duck',
+            price: '500000',
+            customer: { cardBrand: 'visa', cardLast4: '4242' },
+          },
+        }),
+      ),
+    ).toBe('Test card · Visa ····4242');
+    expect(
+      railBadge(
+        payment({
+          provider: 'stripe',
+          order: {
+            id: 'o1',
+            item: 'Duck',
+            price: '500000',
+            customer: { cardBrand: 'amex', cardLast4: '0005' },
+          },
+        }),
+      ),
+    ).toBe('Test card · American Express ····0005');
+    expect(railBadge(payment({ provider: 'stripe', order: null }))).toBe(
+      'Test card',
+    );
+  });
+  it('offers the card only once /health says a card is saved', () => {
+    expect(cardAvailable(null)).toBe(false);
+    expect(cardAvailable({ cardAvailable: false })).toBe(false);
+    expect(cardAvailable({ cardAvailable: true })).toBe(true);
+  });
+  it('says when the test card is unavailable', () => {
+    expect(purchaseMessage(503, 'card_unavailable', null)).toBe(
+      'Test card payments are unavailable right now. Try the test network.',
+    );
   });
 });

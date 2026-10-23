@@ -1,5 +1,12 @@
 import type { Payment } from './types';
-import { money, shortId, stageView, utcTime, steps } from './view';
+import {
+  money,
+  railBadge,
+  shortId,
+  stageView,
+  stepsFor,
+  utcTime,
+} from './view';
 import './styles.css';
 
 export function ConfirmationBar({
@@ -28,6 +35,7 @@ export function ConfirmationBar({
   );
 }
 export function StepStrip({ payment }: { payment: Payment }) {
+  const steps = stepsFor(payment.provider);
   const step = steps.findIndex((s) => s.stage === payment.stage);
   return (
     <ol className="tp-strip" aria-label="Payment stages">
@@ -57,6 +65,7 @@ export function Receipt({
   note?: string | null;
 }) {
   const view = stageView(payment, threshold);
+  const card = payment.provider === 'stripe';
   return (
     <article
       className={`tp-receipt ${highlighted ? 'tp-yours' : ''} ${compact ? 'tp-compact' : ''}`}
@@ -90,19 +99,30 @@ export function Receipt({
       <div className="tp-row">
         <span className={`tp-stage tp-${view.color}`}>{view.label}</span>
         {view.final && <span className="tp-stage tp-green">Final</span>}
+        <span className="tp-network tp-rail">{railBadge(payment)}</span>
       </div>
-      <ConfirmationBar payment={payment} threshold={threshold} />
+      {!card && <ConfirmationBar payment={payment} threshold={threshold} />}
       {note && <p className="tp-note">{note}</p>}
       <div className="tp-receipt-footer tp-mono tp-muted">
-        <span>
-          {payment.blockNumber
-            ? `block ${payment.blockNumber}`
-            : 'Awaiting a block'}
-        </span>
-        {payment.explorerUrl && (
-          <a href={payment.explorerUrl} target="_blank" rel="noreferrer">
-            View on explorer
-          </a>
+        {card ? (
+          payment.receiptUrl && (
+            <a href={payment.receiptUrl} target="_blank" rel="noreferrer">
+              View Stripe receipt
+            </a>
+          )
+        ) : (
+          <>
+            <span>
+              {payment.blockNumber
+                ? `block ${payment.blockNumber}`
+                : 'Awaiting a block'}
+            </span>
+            {payment.explorerUrl && (
+              <a href={payment.explorerUrl} target="_blank" rel="noreferrer">
+                View on explorer
+              </a>
+            )}
+          </>
         )}
       </div>
       {view.paid && <span className="tp-paid">PAID</span>}

@@ -1,5 +1,19 @@
 import type { Dashboard, Health, Payment, Snapshot } from './types';
 
+export type Rail = 'chain' | 'card';
+export type PurchaseAnswer = {
+  ok: boolean;
+  status: number;
+  retryAfter: string | null;
+  body: {
+    orderId?: string;
+    position?: number;
+    item?: string;
+    price?: string;
+    error?: string;
+  };
+};
+
 export const HEALTH_EVERY_MS = 15000;
 export const STREAM_REOPEN_MS = 30000;
 
@@ -140,6 +154,20 @@ export class PaymentsClient {
             ) || b.id.localeCompare(a.id),
         )
         .slice(0, 100),
+    };
+  }
+  async purchase(rail: Rail): Promise<PurchaseAnswer> {
+    const request = this.request;
+    const response = await request(`${this.baseUrl}/test-purchases`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rail }),
+    });
+    return {
+      ok: response.ok,
+      status: response.status,
+      retryAfter: response.headers.get('retry-after'),
+      body: (await response.json()) as PurchaseAnswer['body'],
     };
   }
   async refresh(): Promise<void> {

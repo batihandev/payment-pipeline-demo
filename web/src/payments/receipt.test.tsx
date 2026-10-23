@@ -1,7 +1,22 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { Receipt } from './receipt';
+import { Receipt, StepStrip } from './receipt';
 import { payment } from './test-fixtures';
+
+const cardPayment = (overrides = {}) =>
+  payment({
+    provider: 'stripe',
+    confirmations: 0,
+    blockNumber: null,
+    receiptUrl: 'https://pay.stripe.com/receipts/1',
+    order: {
+      id: 'o1',
+      item: 'Duck',
+      price: '500000',
+      customer: { cardBrand: 'visa', cardLast4: '4242' },
+    },
+    ...overrides,
+  });
 
 describe('Receipt', () => {
   it('names a donation after its donor', () => {
@@ -27,5 +42,50 @@ describe('Receipt', () => {
         <Receipt payment={payment()} threshold={7} note={null} />,
       ),
     ).not.toContain('tp-note');
+  });
+  it('badges a chain receipt with the test network and keeps its confirmation bar', () => {
+    const html = renderToStaticMarkup(
+      <Receipt
+        payment={payment({ explorerUrl: 'https://example.com/tx/1' })}
+        threshold={7}
+      />,
+    );
+    expect(html).toContain('Test network');
+    expect(html).toContain('progressbar');
+    expect(html).toContain('View on explorer');
+  });
+  it('badges a card receipt with the card and links the Stripe receipt instead of a block', () => {
+    const html = renderToStaticMarkup(
+      <Receipt payment={cardPayment()} threshold={7} />,
+    );
+    expect(html).toContain('Test card · Visa ····4242');
+    expect(html).toContain('href="https://pay.stripe.com/receipts/1"');
+    expect(html).toContain('View Stripe receipt');
+    expect(html).not.toContain('progressbar');
+    expect(html).not.toContain('View on explorer');
+    expect(html).not.toContain('block');
+  });
+  it('leaves out the Stripe link until the receipt exists', () => {
+    const html = renderToStaticMarkup(
+      <Receipt payment={cardPayment({ receiptUrl: null })} threshold={7} />,
+    );
+    expect(html).not.toContain('View Stripe receipt');
+  });
+});
+
+describe('StepStrip', () => {
+  const labels = (html: string) =>
+    [...html.matchAll(/<li[^>]*>(.*?)<\/li>/g)].map((m) => m[1]);
+  it('reads Sent, Processing, Settled, Notified for a card payment', () => {
+    const html = renderToStaticMarkup(
+      <StepStrip payment={cardPayment({ stage: 'processing' })} />,
+    );
+    expect(labels(html)).toEqual(['Sent', 'Processing', 'Settled', 'Notified']);
+    expect(html.match(/tp-reached/g)).toHaveLength(2);
+  });
+  it('keeps the chain stages for a chain payment', () => {
+    expect(
+      labels(renderToStaticMarkup(<StepStrip payment={payment()} />)),
+    ).toEqual(['Received', 'Confirming', 'Settled', 'Notified']);
   });
 });
