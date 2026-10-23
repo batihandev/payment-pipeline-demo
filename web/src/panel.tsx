@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { Checkout } from './payments/checkout';
+import { HealthPanel } from './payments/health-panel';
+import { StatsPanel } from './payments/stats-panel';
 import { PaymentsWidget } from './payments/widget';
 import { SettledChart } from './payments/chart';
 import { Receipt } from './payments/receipt';
@@ -157,61 +159,8 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
             </section>
             <aside className="tp-sidebar">
               <h2>Today · UTC</h2>
-              <section aria-label="Today's statistics" className="tp-stats">
-                {[
-                  [String(data.stats.settledCount), 'payments settled'],
-                  [
-                    data.stats.averageTimeToSettleMs === null
-                      ? '—'
-                      : `${Math.round(data.stats.averageTimeToSettleMs / 1000)}s`,
-                    'average time to settle',
-                  ],
-                  [String(data.stats.duplicatesSkipped), 'duplicates skipped'],
-                  [String(data.stats.failuresRecovered), 'failures recovered'],
-                ].map(([value, label]) => (
-                  <div key={label}>
-                    <strong>{value}</strong>
-                    <span>{label}</span>
-                  </div>
-                ))}
-              </section>
-              {data.health && (
-                <section className="tp-health" aria-label="Tracker health">
-                  <h2>Behind the counter</h2>
-                  <dl>
-                    {[
-                      ['Head', data.health.head ?? 'Unknown'],
-                      [
-                        'Scanned through',
-                        data.health.cursor ?? 'Not initialized',
-                      ],
-                      ['Blocks behind', data.health.lag ?? 'Unknown'],
-                      ['Open scan gaps', data.health.openGaps],
-                      [
-                        'Queued work',
-                        data.health.queueDepth
-                          ? Object.values(data.health.queueDepth).reduce(
-                              (a, b) => a + b,
-                              0,
-                            )
-                          : 'Unknown',
-                      ],
-                    ].map(([label, value]) => (
-                      <div key={label}>
-                        <dt>{label}</dt>
-                        <dd>{value}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                  {Object.entries(data.health.cooldowns ?? {})
-                    .filter(([, ms]) => ms > 0)
-                    .map(([name, ms]) => (
-                      <p className="tp-note" key={name}>
-                        {name}: cooling down for {Math.ceil(ms / 1000)}s
-                      </p>
-                    ))}
-                </section>
-              )}
+              <StatsPanel stats={data.stats} />
+              {data.health && <HealthPanel health={data.health} />}
             </aside>
           </div>
         </>
