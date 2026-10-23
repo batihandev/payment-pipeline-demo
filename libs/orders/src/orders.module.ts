@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
-import { BullModule } from '@nestjs/bullmq';
+import { BullModule, getQueueToken } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../db/src';
-import { QUEUES } from '../../queues/src';
+import type { Queue } from 'bullmq';
+import { QUEUES, logQueueErrors } from '../../queues/src';
 import { OrderQueueService } from './order-queue.service';
 import { PurchasesService, purchaseOptions } from './purchases.service';
+
+const BUYER_QUEUE_ERRORS = Symbol('BUYER_QUEUE_ERRORS');
 
 @Module({
   imports: [BullModule.registerQueue({ name: QUEUES.buyer })],
@@ -33,6 +36,11 @@ import { PurchasesService, purchaseOptions } from './purchases.service';
         ),
     },
     OrderQueueService,
+    {
+      provide: BUYER_QUEUE_ERRORS,
+      inject: [getQueueToken(QUEUES.buyer)],
+      useFactory: (queue: Queue) => logQueueErrors([queue]),
+    },
   ],
   exports: [PurchasesService, OrderQueueService],
 })
