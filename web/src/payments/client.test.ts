@@ -481,6 +481,7 @@ describe('older receipts', () => {
       repeat: [] as unknown[],
       refreshes: 0,
       stuck: false,
+      failLive: false,
     };
     const client = new PaymentsClient(
       'https://api.example.com',
@@ -498,6 +499,8 @@ describe('older receipts', () => {
             index,
             index + Number(searchParams.get('limit')),
           );
+          if (!before && older.failLive)
+            return new Response('{}', { status: 503 });
           if (before) {
             older.reads++;
             await older.hold;
@@ -691,6 +694,61 @@ describe('older receipts', () => {
     expect(s.data().olderReceipts).toBe('more');
     s.client.showMoreReceipts();
     await vi.waitFor(() => expect(s.data().receipts).toHaveLength(130));
+    stop();
+  });
+  it('shows Show more as busy while receipts are re-read after a reopen', async () => {
+    const s = paged();
+    const stop = s.client.subscribe(() => {});
+    const { release, reads } = await reopenHeld(s);
+    s.stream.open();
+    // The reopen has happened and the re-read has not started yet.
+    expect(s.data().olderReceipts).toBe('loading');
+    await vi.waitFor(() => expect(s.older.reads).toBeGreaterThan(reads));
+    expect(s.data().olderReceipts).toBe('loading');
+    release();
+    await vi.waitFor(() => expect(s.data().olderReceipts).toBe('more'));
+    stop();
+  });
+  it('re-enables Show more with the calm line when the re-read fails', async () => {
+    const s = paged();
+    const stop = s.client.subscribe(() => {});
+    s.stream.open();
+    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await s.showAll();
+    s.client.showMoreReceipts();
+    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(120));
+    s.older.failLive = true;
+    s.stream.disconnect();
+    s.stream.open();
+    await vi.waitFor(() => expect(s.data().olderFailed).toBe(true));
+    expect(s.data().olderReceipts).toBe('more');
+    s.older.failLive = false;
+    const reads = s.older.reads;
+    s.client.showMoreReceipts();
+    await vi.waitFor(() => expect(s.older.reads).toBeGreaterThan(reads));
+    await vi.waitFor(() => expect(s.data().olderReceipts).toBe('more'));
+    expect(s.data().olderFailed).toBe(false);
+    expect(s.data().receipts).toHaveLength(120);
+    stop();
+  });
+  it('keeps older receipts bounded by what the list shows', async () => {
+    const s = paged();
+    const stop = s.client.subscribe(() => {});
+    s.stream.open();
+    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await s.showAll();
+    s.client.showMoreReceipts();
+    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(120));
+    for (let i = 0; i < 150; i++) {
+      s.stream.send({ ...row(`fresh${i}`, 'received'), sentAt: at(-1 - i) });
+    }
+    await vi.waitFor(() =>
+      expect(s.data().payments.some((p) => p.id === 'fresh149')).toBe(true),
+    );
+    const held = (s.client as unknown as { older: Map<string, unknown> }).older;
+    // 120 shown - 100 live + one page of slack
+    expect(held.size).toBeLessThanOrEqual(40);
+    expect(s.data().receipts).toHaveLength(120);
     stop();
   });
   it('says when older receipts could not load', async () => {

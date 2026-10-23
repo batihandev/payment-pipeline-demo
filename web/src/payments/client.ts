@@ -152,18 +152,36 @@ export class PaymentsClient {
         if (!live.has(p.id)) this.older.set(p.id, p);
     }
     for (const p of feed.payments) this.older.delete(p.id);
+    // Keep the newest rows the list can show, plus one page of slack for the next Show more.
+    const room = Math.max(0, this.receiptCount - feed.payments.length);
+    if (this.older.size > room + RECEIPT_PAGE) {
+      const keep = [...this.older.values()]
+        .sort(newestFirst)
+        .slice(0, room + RECEIPT_PAGE);
+      this.older = new Map(keep.map((p) => [p.id, p]));
+    }
     const all = [...feed.payments, ...this.older.values()].sort(newestFirst);
     const canRead = this.canReadOlder(feed.payments);
     return {
       ...feed,
       receipts: all.slice(0, this.receiptCount),
-      olderReceipts: this.olderLoading
-        ? 'loading'
-        : all.length > this.receiptCount || canRead
-          ? 'more'
-          : 'none',
+      olderReceipts:
+        this.olderLoading || this.rereadPending(feed.payments)
+          ? 'loading'
+          : all.length > this.receiptCount || canRead
+            ? 'more'
+            : 'none',
       olderFailed: this.olderFailed,
     };
+  }
+  /** True from a reopen until the older re-read starts, or fails: Show more shows as busy. */
+  private rereadPending(live: readonly Payment[]): boolean {
+    return (
+      this.rereadOlder &&
+      !this.olderFailed &&
+      live.length < this.receiptCount &&
+      this.canReadOlder(live)
+    );
   }
   /** Older payments exist on the server only past a full live list, until a short page ends them. */
   private canReadOlder(live: readonly Payment[]): boolean {
@@ -173,8 +191,14 @@ export class PaymentsClient {
   showMoreReceipts = (): void => {
     const data = this.snapshot.data;
     if (!data || this.olderLoading || data.olderReceipts === 'none') return;
-    // The re-read after a reopen is about to start; it takes the guard next.
-    if (this.olderRun || this.rereadOlder) return;
+    if (this.olderRun) return;
+    if (this.rereadOlder) {
+      // The live read after a reopen failed: a click tries the re-read again.
+      if (!this.olderFailed) return;
+      this.rereadOlder = false;
+      void this.refreshOlder();
+      return;
+    }
     this.olderFailed = false;
     this.receiptCount += RECEIPT_PAGE;
     const known = data.payments.length + this.older.size;
@@ -292,6 +316,7 @@ export class PaymentsClient {
       this.olderLoading = false;
       this.olderFailed = false;
       this.rereadOlder = true;
+      if (this.snapshot.data) this.update(this.snapshot);
       void this.refresh();
       this.sendOrderUpdate({ type: 'opened' });
     };
@@ -423,6 +448,11 @@ export class PaymentsClient {
     } catch {
       if (generation !== this.generation) return;
       if (!this.snapshot.data) this.update({ status: 'offline', data: null });
+      else if (this.rereadOlder) {
+        // The re-read cannot start: show the calm line and let Show more try again.
+        this.olderFailed = true;
+        this.update(this.snapshot);
+      }
     } finally {
       if (generation === this.generation) {
         this.loading = false;
