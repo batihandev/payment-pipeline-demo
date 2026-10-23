@@ -29,6 +29,14 @@ beforeAll(async () => {
         { code: 'P1001', clientVersion: '7.10.1' },
       );
     });
+  for (const statusCode of [404, 413, 418]) {
+    app
+      .getHttpAdapter()
+      .getInstance()
+      .get(`/status-${statusCode}`, async () => {
+        throw Object.assign(new Error('secret detail'), { statusCode });
+      });
+  }
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
 });
@@ -47,4 +55,19 @@ it('keeps the status of a request error without echoing its message', async () =
   const response = await app.inject({ url: '/payments?limit=999' });
   expect(response.statusCode).toBe(400);
   expect(response.json()).toEqual({ error: 'bad_request' });
+});
+
+it('keeps the error code for each 4xx', async () => {
+  const codes: Record<number, string> = {};
+  for (const status of [404, 413, 418]) {
+    const response = await app.inject({ url: `/status-${status}` });
+    expect(response.statusCode).toBe(status);
+    expect(response.body).not.toMatch(/secret/);
+    codes[status] = response.json<{ error: string }>().error;
+  }
+  expect(codes).toEqual({
+    404: 'not_found',
+    413: 'payload_too_large',
+    418: 'bad_request',
+  });
 });

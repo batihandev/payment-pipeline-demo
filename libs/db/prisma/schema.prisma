@@ -140,7 +140,6 @@ model Cursor {
   name        String   @id
   blockNumber BigInt   @map("block_number")
   blockHash   String   @map("block_hash")
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
   /// Set only when the scanner stores a higher block number.
   advancedAt  DateTime @default(now()) @map("advanced_at") @db.Timestamptz(3)
 
