@@ -42,6 +42,7 @@ const row = (id: string, stage = 'received') => ({
   order: { id: `order-${id}`, item: 'Gold rubber duck', price: '14000000' },
   explorerUrl: 'https://example.com/tx/123',
   noteKinds: ['payment_reorg'],
+  version: 0,
 });
 function server() {
   let payments = [row('old')];
@@ -367,16 +368,18 @@ describe('receipt window', () => {
     }));
     const stream = new FakeEventSource();
     const reads: string[] = [];
+    const signals: (AbortSignal | undefined)[] = [];
     const server = {
       hold: null as Promise<void> | null,
       fail: false,
     };
     const client = new PaymentsClient(
       'https://api.example.com',
-      async (url) => {
+      async (url, init) => {
         const { pathname, search, searchParams } = new URL(String(url));
         if (pathname === '/payments') {
           reads.push(search);
+          signals.push(init?.signal ?? undefined);
           await server.hold;
           if (server.fail) return new Response('{}', { status: 503 });
           return Response.json(
@@ -419,6 +422,7 @@ describe('receipt window', () => {
       stream,
       rows,
       reads,
+      signals,
       server,
       data,
       holdReads,
@@ -490,7 +494,67 @@ describe('receipt window', () => {
     expect(s.data().olderReceipts).toBe('more');
     stop();
   });
-  it('keeps a newer stage when a window read returns late', async () => {
+  /** Lets the reads already started finish. */
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  it('shows a reorged payment moving back to sent', async () => {
+    const s = windowed();
+    const confirming = {
+      ...s.rows[0],
+      stage: 'confirming',
+      confirmations: 2,
+      receivedAt: at(0),
+      noteKinds: [],
+      version: 3,
+    };
+    Object.assign(s.rows[0] ?? {}, confirming);
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    expect(s.data().receipts[0]).toMatchObject({ stage: 'confirming' });
+    const reorged = {
+      ...confirming,
+      stage: 'sent',
+      blockNumber: null,
+      confirmations: 0,
+      receivedAt: null,
+      version: 4,
+    };
+    Object.assign(s.rows[0] ?? {}, reorged, { noteKinds: ['payment_reorg'] });
+    s.stream.send({ ...reorged, noteKinds: undefined });
+    expect(s.data().receipts[0]).toMatchObject({
+      stage: 'sent',
+      blockNumber: null,
+      confirmations: 0,
+      receivedAt: null,
+    });
+    await vi.waitFor(() =>
+      expect(s.data().receipts[0]?.noteKinds).toEqual(['payment_reorg']),
+    );
+    expect(s.data().receipts[0]).toMatchObject({ stage: 'sent', version: 4 });
+    stop();
+  });
+  it('takes a read with a higher version over a held row', async () => {
+    const s = windowed();
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    s.stream.send({ ...s.rows[5], stage: 'confirming', version: 2 });
+    await settle();
+    expect(s.data().receipts[5]).toMatchObject({ stage: 'confirming' });
+    Object.assign(s.rows[5] ?? {}, {
+      stage: 'sent',
+      blockNumber: null,
+      noteKinds: ['payment_reorg'],
+      version: 3,
+    });
+    await s.client.refresh();
+    expect(s.data().receipts[5]).toMatchObject({
+      stage: 'sent',
+      blockNumber: null,
+      noteKinds: ['payment_reorg'],
+      version: 3,
+    });
+    stop();
+  });
+  it('keeps a newer event over a late read with a lower version', async () => {
     const s = windowed();
     const stop = s.client.subscribe(() => {});
     await s.load();
@@ -499,21 +563,21 @@ describe('receipt window', () => {
     const reads = s.reads.length;
     s.client.showMoreReceipts();
     await vi.waitFor(() => expect(s.reads.length).toBe(reads + 1));
-    // The read is in flight; the event moves p110 on, and the read's copy is the stale one.
-    s.stream.send({ ...s.rows[110], stage: 'settled' });
-    expect(s.data().receipts.find((p) => p.id === 'p110')?.stage).toBe(
-      'settled',
-    );
+    // The read is in flight; the event moves p110 on, and the read's copy is the older one.
+    s.stream.send({ ...s.rows[110], stage: 'settled', version: 5 });
+    const p110 = () => s.data().receipts.find((p) => p.id === 'p110');
+    expect(p110()?.stage).toBe('settled');
+    // Notes come from incidents, so the read's notes apply even to a row the client keeps.
+    Object.assign(s.rows[110] ?? {}, { noteKinds: ['paid_after_expiry'] });
     release();
     await vi.waitFor(() => expect(s.data().receipts).toHaveLength(140));
-    expect(s.data().receipts.find((p) => p.id === 'p110')?.stage).toBe(
-      'settled',
-    );
-    // A later read that still has the older stage does not undo it either.
+    expect(p110()).toMatchObject({
+      stage: 'settled',
+      version: 5,
+      noteKinds: ['paid_after_expiry'],
+    });
     await s.client.refresh();
-    expect(s.data().receipts.find((p) => p.id === 'p110')?.stage).toBe(
-      'settled',
-    );
+    expect(p110()).toMatchObject({ stage: 'settled', version: 5 });
     stop();
   });
   it('restores the window size and shows the calm line when Show more fails', async () => {
@@ -580,5 +644,57 @@ describe('receipt window', () => {
     expect(s.data().olderReceipts).toBe('more');
     expect(s.data().receipts).toHaveLength(60);
     stop();
+  });
+  it('clears the older-receipts line after a later read succeeds', async () => {
+    const s = windowed();
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    s.server.fail = true;
+    s.client.showMoreReceipts();
+    await vi.waitFor(() => expect(s.data().olderFailed).toBe(true));
+    s.server.fail = false;
+    await s.client.refresh();
+    expect(s.data().olderFailed).toBe(false);
+    expect(s.data().receipts).toHaveLength(20);
+    stop();
+  });
+  it('keeps buffered events bounded while reads fail', async () => {
+    const s = windowed();
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    s.server.fail = true;
+    const reads = s.reads.length;
+    for (let i = 0; i < 600; i++) {
+      s.stream.send({
+        ...row(`fresh${i % 300}`, 'received'),
+        sentAt: at(-1 - i),
+        version: i,
+      });
+      await settle();
+    }
+    // The first event starts a read; once it fails, events wait for the retry timer.
+    expect(s.reads.length - reads).toBe(1);
+    const buffered = (s.client as unknown as { buffered: { size: number } })
+      .buffered;
+    expect(buffered.size).toBeLessThanOrEqual(200);
+    expect(s.client.getSnapshot().status).toBe('live');
+    stop();
+  });
+  it('aborts a superseded read', async () => {
+    const s = windowed();
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    const release = s.holdReads();
+    const reads = s.reads.length;
+    void s.client.refresh();
+    s.client.showMoreReceipts();
+    await vi.waitFor(() => expect(s.reads.length).toBe(reads + 2));
+    const [first, second] = s.signals.slice(reads);
+    expect(first?.aborted).toBe(true);
+    expect(second?.aborted).toBe(false);
+    release();
+    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(40));
+    stop();
+    expect(second?.aborted).toBe(false);
   });
 });

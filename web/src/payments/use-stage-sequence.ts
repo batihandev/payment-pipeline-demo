@@ -6,15 +6,6 @@ const orders = {
   chain: ['sent', 'received', 'confirming', 'settled', 'notified'],
   stripe: ['sent', 'processing', 'settled', 'notified'],
 } as const satisfies Record<Payment['provider'], readonly Payment['stage'][]>;
-/** How far along a payment is; a stage outside its provider's order (failed) is final, so it ranks last. */
-export function stageRank(
-  payment: Pick<Payment, 'provider' | 'stage'>,
-): number {
-  const at = (orders[payment.provider] as readonly Payment['stage'][]).indexOf(
-    payment.stage,
-  );
-  return at === -1 ? Infinity : at;
-}
 export type StageFrame = {
   stage: Payment['stage'];
   confirmations: number;

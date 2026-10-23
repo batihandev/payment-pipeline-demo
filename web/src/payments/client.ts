@@ -2,7 +2,6 @@ import {
   PAYMENT_LIST_MAX,
   PAYMENT_LIST_STEP,
 } from '../../../libs/core/src/payment-list';
-import { stageRank } from './use-stage-sequence';
 import type { DailyStat, Health, Payment, Snapshot, Stats } from './types';
 
 export type Rail = 'chain' | 'card';
@@ -92,13 +91,22 @@ export class PaymentsClient {
   private windowSize = RECEIPT_PAGE;
   /** Whether the last read filled its limit, so older payments may exist. */
   private full = false;
-  /** Bumped by each read, reopen and unsubscribe; a read whose epoch has moved on is dropped. */
+  /**
+   * Bumped by each read, reopen and unsubscribe; a read whose epoch has moved on is dropped,
+   * and its requests are aborted.
+   */
   private epoch = 0;
+  private abort?: AbortController;
   /** The read in flight: the window size it reads, and whether Show more asked for it. */
   private reading?: { size: number; more: boolean };
   private olderFailed = false;
-  /** Events since the last completed read; they are applied again over its rows. */
-  private buffered: Payment[] = [];
+  /** Whether the last read failed; events then wait for the retry timer instead of reading. */
+  private failing = false;
+  /**
+   * The newest event for each payment since the last completed read; they are applied again
+   * over its rows. It holds at most `PAYMENT_LIST_MAX` payments.
+   */
+  private buffered = new Map<string, Payment>();
   private retry?: ReturnType<typeof setTimeout>;
   private reopen?: ReturnType<typeof setTimeout>;
   private health: Health | null = null;
@@ -122,7 +130,7 @@ export class PaymentsClient {
     return () => {
       this.listeners.delete(listener);
       if (!this.listeners.size) {
-        this.epoch++;
+        this.supersede();
         this.reading = undefined;
         this.stream?.close();
         this.stream = undefined;
@@ -172,7 +180,7 @@ export class PaymentsClient {
   private openStream() {
     this.stream = this.createStream(`${this.baseUrl}/events`);
     this.stream.onopen = () => {
-      this.buffered = [];
+      this.buffered.clear();
       // Updates may have been missed: read the window again, keeping a Show more in flight.
       const pending = this.reading?.more ? this.reading.size : undefined;
       void this.read(pending ?? this.windowSize, pending !== undefined);
@@ -197,7 +205,7 @@ export class PaymentsClient {
         const payment = JSON.parse(event.data) as Payment;
         if (!payment.id || !payment.stage)
           throw new Error('Invalid payment event');
-        this.buffered.push(payment);
+        this.buffer(payment);
         if (this.feed) {
           this.applyEvents([payment]);
           this.status = 'live';
@@ -206,8 +214,25 @@ export class PaymentsClient {
       } catch {
         // An unreadable event is skipped; the refresh below reads the current rows.
       }
-      void this.refresh();
+      if (!this.failing) void this.refresh();
     };
+  }
+  private buffer(payment: Payment) {
+    const held = this.buffered.get(payment.id);
+    if (held && held.version > payment.version) return;
+    this.buffered.delete(payment.id);
+    this.buffered.set(payment.id, payment);
+    // The oldest entries go first; the next read returns those payments anyway.
+    for (const id of this.buffered.keys()) {
+      if (this.buffered.size <= PAYMENT_LIST_MAX) break;
+      this.buffered.delete(id);
+    }
+  }
+  /** Drops the read in flight and aborts its requests. */
+  private supersede() {
+    this.epoch++;
+    this.abort?.abort();
+    this.abort = undefined;
   }
   private start() {
     void this.refresh();
@@ -229,13 +254,13 @@ export class PaymentsClient {
     }
     if (this.listeners.size && this.feed) this.publish();
   }
-  /** Merges live events into the rows; a row already further along keeps its stage. */
-  private applyEvents(events: Payment[]) {
+  /** Merges live events into the rows; a row with a higher version is newer and stays. */
+  private applyEvents(events: Iterable<Payment>) {
     if (!this.feed) return;
     const rows = new Map(this.feed.rows.map((p) => [p.id, p]));
     for (const event of events) {
       const previous = rows.get(event.id);
-      if (previous && stageRank(previous) > stageRank(event)) continue;
+      if (previous && previous.version > event.version) continue;
       rows.set(event.id, {
         ...previous,
         ...event,
@@ -282,7 +307,10 @@ export class PaymentsClient {
    * shows the older-receipts line; the window then keeps its previous size.
    */
   private async read(size: number, more: boolean): Promise<void> {
-    const epoch = ++this.epoch;
+    this.supersede();
+    const epoch = this.epoch;
+    const abort = new AbortController();
+    this.abort = abort;
     this.reading = { size, more };
     clearTimeout(this.retry);
     if (more && this.feed) this.publish();
@@ -292,7 +320,9 @@ export class PaymentsClient {
       const [payments, stats, daily] = await Promise.all(
         paths.map(async (path) => {
           const request = this.request;
-          const response = await request(`${this.baseUrl}${path}`);
+          const response = await request(`${this.baseUrl}${path}`, {
+            signal: abort.signal,
+          });
           if (!response.ok) throw new Error('Demo offline');
           return response.json() as Promise<unknown>;
         }),
@@ -303,23 +333,30 @@ export class PaymentsClient {
       this.windowSize = size;
       this.full = rows.length >= limit;
       this.feed = {
-        // An event that arrived during the read may have moved a row past the read's copy.
+        // An event that arrived during the read may be newer than the read's copy. Notes come
+        // from incidents rather than the row, so they always come from the read.
         rows: rows.map((p) => {
           const known = held.get(p.id);
-          return known && stageRank(known) > stageRank(p) ? known : p;
+          return known && known.version > p.version
+            ? { ...known, noteKinds: p.noteKinds }
+            : p;
         }),
         stats: stats as Stats,
         daily: daily as DailyStat[],
       };
-      this.applyEvents(this.buffered);
-      this.buffered = [];
+      this.applyEvents(this.buffered.values());
+      this.buffered.clear();
       this.status = 'live';
+      this.olderFailed = false;
+      this.failing = false;
     } catch {
       if (epoch !== this.epoch) return;
+      this.failing = true;
       if (more) this.olderFailed = true;
       else if (!this.feed) this.status = 'offline';
     }
     this.reading = undefined;
+    this.abort = undefined;
     this.retry = setTimeout(() => {
       void this.refresh();
     }, REFRESH_EVERY_MS);
