@@ -22,16 +22,14 @@ it('returns newest incidents and rejects limits outside one to one hundred', asy
     for (const limit of ['0', '101', 'abc', '1.5'])
       expect((await get(`${route}?limit=${limit}`)).statusCode).toBe(400);
 });
-it('answers 400 bad_request for an unknown or out-of-range limit', async () => {
-  for (const query of [
-    'limit=0',
-    'limit=101',
-    'limit=abc',
-    'limit=1.5',
-    'other=1',
-  ]) {
+it('answers 400 bad_request for an out-of-range or non-integer limit', async () => {
+  for (const query of ['limit=0', 'limit=101', 'limit=abc', 'limit=1.5']) {
     const response = await get(`/incidents?${query}`);
     expect(response.statusCode).toBe(400);
     expect(response.body).toEqual({ error: 'bad_request' });
   }
+});
+it('ignores unknown query parameters', async () => {
+  const response = await get('/incidents?other=1');
+  expect(response.statusCode).toBe(200);
 });

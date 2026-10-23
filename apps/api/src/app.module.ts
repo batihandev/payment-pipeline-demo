@@ -1,4 +1,4 @@
-import { Module, ValidationPipe, type DynamicModule } from '@nestjs/common';
+import { Module, type DynamicModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { BullModule } from '@nestjs/bullmq';
@@ -12,7 +12,7 @@ import type { ApiConfig } from './common/api-config';
 import { ClockModule } from './common/clock.module';
 import { ClientThrottlerGuard } from './common/client-throttler.guard';
 import { GenericErrorFilter } from './common/generic-error.filter';
-import { validationFailure } from './common/validation';
+import { RequestValidationPipe } from './common/validation';
 import { EventsModule } from './events/events.module';
 import { HealthModule } from './health/health.module';
 import { IncidentsModule } from './incidents/incidents.module';
@@ -65,13 +65,7 @@ export class AppModule {
         { provide: APP_FILTER, useClass: GenericErrorFilter },
         {
           provide: APP_PIPE,
-          useValue: new ValidationPipe({
-            transform: true,
-            whitelist: true,
-            forbidNonWhitelisted: true,
-            validationError: { target: true },
-            exceptionFactory: validationFailure,
-          }),
+          useClass: RequestValidationPipe,
         },
       ],
     };

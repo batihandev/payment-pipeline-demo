@@ -126,18 +126,16 @@ it('puts a new sent purchase ahead of older received payments', async () => {
   expect((await get('/payments?limit=1')).body[0].id).toBe(sent.id);
 });
 
-it('answers 400 bad_request for an unknown or out-of-range limit', async () => {
-  for (const query of [
-    'limit=0',
-    'limit=101',
-    'limit=abc',
-    'limit=1.5',
-    'other=1',
-  ]) {
+it('answers 400 bad_request for an out-of-range or non-integer limit', async () => {
+  for (const query of ['limit=0', 'limit=101', 'limit=abc', 'limit=1.5']) {
     const response = await get(`/payments?${query}`);
     expect(response.statusCode).toBe(400);
     expect(response.body).toEqual({ error: 'bad_request' });
   }
+});
+it('ignores unknown query parameters', async () => {
+  const response = await get('/payments?other=1');
+  expect(response.statusCode).toBe(200);
 });
 
 it('serves /payments from cache for 5 s per limit', async () => {
