@@ -26,6 +26,8 @@ export function framesBetween(
   const settledAt = order.indexOf('settled');
   const from = previous ? order.indexOf(previous.stage) : -1;
   const to = order.indexOf(next.stage);
+  // A failed payment leaves the stage order; it is shown as it is, never through settlement.
+  if (to === -1) return [next];
   const frames: StageFrame[] = order.slice(from + 1, to).map((stage, i) => ({
     stage,
     confirmations:

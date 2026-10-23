@@ -8,6 +8,7 @@ import {
   railBadge,
   stepsFor,
   cardRail,
+  cardBrandName,
 } from './view';
 import { payment } from './test-fixtures';
 
@@ -114,6 +115,22 @@ describe('payment views', () => {
       'settled',
       'notified',
     ]);
+  });
+  it('labels a payment that did not go through Failed', () => {
+    expect(
+      stageView(payment({ provider: 'stripe', stage: 'failed', final: true })),
+    ).toMatchObject({
+      label: 'Failed',
+      color: 'red',
+      paid: false,
+      final: false,
+    });
+    expect(
+      stageView(payment({ stage: 'sent', noteKinds: ['send_dropped'] })),
+    ).toMatchObject({ label: 'Failed', color: 'red' });
+  });
+  it('shows underscores in an unknown card brand as spaces', () => {
+    expect(cardBrandName('cartes_bancaires')).toBe('Cartes bancaires');
   });
   it('names the rail on a receipt', () => {
     expect(railBadge(payment())).toBe('Test network');

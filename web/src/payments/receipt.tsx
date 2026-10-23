@@ -3,6 +3,8 @@ import {
   money,
   railBadge,
   shortId,
+  failedStep,
+  paymentFailed,
   stageView,
   stepsFor,
   utcTime,
@@ -35,14 +37,33 @@ export function ConfirmationBar({
   );
 }
 export function StepStrip({ payment }: { payment: Payment }) {
-  const steps = stepsFor(payment.provider);
-  const step = steps.findIndex((s) => s.stage === payment.stage);
+  const failed = paymentFailed(payment);
+  // A failed payment ends on Failed in place of the stages it never reached.
+  const steps = failed
+    ? [
+        ...stepsFor(payment.provider).filter(
+          (s) => s.stage !== 'settled' && s.stage !== 'notified',
+        ),
+        failedStep,
+      ]
+    : stepsFor(payment.provider);
+  const step = failed
+    ? steps.length - 1
+    : steps.findIndex((s) => s.stage === payment.stage);
   return (
     <ol className="tp-strip" aria-label="Payment stages">
       {steps.map((s, i) => (
         <li
           key={s.stage}
-          className={i <= step ? 'tp-reached' : ''}
+          className={
+            failed
+              ? i === step
+                ? 'tp-reached tp-failed'
+                : ''
+              : i <= step
+                ? 'tp-reached'
+                : ''
+          }
           aria-current={i === step ? 'step' : undefined}
         >
           {s.label === 'Shop notified' ? 'Notified' : s.label}

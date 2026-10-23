@@ -10,7 +10,11 @@ type Json<T> = T extends bigint | Date
   : T extends object
     ? { [K in keyof T]: Json<T[K]> }
     : T;
-export type Payment = Json<Omit<DatabasePayment, 'fromAddress'>> & {
+export type Payment = Json<
+  Omit<DatabasePayment, 'fromAddress' | 'externalKey'>
+> & {
+  /** Set for chain payments only; a card payment's PaymentIntent id stays private. */
+  externalKey?: string;
   donorName: string | null;
   noteKinds: ReceiptNoteKind[];
   order?:

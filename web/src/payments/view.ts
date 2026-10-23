@@ -1,3 +1,4 @@
+import { didNotGoThrough } from './notes';
 import type { Health, Payment } from './types';
 
 /** The spec's default confirmation count, used until the first /health read arrives. */
@@ -48,6 +49,22 @@ export const cardSteps = [
   steps[2],
   steps[3],
 ] as const;
+export const failedStep = {
+  stage: 'failed',
+  label: 'Failed',
+  hint: 'Nothing was credited',
+  color: 'red',
+} as const;
+/** A card payment that failed, or a payment noted as one that did not go through. */
+export function paymentFailed(
+  payment: Pick<Payment, 'stage'> & Partial<Pick<Payment, 'noteKinds'>>,
+): boolean {
+  return (
+    payment.stage === 'failed' ||
+    (payment.noteKinds !== undefined &&
+      didNotGoThrough({ noteKinds: payment.noteKinds }))
+  );
+}
 export type Step = {
   stage: Payment['stage'];
   label: string;
@@ -73,7 +90,8 @@ const brandNames: Record<string, string> = {
   unionpay: 'UnionPay',
 };
 export function cardBrandName(brand: string): string {
-  return brandNames[brand] ?? brand.charAt(0).toUpperCase() + brand.slice(1);
+  const name = brand.replaceAll('_', ' ');
+  return brandNames[brand] ?? name.charAt(0).toUpperCase() + name.slice(1);
 }
 /** "Visa ····4242", or null while the order's card is unknown. */
 export function cardLabel(payment: Pick<Payment, 'order'>): string | null {
@@ -106,7 +124,7 @@ export const pipelineSteps: readonly Step[] = [
   steps[3],
 ];
 type StagePayment = Pick<Payment, 'stage' | 'confirmations' | 'final'> &
-  Partial<Pick<Payment, 'provider'>>;
+  Partial<Pick<Payment, 'provider' | 'noteKinds'>>;
 type StageView = {
   label: string;
   step: number;
@@ -123,18 +141,26 @@ export function stageView(
 export function stageView(payment: StagePayment, threshold?: number) {
   const stages = stepsFor(payment.provider ?? 'chain');
   const step = stages.findIndex((s) => s.stage === payment.stage);
-  const view: StageView = {
-    label:
-      payment.stage === 'sent'
-        ? 'Sent'
-        : payment.stage === 'processing'
-          ? 'Processing'
-          : (stages[step]?.label ?? payment.stage),
-    step,
-    color: stages[step]?.color ?? 'blue',
-    paid: payment.stage === 'settled' || payment.stage === 'notified',
-    final: payment.final,
-  };
+  const view: StageView = paymentFailed(payment)
+    ? {
+        label: failedStep.label,
+        step: -1,
+        color: failedStep.color,
+        paid: false,
+        final: false,
+      }
+    : {
+        label:
+          payment.stage === 'sent'
+            ? 'Sent'
+            : payment.stage === 'processing'
+              ? 'Processing'
+              : (stages[step]?.label ?? payment.stage),
+        step,
+        color: stages[step]?.color ?? 'blue',
+        paid: payment.stage === 'settled' || payment.stage === 'notified',
+        final: payment.final,
+      };
   if (threshold === undefined) return view;
   return {
     ...view,

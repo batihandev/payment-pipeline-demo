@@ -11,7 +11,10 @@ const waiting = {
   order: { position: 0, closed: false },
   sending: false,
   message: '',
+  now: Date.parse('2026-10-23T10:00:00.000Z'),
 };
+const calm =
+  'Still processing at Stripe. It will appear in the feed when it settles.';
 
 describe('checkoutState', () => {
   it('keeps the checkout busy while an accepted order waits to be sent', () => {
@@ -57,12 +60,12 @@ describe('checkoutState', () => {
         statusText: `${note} You can try again.`,
       });
   });
-  it('reopens the checkout when the order closes before the failure note arrives', () => {
+  it('reopens the checkout when the card payment failed before the failure note arrives', () => {
     const state = checkoutState({
       ...waiting,
       payment: payment({
         provider: 'stripe',
-        stage: 'processing',
+        stage: 'failed',
         orderId: 'o1',
       }),
       order: { position: 0, closed: true },
@@ -72,6 +75,36 @@ describe('checkoutState', () => {
       true,
       `${note} You can try again.`,
     ]);
+  });
+  it('ignores closed while a live payment exists', () => {
+    for (const live of [
+      payment({ provider: 'stripe', stage: 'processing', orderId: 'o1' }),
+      payment({ stage: 'sent', orderId: 'o1' }),
+    ]) {
+      const state = checkoutState({
+        ...waiting,
+        payment: live,
+        order: { position: 0, closed: true },
+      });
+      expect([state.busy, state.closed]).toEqual([true, false]);
+    }
+  });
+  it('reopens the rail buttons when processing outlasts the bound', () => {
+    const processing = payment({
+      provider: 'stripe',
+      stage: 'processing',
+      orderId: 'o1',
+      processingAt: '2026-10-23T09:58:00.000Z',
+    });
+    expect(checkoutState({ ...waiting, payment: processing }).busy).toBe(true);
+    expect(
+      checkoutState({ ...waiting, payment: processing, now: waiting.now + 1 }),
+    ).toEqual({
+      busy: false,
+      closed: false,
+      busyLabel: undefined,
+      statusText: calm,
+    });
   });
   it('follows a payment that is still moving', () => {
     const state = checkoutState({

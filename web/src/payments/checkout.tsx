@@ -1,7 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CardTerminal } from './card-terminal';
 import { ChainTerminal } from './chain-terminal';
-import { checkoutState } from './checkout-state';
+import { checkoutState, processingDeadline } from './checkout-state';
 import type { Rail } from './client';
 import { RailChoice } from './rail-choice';
 import { Receipt } from './receipt';
@@ -17,6 +17,20 @@ import {
 } from './view';
 import './styles.css';
 import './checkout.css';
+
+/** The current time, read again just after `deadline` so a render can tell it has passed. */
+function useTimeAfter(deadline: number | null): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (deadline === null) return;
+    const timer = setTimeout(
+      () => setNow(Math.max(Date.now(), deadline + 1)),
+      Math.max(0, deadline + 1 - Date.now()),
+    );
+    return () => clearTimeout(timer);
+  }, [deadline]);
+  return now;
+}
 
 export function Checkout({
   apiBaseUrl,
@@ -45,6 +59,7 @@ export function Checkout({
   const price = ordered?.price ?? latest?.order?.price ?? latest?.amount;
   const paid = view?.paid ?? false;
   const order = useOrderStatus(apiBaseUrl, orderId ?? null, accepted, paid);
+  const now = useTimeAfter(processingDeadline(payment));
   const checkout = checkoutState({
     status,
     orderId,
@@ -53,6 +68,7 @@ export function Checkout({
     order,
     sending,
     message,
+    now,
   });
 
   async function purchase(chosen: Rail) {
@@ -136,7 +152,7 @@ export function Checkout({
               <span className="tp-price">{money(price)}</span>
             </div>
           )}
-          {payment && view && !checkout.closed && (
+          {payment && view && (
             <>
               {payment.provider === 'stripe' ? (
                 <CardTerminal payment={payment} />

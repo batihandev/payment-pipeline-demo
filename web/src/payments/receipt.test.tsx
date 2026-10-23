@@ -98,6 +98,24 @@ describe('StepStrip', () => {
     expect(labels(html)).toEqual(['Sent', 'Processing', 'Settled', 'Notified']);
     expect(html.match(/tp-reached/g)).toHaveLength(2);
   });
+  it('ends the strip on Failed for a failed card payment', () => {
+    const html = renderToStaticMarkup(
+      <StepStrip payment={cardPayment({ stage: 'failed', final: true })} />,
+    );
+    expect(labels(html)).toEqual(['Sent', 'Processing', 'Failed']);
+    expect(html).toContain('tp-failed');
+  });
+  it('labels a failed card payment Failed, not Final', () => {
+    const html = renderToStaticMarkup(
+      <Receipt
+        payment={cardPayment({ stage: 'failed', final: true })}
+        threshold={7}
+      />,
+    );
+    expect(html).toContain('>Failed<');
+    expect(html).not.toContain('>Final<');
+    expect(html).not.toContain('PAID');
+  });
   it('keeps the chain stages for a chain payment', () => {
     expect(
       labels(renderToStaticMarkup(<StepStrip payment={payment()} />)),
