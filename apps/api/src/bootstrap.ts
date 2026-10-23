@@ -1,29 +1,25 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import {
-  FastifyAdapter,
-  type NestFastifyApplication,
-} from '@nestjs/platform-fastify';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { apiSchema, validateConfig } from '../../../libs/config/src';
+import { bigintReplacer } from '../../../libs/core/src/json';
 import { AppModule } from './app.module';
 import type { ApiConfig } from './common/api-config';
-import { proxyTrust } from './proxy';
 
 // Only the shop notice route takes a body, and a signed notice is far smaller than this.
 const MAX_BODY_BYTES = 4096;
 
-export const adapterFor = (config: ApiConfig): FastifyAdapter =>
-  new FastifyAdapter({
-    trustProxy: proxyTrust(config.TRUST_PROXY),
-    bodyLimit: MAX_BODY_BYTES,
-  });
-
 export const applicationOptions = { rawBody: true, logger: false } as const;
 
 export function configureApp(
-  app: NestFastifyApplication,
+  app: NestExpressApplication,
   config: ApiConfig,
 ): void {
+  // One proxy hop is trusted, so the client address is the entry it appended and a
+  // forged leftmost X-Forwarded-For value is ignored.
+  app.set('trust proxy', config.TRUST_PROXY ? 1 : false);
+  app.set('json replacer', bigintReplacer);
+  app.useBodyParser('json', { limit: MAX_BODY_BYTES });
   app.enableCors({
     origin: [config.WEB_ORIGIN],
     methods: ['GET', 'POST', 'OPTIONS'],
@@ -31,11 +27,10 @@ export function configureApp(
   });
 }
 
-export async function createApp(): Promise<NestFastifyApplication> {
+export async function createApp(): Promise<NestExpressApplication> {
   const config = validateConfig(apiSchema, process.env);
-  const app = await NestFactory.create<NestFastifyApplication>(
+  const app = await NestFactory.create<NestExpressApplication>(
     AppModule.forRoot(),
-    adapterFor(config),
     applicationOptions,
   );
   configureApp(app, config);

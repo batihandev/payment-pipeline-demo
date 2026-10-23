@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
-import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { testDatabase } from '../../../../libs/db/testing/database';
 import { signNotice } from '../../../../libs/core/src/notices';
 import { PrismaService } from '../../../../libs/db/src';
@@ -8,7 +8,7 @@ import { createTestApp } from '../../testing/app';
 import { NOW } from '../common/clock.module';
 
 let database: Awaited<ReturnType<typeof testDatabase>>;
-let app: NestFastifyApplication;
+let app: NestExpressApplication;
 const secret = 'notice-test-secret'.repeat(3);
 const now = new Date('2026-10-20T12:00:00Z');
 const timestamp = Math.floor(now.getTime() / 1000);
@@ -86,7 +86,7 @@ it('returns 401 for bad, expired, future and malformed signatures or timestamps'
   expect((await database.db.payment.findFirstOrThrow()).stage).toBe('settled');
   expect(await database.db.paymentEvent.count()).toBe(0);
 });
-it('verifies exact JSON bytes including whitespace', async () => {
+it('rejects a notice whose body was re-serialized', async () => {
   const row = await payment();
   const body = JSON.stringify({ paymentId: row.id });
   const spaced = `{ "paymentId": "${row.id}" }`;
@@ -181,9 +181,14 @@ it('checks the signature before the body', async () => {
   expect(response.statusCode).toBe(401);
   expect(response.body).toEqual({ error: 'invalid_notice_signature' });
 });
-it('refuses a body over 4 KB', async () => {
+it('answers 413 payload_too_large above 4 KB', async () => {
   const body = JSON.stringify({ paymentId: 'x'.repeat(5000) });
   const response = await send(body);
   expect(response.statusCode).toBe(413);
   expect(response.body).toEqual({ error: 'payload_too_large' });
+});
+it('answers 400 bad_request for malformed JSON without echoing the parser message', async () => {
+  const response = await send('{"paymentId":');
+  expect(response.statusCode).toBe(400);
+  expect(response.body).toEqual({ error: 'bad_request' });
 });

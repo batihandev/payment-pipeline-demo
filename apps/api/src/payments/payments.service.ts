@@ -4,7 +4,6 @@ import { PrismaService } from '../../../../libs/db/src';
 import { publicPayment } from '../../../../libs/events/src/public-payment';
 import { receiptNoteKinds } from '../../../../libs/core/src/receipt-notes';
 import type { ApiConfig } from '../common/api-config';
-import { json } from '../common/json';
 
 @Injectable()
 export class PaymentsService {
@@ -41,21 +40,19 @@ export class PaymentsService {
         },
       },
     });
-    return json(
-      rows
-        .sort(
-          (a, b) =>
-            ids.findIndex((row) => row.id === a.id) -
-            ids.findIndex((row) => row.id === b.id),
-        )
-        .map(({ incidents, ...row }) => ({
-          ...publicPayment(row),
-          noteKinds: incidents.map((incident) => incident.kind),
-          order: row.order,
-          explorerUrl: row.transactionHash
-            ? `${explorer.replace(/\/$/, '')}/tx/${row.transactionHash}`
-            : null,
-        })),
-    );
+    return rows
+      .sort(
+        (a, b) =>
+          ids.findIndex((row) => row.id === a.id) -
+          ids.findIndex((row) => row.id === b.id),
+      )
+      .map(({ incidents, ...row }) => ({
+        ...publicPayment(row),
+        noteKinds: incidents.map((incident) => incident.kind),
+        order: row.order,
+        explorerUrl: row.transactionHash
+          ? `${explorer.replace(/\/$/, '')}/tx/${row.transactionHash}`
+          : null,
+      }));
   }
 }

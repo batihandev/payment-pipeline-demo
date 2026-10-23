@@ -1,9 +1,9 @@
 import request from 'supertest';
-import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { createTestApp, testOrigin as origin } from '../testing/app';
 import { openEventStream } from '../testing/event-stream';
 
-let app: NestFastifyApplication;
+let app: NestExpressApplication;
 beforeAll(async () => {
   app = await createTestApp({
     environment: { NOTICE_SECRET: 'cors-test-secret'.repeat(3) },

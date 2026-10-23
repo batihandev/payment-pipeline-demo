@@ -1,4 +1,3 @@
-import type { IncomingHttpHeaders } from 'node:http';
 import {
   Injectable,
   type CanActivate,
@@ -6,6 +5,7 @@ import {
   type RawBodyRequest,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { Request } from 'express';
 import { verifyNotice } from '../../../../libs/core/src/notices';
 import { ApiError } from '../common/api-error';
 import type { ApiConfig } from '../common/api-config';
@@ -22,7 +22,7 @@ export class NoticeSignatureGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const request = context
       .switchToHttp()
-      .getRequest<RawBodyRequest<{ headers: IncomingHttpHeaders }>>();
+      .getRequest<RawBodyRequest<Request>>();
     const raw = request.rawBody;
     const timestamp = request.headers['x-notice-timestamp'];
     const signature = request.headers['x-notice-signature'];

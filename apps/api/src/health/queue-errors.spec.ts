@@ -1,12 +1,12 @@
 import { getQueueToken } from '@nestjs/bullmq';
-import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { Queue } from 'bullmq';
 import { OrdersModule } from '../../../../libs/orders/src/orders.module';
 import { QUEUES } from '../../../../libs/queues/src';
 import { createTestApp } from '../../testing/app';
 import { HealthModule } from './health.module';
 
-let app: NestFastifyApplication;
+let app: NestExpressApplication;
 beforeAll(async () => {
   app = await createTestApp({ queuePrefix: 'queue-errors-test' });
 });

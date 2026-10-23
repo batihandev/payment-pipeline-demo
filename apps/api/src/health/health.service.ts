@@ -8,7 +8,6 @@ import { VISITOR_PAUSED_SINCE } from '../../../../libs/core/src/redis-keys';
 import { InjectRedis } from '../../../../libs/redis/src';
 import { ApiError } from '../common/api-error';
 import type { ApiConfig } from '../common/api-config';
-import { json } from '../common/json';
 import {
   ChainSnapshotService,
   type Balance,
@@ -109,7 +108,7 @@ export class HealthService {
       lowNative: balance.native < get('LOW_NATIVE_BALANCE'),
       lowUsdc: balance.usdc < get('LOW_USDC_BALANCE'),
     });
-    return json({
+    return {
       confirmations: get('CONFIRMATIONS'),
       head: chain?.head ?? null,
       cursor: cursor?.blockNumber ?? null,
@@ -137,6 +136,6 @@ export class HealthService {
           ? new Date(Number(pausedSince)).toISOString()
           : null,
       },
-    });
+    };
   }
 }

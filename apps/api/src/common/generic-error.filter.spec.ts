@@ -1,6 +1,6 @@
 import { Controller, Get, HttpException } from '@nestjs/common';
 import request from 'supertest';
-import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { createTestApp } from '../../testing/app';
 import { ApiError } from './api-error';
 
@@ -37,7 +37,7 @@ class FailingController {
   }
 }
 
-let app: NestFastifyApplication;
+let app: NestExpressApplication;
 beforeAll(async () => {
   app = await createTestApp({
     environment: { NOTICE_SECRET: 'error-test-secret'.repeat(3) },

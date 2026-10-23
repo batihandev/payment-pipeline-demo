@@ -1,11 +1,11 @@
 import { getSharedConfigToken } from '@nestjs/bullmq';
 import type { Type } from '@nestjs/common';
 import { Test, type TestingModuleBuilder } from '@nestjs/testing';
-import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { apiSchema, validateConfig } from '../../../libs/config/src';
 import { testRedisUrl } from '../../../libs/config/testing/redis';
 import { AppModule } from '../src/app.module';
-import { adapterFor, applicationOptions, configureApp } from '../src/bootstrap';
+import { applicationOptions, configureApp } from '../src/bootstrap';
 
 export const testOrigin = 'http://localhost:5173';
 
@@ -33,7 +33,7 @@ export async function createTestApp(
     /** Keeps the queues' Redis keys apart from other tests'. */
     queuePrefix?: string;
   } = {},
-): Promise<NestFastifyApplication> {
+): Promise<NestExpressApplication> {
   Object.assign(process.env, apiTestEnvironment(), options.environment);
   const builder = Test.createTestingModule({
     imports: [AppModule.forRoot()],
@@ -47,12 +47,9 @@ export async function createTestApp(
   options.override?.(builder);
   const module = await builder.compile();
   const config = validateConfig(apiSchema, process.env);
-  const app = module.createNestApplication<NestFastifyApplication>(
-    adapterFor(config),
-    applicationOptions,
-  );
+  const app =
+    module.createNestApplication<NestExpressApplication>(applicationOptions);
   configureApp(app, config);
   await app.init();
-  await app.getHttpAdapter().getInstance().ready();
   return app;
 }

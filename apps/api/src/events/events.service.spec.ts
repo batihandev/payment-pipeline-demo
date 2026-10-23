@@ -1,6 +1,6 @@
 import { once } from 'node:events';
 import type { IncomingMessage } from 'node:http';
-import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Redis } from 'ioredis';
 import {
   paymentChannel,
@@ -12,7 +12,7 @@ import { testRedisUrl } from '../../../../libs/config/testing/redis';
 import { createTestApp } from '../../testing/app';
 import { openEventStream } from '../../testing/event-stream';
 
-let app: NestFastifyApplication;
+let app: NestExpressApplication;
 let redis: Redis;
 let database: Awaited<ReturnType<typeof testDatabase>>;
 beforeAll(async () => {
@@ -102,7 +102,7 @@ it('streams donations without the sender', async () => {
   expect(String(chunk)).not.toContain('ee'.repeat(20));
   stream.destroy();
 });
-it('sends a heartbeat after fifteen seconds without payment activity', async () => {
+it('keeps the stream open past 15 s with a heartbeat', async () => {
   jest.useFakeTimers({
     doNotFake: [
       'nextTick',

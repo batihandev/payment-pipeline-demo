@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { Redis } from 'ioredis';
 import { ChainClient } from '../../../libs/chain/src/chain-client';
 import type { RpcError } from '../../../libs/chain/src/rpc-error';
@@ -24,7 +24,7 @@ export function useReadApi() {
     chainCalls: [] as string[],
     headFailure: null as RpcError | null,
     queuePrefix: '',
-    app: undefined as unknown as NestFastifyApplication,
+    app: undefined as unknown as NestExpressApplication,
     database: undefined as unknown as Awaited<ReturnType<typeof testDatabase>>,
     redis: undefined as unknown as Redis,
     async rebuild(loadSnapshot = true): Promise<void> {

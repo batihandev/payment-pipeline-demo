@@ -3,7 +3,7 @@ import {
   type ArgumentsHost,
   type ExceptionFilter,
 } from '@nestjs/common';
-import { HttpAdapterHost } from '@nestjs/core';
+import type { Response } from 'express';
 import { ApiError } from './api-error';
 
 const clientErrorCodes: Record<number, string> = {
@@ -20,6 +20,8 @@ const clientErrorCodes: Record<number, string> = {
 
 function statusOf(error: unknown): number {
   if (typeof error !== 'object' || error === null) return 500;
+  if ('status' in error && typeof error.status === 'number')
+    return error.status;
   if ('statusCode' in error && typeof error.statusCode === 'number')
     return error.statusCode;
   if ('getStatus' in error && typeof error.getStatus === 'function')
@@ -35,24 +37,20 @@ function statusOf(error: unknown): number {
  */
 @Catch()
 export class GenericErrorFilter implements ExceptionFilter {
-  constructor(private readonly adapterHost: HttpAdapterHost) {}
-
   catch(error: unknown, host: ArgumentsHost): void {
-    const { httpAdapter } = this.adapterHost;
-    const response = host.switchToHttp().getResponse();
+    const response = host.switchToHttp().getResponse<Response>();
     if (error instanceof ApiError) {
-      for (const [name, value] of Object.entries(error.headers))
-        httpAdapter.setHeader(response, name, value);
-      httpAdapter.reply(response, error.getResponse(), error.getStatus());
+      response
+        .set(error.headers)
+        .status(error.getStatus())
+        .json(error.getResponse());
       return;
     }
     const status = statusOf(error);
     if (status >= 400 && status < 500)
-      httpAdapter.reply(
-        response,
-        { error: clientErrorCodes[status] ?? 'bad_request' },
-        status,
-      );
-    else httpAdapter.reply(response, { error: 'internal' }, 500);
+      response
+        .status(status)
+        .json({ error: clientErrorCodes[status] ?? 'bad_request' });
+    else response.status(500).json({ error: 'internal' });
   }
 }
