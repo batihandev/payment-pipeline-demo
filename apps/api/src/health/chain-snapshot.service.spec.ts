@@ -1,5 +1,5 @@
-import { ChainSnapshot } from './chain-snapshot';
-import { RpcError } from '../../../libs/chain/src/rpc-error';
+import { ChainSnapshotService } from './chain-snapshot.service';
+import { RpcError } from '../../../../libs/chain/src/rpc-error';
 
 const buyer = `0x${'11'.repeat(20)}` as const;
 const shop = `0x${'22'.repeat(20)}` as const;
@@ -42,7 +42,7 @@ function countingChain() {
 
 it('shares one fetch across concurrent callers', async () => {
   const fake = countingChain();
-  const snapshot = new ChainSnapshot(fake.chain, { buyer, shop });
+  const snapshot = new ChainSnapshotService(fake.chain, { buyer, shop });
   fake.hold();
   const first = snapshot.refresh();
   const second = snapshot.refresh();
@@ -62,7 +62,7 @@ it('shares one fetch across concurrent callers', async () => {
 it('serves a fresh snapshot without RPC calls and refreshes it after 10 seconds', async () => {
   const fake = countingChain();
   let time = 1_000_000;
-  const snapshot = new ChainSnapshot(
+  const snapshot = new ChainSnapshotService(
     fake.chain,
     { buyer, shop },
     { now: () => time },
@@ -83,7 +83,7 @@ it('serves a fresh snapshot without RPC calls and refreshes it after 10 seconds'
 it('keeps the last snapshot with its time when a refresh fails', async () => {
   const fake = countingChain();
   let time = 1_000_000;
-  const snapshot = new ChainSnapshot(
+  const snapshot = new ChainSnapshotService(
     fake.chain,
     { buyer, shop },
     { now: () => time },
@@ -105,7 +105,7 @@ it('keeps the last snapshot with its time when a refresh fails', async () => {
 it('reports a category, never the error message, when the first read fails', async () => {
   const fake = countingChain();
   fake.fail(new Error('https://secret.example/key') as RpcError);
-  const snapshot = new ChainSnapshot(fake.chain, { buyer, shop });
+  const snapshot = new ChainSnapshotService(fake.chain, { buyer, shop });
   await snapshot.refresh();
   expect(snapshot.current()).toEqual({ reading: null, error: 'transient' });
 });
@@ -113,7 +113,7 @@ it('reports a category, never the error message, when the first read fails', asy
 it('passes each new reading to the refresh hook', async () => {
   const fake = countingChain();
   const seen: bigint[] = [];
-  const snapshot = new ChainSnapshot(
+  const snapshot = new ChainSnapshotService(
     fake.chain,
     { buyer, shop },
     {

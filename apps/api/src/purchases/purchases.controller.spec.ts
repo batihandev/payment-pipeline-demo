@@ -1,55 +1,77 @@
 import { randomUUID } from 'node:crypto';
-import { FastifyAdapter } from '@nestjs/platform-fastify';
 import { Redis } from 'ioredis';
 import { Queue } from 'bullmq';
-import { testDatabase } from '../../../libs/db/testing/database';
-import { OrderQueueService, PurchasesService } from '../../../libs/orders/src';
-import type { BuyerJobData } from '../../../libs/queues/src';
+import request from 'supertest';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { ChainClient } from '../../../../libs/chain/src/chain-client';
+import { testDatabase } from '../../../../libs/db/testing/database';
+import { PrismaService } from '../../../../libs/db/src';
+import { PurchasesService } from '../../../../libs/orders/src';
+import type { BuyerJobData } from '../../../../libs/queues/src';
+import { testRedisUrl } from '../../../../libs/config/testing/redis';
+import { createTestApp } from '../../testing/app';
+import { NOW } from '../common/clock.module';
 import {
-  recordGasPause,
-  registerTestPurchases,
+  ChainSnapshotService,
   type GasReading,
+} from '../health/chain-snapshot.service';
+import {
+  VISITOR_LIMITS,
+  VISITOR_PREFIX,
   type VisitorLimits,
-} from './test-purchases';
-import { proxyTrust } from './proxy';
-import { testRedisUrl } from '../../../libs/config/testing/redis';
-import { ChainSnapshot, buyerGas } from './chain-snapshot';
+} from './visitor-limits';
+
 jest.setTimeout(120000);
 let database: Awaited<ReturnType<typeof testDatabase>>;
 let redis: Redis;
 let queue: Queue<BuyerJobData>;
-let adapter: FastifyAdapter;
+let app: NestFastifyApplication;
 let prefix: string;
 let purchases: PurchasesService;
 let limits: VisitorLimits;
 let gas: GasReading;
 let tick: number;
-function build(
-  trustProxy: ReturnType<typeof proxyTrust>,
-  latestBuyerGas: () => Promise<GasReading> = async () => gas,
-) {
-  const built = new FastifyAdapter({ trustProxy });
-  registerTestPurchases(
-    built.getInstance(),
-    redis,
-    database.db,
-    purchases,
-    new OrderQueueService(database.db, queue),
-    {
-      prefix,
-      limits,
-      latestBuyerGas,
-      now: () => new Date(now.getTime() + tick++),
-    },
-  );
-  return built;
-}
+const queuePrefix = `api-visitors-${randomUUID()}`;
 const now = new Date('2026-10-20T12:00:00Z');
+// Every app trusts one proxy, so each test's visitors are told apart by X-Forwarded-For.
+async function build(
+  override: (
+    builder: Parameters<
+      NonNullable<Parameters<typeof createTestApp>[0]>['override'] & {}
+    >[0],
+  ) => void = (builder) => {
+    builder
+      .overrideProvider(ChainSnapshotService)
+      .useValue({ buyerGas: async () => gas });
+  },
+  trustProxy = true,
+) {
+  await app?.close();
+  app = await createTestApp({
+    environment: { TRUST_PROXY: String(trustProxy) },
+    queuePrefix,
+    override: (builder) => {
+      builder
+        .overrideProvider(PrismaService)
+        .useValue(database.db)
+        .overrideProvider(NOW)
+        .useValue(() => new Date(now.getTime() + tick++))
+        .overrideProvider(PurchasesService)
+        .useValue(purchases)
+        .overrideProvider(VISITOR_LIMITS)
+        .useValue(limits)
+        .overrideProvider(VISITOR_PREFIX)
+        .useValue(prefix);
+      override(builder);
+    },
+  });
+}
 beforeAll(async () => {
   database = await testDatabase();
   redis = new Redis(testRedisUrl());
-  queue = new Queue(`api-visitors-${randomUUID()}`, {
+  queue = new Queue('buyer', {
     connection: { url: testRedisUrl() },
+    prefix: queuePrefix,
   });
 });
 afterAll(async () => {
@@ -84,21 +106,20 @@ beforeEach(async () => {
   };
   gas = null;
   tick = 0;
-  adapter = build(proxyTrust(false));
+  await build();
 });
 afterEach(async () => {
-  await adapter.close();
+  await app.close();
   await redis.del('visitor-paused-since');
   const keys = await redis.keys(`${prefix}:*`);
   if (keys.length) await redis.del(...keys);
 });
 const buy = (ip = '127.0.0.1', headers: Record<string, string> = {}) =>
-  adapter.getInstance().inject({
-    method: 'POST',
-    url: '/test-purchases',
-    remoteAddress: ip,
-    headers,
-  });
+  request(app.getHttpServer())
+    .post('/test-purchases')
+    .set({ 'x-forwarded-for': ip, ...headers });
+const position = (id: string) =>
+  request(app.getHttpServer()).get(`/test-purchases/${id}`);
 const seedPending = async (count: number) => {
   for (let index = 0; index < count; index++)
     await database.db.order.create({
@@ -116,7 +137,7 @@ const seedPending = async (count: number) => {
 it('queues an immediate priority-one visitor job without taking scheduled budget', async () => {
   const response = await buy();
   expect(response.statusCode).toBe(202);
-  const { orderId, position } = response.json();
+  const { orderId, position } = response.body;
   expect(position).toBe(1);
   const order = await database.db.order.findUniqueOrThrow({
     where: { id: orderId },
@@ -133,7 +154,7 @@ it('admits back-to-back clicks from different visitors', async () => {
   const first = await buy('192.0.2.1');
   const second = await buy('192.0.2.2');
   expect([first.statusCode, second.statusCode]).toEqual([202, 202]);
-  expect(second.json().position).toBe(2);
+  expect(second.body.position).toBe(2);
 });
 
 it('limits one visitor to 10 a minute', async () => {
@@ -141,7 +162,7 @@ it('limits one visitor to 10 a minute', async () => {
     expect((await buy()).statusCode).toBe(202);
   const denied = await buy();
   expect(denied.statusCode).toBe(429);
-  expect(denied.json()).toEqual({ error: 'rate_limited' });
+  expect(denied.body).toEqual({ error: 'rate_limited' });
   expect(Number(denied.headers['retry-after'])).toBeGreaterThan(0);
   expect((await buy('192.0.2.9')).statusCode).toBe(202);
 });
@@ -154,7 +175,7 @@ it('limits one visitor to their per-day limit until the UTC day ends', async () 
   await buy();
   const denied = await buy();
   expect(denied.statusCode).toBe(429);
-  expect(denied.json()).toEqual({ error: 'rate_limited' });
+  expect(denied.body).toEqual({ error: 'rate_limited' });
   expect(Number(denied.headers['retry-after'])).toBeGreaterThan(3600);
 });
 
@@ -162,7 +183,7 @@ it('returns busy when 30 visitor purchases wait', async () => {
   await seedPending(30);
   const response = await buy();
   expect(response.statusCode).toBe(429);
-  expect(response.json()).toEqual({ error: 'busy' });
+  expect(response.body).toEqual({ error: 'busy' });
   expect(response.headers['retry-after']).toBe('2');
   expect(await database.db.order.count()).toBe(30);
 });
@@ -175,8 +196,8 @@ it('accepts 30 of 40 burst clicks in order', async () => {
   const busy = responses.filter((response) => response.statusCode === 429);
   expect(accepted).toHaveLength(30);
   expect(busy).toHaveLength(10);
-  expect(busy.every((response) => response.json().error === 'busy')).toBe(true);
-  expect(accepted.map((response) => response.json().position)).toEqual(
+  expect(busy.every((response) => response.body.error === 'busy')).toBe(true);
+  expect(accepted.map((response) => response.body.position)).toEqual(
     Array.from({ length: 30 }, (_, index) => index + 1),
   );
 });
@@ -187,7 +208,7 @@ it('refuses past the visitor daily limit', async () => {
   await buy('192.0.2.2');
   const response = await buy('192.0.2.3');
   expect(response.statusCode).toBe(409);
-  expect(response.json()).toEqual({ error: 'daily_limit' });
+  expect(response.body).toEqual({ error: 'daily_limit' });
   expect(await database.db.order.count()).toBe(2);
 });
 
@@ -195,35 +216,10 @@ it('pauses below the gas floor', async () => {
   gas = { native: limits.gasFloor - 1n, at: now.getTime() };
   const paused = await buy();
   expect(paused.statusCode).toBe(503);
-  expect(paused.json()).toEqual({ error: 'paused' });
+  expect(paused.body).toEqual({ error: 'paused' });
   expect(await database.db.order.count()).toBe(0);
   gas = { native: limits.gasFloor, at: now.getTime() };
   expect((await buy()).statusCode).toBe(202);
-});
-
-it('records the gas-floor pause on each chain refresh, without visitor clicks', async () => {
-  let native = limits.gasFloor - 1n;
-  let time = now.getTime();
-  const snapshot = new ChainSnapshot(
-    {
-      getHead: async () => ({ number: 1n, hash: '0x01' }),
-      getBalances: async () => ({ native, usdc: 0n }),
-    },
-    { buyer: `0x${'11'.repeat(20)}`, shop: `0x${'22'.repeat(20)}` },
-    {
-      now: () => time,
-      onRefresh: recordGasPause(redis, limits.gasFloor, () => time),
-    },
-  );
-  await snapshot.refresh();
-  expect(await redis.get('visitor-paused-since')).toBe(String(now.getTime()));
-  time += 10000;
-  await snapshot.refresh();
-  expect(await redis.get('visitor-paused-since')).toBe(String(now.getTime()));
-  native = limits.gasFloor;
-  time += 10000;
-  await snapshot.refresh();
-  expect(await redis.get('visitor-paused-since')).toBeNull();
 });
 
 it('admits when the gas reading is missing or stale', async () => {
@@ -234,29 +230,24 @@ it('admits when the gas reading is missing or stale', async () => {
 });
 
 it('reports queue position', async () => {
-  const first = (await buy('192.0.2.1')).json();
-  const second = (await buy('192.0.2.2')).json();
-  const position = async (id: string) =>
-    (
-      await adapter.getInstance().inject({
-        method: 'GET',
-        url: `/test-purchases/${id}`,
-      })
-    ).json();
-  expect(await position(first.orderId)).toEqual({ position: 1 });
-  expect(await position(second.orderId)).toEqual({ position: 2 });
+  const first = (await buy('192.0.2.1')).body;
+  const second = (await buy('192.0.2.2')).body;
+  expect((await position(first.orderId)).body).toEqual({ position: 1 });
+  expect((await position(second.orderId)).body).toEqual({ position: 2 });
   await database.db.order.update({
     where: { id: second.orderId },
     data: { sendState: 'sent' },
   });
-  expect(await position(second.orderId)).toEqual({ position: 0 });
-  expect(await position(randomUUID())).toEqual({ position: 0 });
-  expect(await position('not-an-id')).toEqual({ position: 0 });
+  for (const id of [second.orderId, randomUUID(), 'not-an-id']) {
+    const response = await position(id);
+    expect([response.statusCode, response.body]).toEqual([
+      200,
+      { position: 0 },
+    ]);
+  }
 });
 
 it('uses the forwarded client address when TRUST_PROXY is on', async () => {
-  await adapter.close();
-  adapter = build(proxyTrust(true));
   limits.perMinute = 1;
   const first = await buy('10.0.0.1', { 'x-forwarded-for': '198.51.100.1' });
   const second = await buy('10.0.0.1', { 'x-forwarded-for': '198.51.100.2' });
@@ -267,8 +258,6 @@ it('uses the forwarded client address when TRUST_PROXY is on', async () => {
 });
 
 it('trusts only the nearest proxy, so a forged leftmost address does not help', async () => {
-  await adapter.close();
-  adapter = build(proxyTrust(true));
   limits.perMinute = 1;
   const first = await buy('10.0.0.1', {
     'x-forwarded-for': '6.6.6.6, 1.1.1.1',
@@ -287,13 +276,13 @@ it('ignores expired orders when checking the queue and counting position', async
   });
   const response = await buy();
   expect(response.statusCode).toBe(202);
-  expect(response.json().position).toBe(26);
+  expect(response.body.position).toBe(26);
 });
 
 it('admits from a fresh chain snapshot without an RPC call', async () => {
   const calls: string[] = [];
-  const snapshot = new ChainSnapshot(
-    {
+  await build((builder) => {
+    builder.overrideProvider(ChainClient).useValue({
       getHead: async () => {
         calls.push('getHead');
         return { number: 1n, hash: '0x01' };
@@ -302,32 +291,33 @@ it('admits from a fresh chain snapshot without an RPC call', async () => {
         calls.push('getBalances');
         return { native: limits.gasFloor - 1n, usdc: 0n };
       },
-    },
-    { buyer: `0x${'11'.repeat(20)}`, shop: `0x${'22'.repeat(20)}` },
-    { now: () => now.getTime() },
-  );
-  await snapshot.refresh();
+    });
+  });
+  await app.get(ChainSnapshotService).refresh();
   const before = calls.length;
-  await adapter.close();
-  adapter = build(proxyTrust(false), buyerGas(snapshot));
   const response = await buy();
   expect(response.statusCode).toBe(503);
-  expect(response.json()).toEqual({ error: 'paused' });
+  expect(response.body).toEqual({ error: 'paused' });
   expect(calls).toHaveLength(before);
 });
 
 it('admits without waiting on a chain read that has not finished', async () => {
-  const snapshot = new ChainSnapshot(
-    {
+  await build((builder) => {
+    builder.overrideProvider(ChainClient).useValue({
       getHead: () => new Promise<never>(() => {}),
       getBalances: () => new Promise<never>(() => {}),
-    },
-    { buyer: `0x${'11'.repeat(20)}`, shop: `0x${'22'.repeat(20)}` },
-  );
-  await adapter.close();
-  adapter = build(proxyTrust(false), buyerGas(snapshot));
+    });
+  });
   expect((await buy('192.0.2.1')).statusCode).toBe(202);
   expect((await buy('192.0.2.2')).statusCode).toBe(202);
+});
+
+it('ignores a forwarded address when TRUST_PROXY is off', async () => {
+  await build(undefined, false);
+  limits.perMinute = 1;
+  const first = await buy('198.51.100.1');
+  const second = await buy('198.51.100.2');
+  expect([first.statusCode, second.statusCode]).toEqual([202, 429]);
 });
 
 it('gives orders created in the same millisecond distinct positions', async () => {
@@ -349,14 +339,7 @@ it('gives orders created in the same millisecond distinct positions', async () =
   rows.sort((a, b) => a.id.localeCompare(b.id));
   const positions = [];
   for (const row of rows)
-    positions.push(
-      (
-        await adapter.getInstance().inject({
-          method: 'GET',
-          url: `/test-purchases/${row.id}`,
-        })
-      ).json().position,
-    );
+    positions.push((await position(row.id)).body.position);
   expect(positions).toEqual([1, 2, 3]);
-  expect((await buy()).json().position).toBe(4);
+  expect((await buy()).body.position).toBe(4);
 });

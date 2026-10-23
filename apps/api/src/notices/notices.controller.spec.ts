@@ -1,9 +1,14 @@
-import { FastifyAdapter } from '@nestjs/platform-fastify';
-import { testDatabase } from '../../../libs/db/testing/database';
-import { signNotice } from '../../../libs/core/src/notices';
-import { registerNotices } from './notices';
+import { randomUUID } from 'node:crypto';
+import request from 'supertest';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { testDatabase } from '../../../../libs/db/testing/database';
+import { signNotice } from '../../../../libs/core/src/notices';
+import { PrismaService } from '../../../../libs/db/src';
+import { createTestApp } from '../../testing/app';
+import { NOW } from '../common/clock.module';
+
 let database: Awaited<ReturnType<typeof testDatabase>>;
-let adapter: FastifyAdapter;
+let app: NestFastifyApplication;
 const secret = 'notice-test-secret'.repeat(3);
 const now = new Date('2026-10-20T12:00:00Z');
 const timestamp = Math.floor(now.getTime() / 1000);
@@ -15,18 +20,25 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await database.db.$executeRawUnsafe('TRUNCATE payments CASCADE');
-  adapter = new FastifyAdapter();
-  adapter.useBodyParser('application/json', true);
-  registerNotices(adapter.getInstance(), database.db, secret, () => now);
+  app = await createTestApp({
+    environment: { NOTICE_SECRET: secret },
+    override: (builder) => {
+      builder
+        .overrideProvider(PrismaService)
+        .useValue(database.db)
+        .overrideProvider(NOW)
+        .useValue(() => now);
+    },
+  });
 });
 afterEach(async () => {
-  await adapter.close();
+  await app.close();
 });
 const payment = (stage: 'settled' | 'received' = 'settled') =>
   database.db.payment.create({
     data: {
       provider: 'chain',
-      externalKey: 'notice',
+      externalKey: randomUUID(),
       amount: 100n,
       stage,
       settledAt: stage === 'settled' ? now : null,
@@ -37,16 +49,12 @@ const send = (
   signature = signNotice(body, secret, timestamp),
   time = String(timestamp),
 ) =>
-  adapter.getInstance().inject({
-    method: 'POST',
-    url: '/shop/notices',
-    headers: {
-      'content-type': 'application/json',
-      'x-notice-timestamp': time,
-      'x-notice-signature': signature,
-    },
-    payload: body,
-  });
+  request(app.getHttpServer())
+    .post('/shop/notices')
+    .set('content-type', 'application/json')
+    .set('x-notice-timestamp', time)
+    .set('x-notice-signature', signature)
+    .send(body);
 it('accepts the tracker signature format and saves the notified transition and event together', async () => {
   const row = await payment();
   const response = await send(JSON.stringify({ paymentId: row.id }));
@@ -132,4 +140,50 @@ it('rolls back the notified transition when its durable event cannot be written'
       'ALTER TABLE payment_events DROP CONSTRAINT reject_event',
     );
   }
+});
+it('answers the delivered payment with ok and the refusals with their codes', async () => {
+  const row = await payment();
+  const body = JSON.stringify({ paymentId: row.id });
+  const delivered = await send(body);
+  expect([delivered.statusCode, delivered.body]).toEqual([200, { ok: true }]);
+  const unknown = await send(
+    JSON.stringify({ paymentId: '00000000-0000-4000-8000-000000000001' }),
+  );
+  expect([unknown.statusCode, unknown.body]).toEqual([
+    404,
+    { error: 'payment_not_found' },
+  ]);
+  const unsettled = await payment('received');
+  const refused = await send(JSON.stringify({ paymentId: unsettled.id }));
+  expect([refused.statusCode, refused.body]).toEqual([
+    409,
+    { error: 'payment_not_settled' },
+  ]);
+});
+it('rejects unknown notice body fields', async () => {
+  const row = await payment();
+  const response = await send(
+    JSON.stringify({ paymentId: row.id, extra: true }),
+  );
+  expect(response.statusCode).toBe(400);
+  expect(response.body).toEqual({ error: 'invalid_notice_body' });
+  expect((await database.db.payment.findFirstOrThrow()).stage).toBe('settled');
+});
+it('rejects a body without a payment id', async () => {
+  for (const body of ['{}', JSON.stringify({ paymentId: 'not-a-uuid' })]) {
+    const response = await send(body);
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({ error: 'invalid_notice_body' });
+  }
+});
+it('checks the signature before the body', async () => {
+  const response = await send('{}', '0'.repeat(64));
+  expect(response.statusCode).toBe(401);
+  expect(response.body).toEqual({ error: 'invalid_notice_signature' });
+});
+it('refuses a body over 4 KB', async () => {
+  const body = JSON.stringify({ paymentId: 'x'.repeat(5000) });
+  const response = await send(body);
+  expect(response.statusCode).toBe(413);
+  expect(response.body).toEqual({ error: 'payload_too_large' });
 });

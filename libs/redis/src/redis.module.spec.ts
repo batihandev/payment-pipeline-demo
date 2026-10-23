@@ -24,3 +24,24 @@ it('quits Redis on shutdown', async () => {
   if (redis.status !== 'end') await once(redis, 'end');
   expect(redis.status).toBe('end');
 });
+
+it('names the service in its connection-failure log line', async () => {
+  const module = await Test.createTestingModule({
+    imports: [
+      ConfigModule.forRoot({
+        ignoreEnvFile: true,
+        isGlobal: true,
+        load: [() => ({ REDIS_URL: testRedisUrl() })],
+      }),
+      RedisModule.forRoot({ service: 'API' }),
+    ],
+  }).compile();
+  const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    module.get<Redis>(REDIS).emit('error', new Error('refused'));
+    expect(log).toHaveBeenCalledWith('API Redis connection failed.');
+  } finally {
+    log.mockRestore();
+    await module.close();
+  }
+});

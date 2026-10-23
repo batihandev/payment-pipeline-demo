@@ -1,0 +1,100 @@
+import { randomUUID } from 'node:crypto';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import { Redis } from 'ioredis';
+import { ChainClient } from '../../../libs/chain/src/chain-client';
+import type { RpcError } from '../../../libs/chain/src/rpc-error';
+import { VISITOR_PAUSED_SINCE } from '../../../libs/core/src/redis-keys';
+import { testRedisUrl } from '../../../libs/config/testing/redis';
+import { testDatabase } from '../../../libs/db/testing/database';
+import { PrismaService, type PrismaClient } from '../../../libs/db/src';
+import { REDIS } from '../../../libs/redis/src';
+import { NOW } from '../src/common/clock.module';
+import { ChainSnapshotService } from '../src/health/chain-snapshot.service';
+import { createTestApp } from './app';
+
+export const today = Date.parse('2026-10-22T12:00:00Z');
+
+/**
+ * Registers the hooks the read-route specs share: a test schema, a clock the test moves,
+ * a scripted chain, and a fresh app (with a loaded chain snapshot) before each test.
+ */
+export function useReadApi() {
+  const state = {
+    time: today,
+    chainCalls: [] as string[],
+    headFailure: null as RpcError | null,
+    queuePrefix: '',
+    app: undefined as unknown as NestFastifyApplication,
+    database: undefined as unknown as Awaited<ReturnType<typeof testDatabase>>,
+    redis: undefined as unknown as Redis,
+    async rebuild(loadSnapshot = true): Promise<void> {
+      await state.app?.close();
+      state.app = await createTestApp({
+        environment: { CONFIRMATIONS: '7' },
+        queuePrefix: state.queuePrefix,
+        override: (builder) => {
+          builder
+            .overrideProvider(PrismaService)
+            .useValue(state.database.db)
+            .overrideProvider(NOW)
+            .useValue(() => new Date(state.time))
+            .overrideProvider(ChainClient)
+            .useValue({
+              getHead: async () => {
+                state.chainCalls.push('getHead');
+                if (state.headFailure) throw state.headFailure;
+                return { number: 100n, hash: '0x01' };
+              },
+              getBalances: async (address: string) => {
+                state.chainCalls.push('getBalances');
+                return address === `0x${'11'.repeat(20)}`
+                  ? { native: 1n, usdc: 20000000n }
+                  : { native: 2000000000000000n, usdc: 2n };
+              },
+            });
+        },
+      });
+      if (loadSnapshot) {
+        await state.app.get(ChainSnapshotService).refresh();
+        // The scripted buyer is below the gas floor, so loading the snapshot sets the pause marker.
+        await state.redis.del(VISITOR_PAUSED_SINCE);
+      }
+    },
+    redisOf: () => state.app.get<Redis>(REDIS),
+  };
+  beforeAll(async () => {
+    state.database = await testDatabase();
+    state.redis = new Redis(testRedisUrl());
+  });
+  afterAll(async () => {
+    await state.redis.quit();
+    await state.database.close();
+  });
+  beforeEach(async () => {
+    await state.database.db.$executeRawUnsafe(
+      'TRUNCATE payments, orders, ledger_entries, incidents, cursors, scan_gaps CASCADE',
+    );
+    state.time = today;
+    state.chainCalls = [];
+    state.headFailure = null;
+    state.queuePrefix = `api-test-${randomUUID()}`;
+    await state.rebuild();
+  });
+  afterEach(async () => {
+    await state.app.close();
+    await state.redis.del(VISITOR_PAUSED_SINCE);
+  });
+  return state;
+}
+
+export const payment = (state: { database: { db: PrismaClient } }, data = {}) =>
+  state.database.db.payment.create({
+    data: {
+      provider: 'chain',
+      externalKey: randomUUID(),
+      amount: 14000731n,
+      transactionHash: '0x123',
+      receivedAt: new Date('2026-10-20T12:00:00Z'),
+      ...data,
+    },
+  });

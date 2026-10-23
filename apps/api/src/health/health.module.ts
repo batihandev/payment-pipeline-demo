@@ -1,0 +1,63 @@
+import { Module } from '@nestjs/common';
+import { BullModule, getQueueToken } from '@nestjs/bullmq';
+import { ConfigService } from '@nestjs/config';
+import type { Queue } from 'bullmq';
+import type { Redis } from 'ioredis';
+import { ChainModule } from '../../../../libs/chain/src/chain.module';
+import { ChainClient } from '../../../../libs/chain/src/chain-client';
+import type { Address } from '../../../../libs/chain/src/chain-client';
+import { QUEUES } from '../../../../libs/queues/src';
+import { REDIS } from '../../../../libs/redis/src';
+import type { ApiConfig } from '../common/api-config';
+import { NOW, type Now } from '../common/clock.module';
+import { recordGasPause } from '../purchases/visitor-limits';
+import { ChainSnapshotService } from './chain-snapshot.service';
+import { HEALTH_QUEUES, HealthService } from './health.service';
+import { HealthController } from './health.controller';
+
+@Module({
+  imports: [
+    ChainModule.forRoot({ service: 'api' }),
+    BullModule.registerQueue(
+      ...Object.values(QUEUES).map((name) => ({ name })),
+    ),
+  ],
+  controllers: [HealthController],
+  providers: [
+    HealthService,
+    {
+      provide: HEALTH_QUEUES,
+      inject: Object.values(QUEUES).map(getQueueToken),
+      useFactory: (...queues: Queue[]) => queues,
+    },
+    {
+      provide: ChainSnapshotService,
+      inject: [ChainClient, ConfigService, REDIS, NOW],
+      useFactory: (
+        chain: ChainClient,
+        config: ConfigService<ApiConfig, true>,
+        redis: Redis,
+        now: Now,
+      ) => {
+        const clock = () => now().getTime();
+        return new ChainSnapshotService(
+          chain,
+          {
+            buyer: config.get('BUYER_ADDRESS', { infer: true }) as Address,
+            shop: config.get('SHOP_ADDRESS', { infer: true }) as Address,
+          },
+          {
+            now: clock,
+            onRefresh: recordGasPause(
+              redis,
+              config.get('GAS_FLOOR', { infer: true }),
+              clock,
+            ),
+          },
+        );
+      },
+    },
+  ],
+  exports: [ChainSnapshotService],
+})
+export class HealthModule {}

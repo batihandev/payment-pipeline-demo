@@ -1,11 +1,16 @@
-import { apiSchema, validateConfig } from '../../../libs/config/src';
-import { createApi } from './application';
+import { ConfigService } from '@nestjs/config';
+import { createApp } from './bootstrap';
+import type { ApiConfig } from './common/api-config';
+
 async function bootstrap(): Promise<void> {
-  const config = validateConfig(apiSchema, process.env);
-  const app = await createApi(config);
+  const app = await createApp();
   app.enableShutdownHooks();
-  await app.listen(config.API_PORT, '127.0.0.1');
+  const port = app
+    .get<ConfigService<ApiConfig, true>>(ConfigService)
+    .get('API_PORT', { infer: true });
+  await app.listen(port, '127.0.0.1');
 }
+
 bootstrap().catch((error: unknown) => {
   if (error instanceof Error) console.error(error.message);
   process.exitCode = 1;

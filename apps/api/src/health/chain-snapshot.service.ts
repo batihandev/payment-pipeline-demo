@@ -1,10 +1,10 @@
 import type {
   Address,
   ChainClient,
-} from '../../../libs/chain/src/chain-client';
-import { RpcError } from '../../../libs/chain/src/rpc-error';
-import type { GasReading } from './test-purchases';
+} from '../../../../libs/chain/src/chain-client';
+import { RpcError } from '../../../../libs/chain/src/rpc-error';
 
+export type GasReading = { native: bigint; at: number } | null;
 export type Balance = { native: bigint; usdc: bigint };
 export type ChainReading = {
   head: bigint;
@@ -20,7 +20,7 @@ const MAX_AGE_MS = 10_000;
  * RPC: they get the last reading and, when it is older than ten seconds, start one refresh
  * that concurrent readers share.
  */
-export class ChainSnapshot {
+export class ChainSnapshotService {
   private reading: ChainReading | null = null;
   private error: RpcError['kind'] | null = null;
   private startedAt: number | null = null;
@@ -48,6 +48,13 @@ export class ChainSnapshot {
     });
     return this.loading;
   }
+  /** The buyer's gas balance as visitor admission reads it, without an RPC call. */
+  async buyerGas(): Promise<GasReading> {
+    const { reading } = this.current();
+    return reading
+      ? { native: reading.balances.buyer.native, at: reading.at }
+      : null;
+  }
   private async load(): Promise<void> {
     this.startedAt = this.now();
     let reading: ChainReading;
@@ -74,14 +81,4 @@ export class ChainSnapshot {
       console.error('Could not record the chain reading.');
     }
   }
-}
-
-/** The buyer's gas balance as visitor admission reads it, without an RPC call. */
-export function buyerGas(snapshot: ChainSnapshot): () => Promise<GasReading> {
-  return async () => {
-    const { reading } = snapshot.current();
-    return reading
-      ? { native: reading.balances.buyer.native, at: reading.at }
-      : null;
-  };
 }
