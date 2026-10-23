@@ -142,6 +142,21 @@ it('matches buyer transfers whatever the address case', async () => {
     donation: false,
   });
 });
+it('matches a checksummed log sender against a lower-case buyer address', async () => {
+  const row = await order(f.db);
+  f.chain.logs = [{ ...log(), from: `0x${'1A'.repeat(20)}` }];
+  scanner = new Scanner(
+    f.db,
+    f.chain,
+    { ...options, buyer: `0x${'1a'.repeat(20)}` },
+    () => now,
+  );
+  await scanner.scanOnce();
+  expect(await f.db.payment.findFirstOrThrow()).toMatchObject({
+    orderId: row.id,
+    donation: false,
+  });
+});
 it('keeps an unmatched buyer transfer as an unmatched incident', async () => {
   f.chain.logs = [{ ...log(), from: buyer }];
   await scanner.scanOnce();

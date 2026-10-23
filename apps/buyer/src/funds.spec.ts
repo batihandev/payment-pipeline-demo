@@ -17,7 +17,11 @@ beforeEach(async () => {
 
 function order(
   expectedAmount: bigint,
-  extra: { sendState?: string; status?: 'open' | 'expired' } = {},
+  extra: {
+    sendState?: string;
+    status?: 'open' | 'expired';
+    signedTransaction?: string;
+  } = {},
   stage?: 'sent' | 'received',
 ) {
   return database.db.order.create({
@@ -62,6 +66,14 @@ it('subtracts transfers still in flight', async () => {
 
 it('lets an expired order through to be closed', async () => {
   const row = await order(1_000_000n, { status: 'expired' });
+  const chain = chainWith(0n);
+  const funds = new BuyerFunds(database.db, chain, buyer);
+  expect(await funds.covers(row.id)).toBe(true);
+  expect(chain.getBalances).not.toHaveBeenCalled();
+});
+
+it('lets an already-signed order through without reading the balance', async () => {
+  const row = await order(1_000_000n, { signedTransaction: '0x01' });
   const chain = chainWith(0n);
   const funds = new BuyerFunds(database.db, chain, buyer);
   expect(await funds.covers(row.id)).toBe(true);
