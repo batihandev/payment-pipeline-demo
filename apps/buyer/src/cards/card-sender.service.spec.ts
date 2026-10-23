@@ -5,8 +5,11 @@ import { testRedisUrl } from '../../../../libs/config/testing/redis';
 import { fakeConfig } from '../../../../libs/config/testing/config';
 import { testDatabase } from '../../../../libs/db/testing/database';
 import { CustomersService } from '../../../../libs/orders/src';
-import { CardDeclinedError } from '../../../../libs/stripe/src';
-import { FakeStripe } from '../../../../libs/stripe/testing/fake-stripe';
+import { CardDeclinedError, applyIntent } from '../../../../libs/stripe/src';
+import {
+  FakeStripe,
+  paymentIntent,
+} from '../../../../libs/stripe/testing/fake-stripe';
 import { OrderSenderService } from '../sending/order-sender.service';
 import { RedisLock } from '../sending/redis-lock';
 import type { BuyerConfig } from '../buyer-config';
@@ -347,4 +350,40 @@ it('counts only chain transfers as in flight', async () => {
     fakeConfig<BuyerConfig>({ CHAIN_ID: 84532 }),
   );
   expect(await sender.inFlight()).toBe(0);
+});
+
+it('leaves a failed order failed when the buyer records late', async () => {
+  const row = await order();
+  // The payment_failed webhook lands between Stripe's answer and the buyer's write.
+  class FailingFirst extends FakeStripe {
+    override async createPayment(
+      input: Parameters<FakeStripe['createPayment']>[0],
+    ) {
+      const created = await super.createPayment(input);
+      await database.db.$transaction((tx) =>
+        applyIntent(
+          tx,
+          paymentIntent({
+            id: created.id,
+            status: 'requires_payment_method',
+            orderId: input.orderId,
+          }),
+          new Date(),
+        ),
+      );
+      return created;
+    }
+  }
+  cards = new CardSenderService(
+    database.db,
+    new FailingFirst(),
+    new CustomersService(database.db),
+  );
+  await cards.charge(row.id, false);
+  expect(await stored(row.id)).toMatchObject({
+    sendState: 'failed',
+    status: 'expired',
+  });
+  const [payment] = await payments(row.id);
+  expect(payment).toMatchObject({ stage: 'failed', final: true });
 });

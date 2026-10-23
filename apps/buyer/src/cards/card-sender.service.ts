@@ -119,8 +119,9 @@ export class CardSenderService {
         },
         data: { stage: 'processing', processingAt: now },
       });
-      await tx.order.update({
-        where: { id: orderId },
+      // A webhook may already have failed the payment and closed the order.
+      await tx.order.updateMany({
+        where: { id: orderId, sendState: { in: ['pending', 'review'] } },
         data: { sendState: 'sent' },
       });
       await saveOrderEvents(tx, [orderId]);
