@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CardTerminal } from './card-terminal';
 import { ChainTerminal } from './chain-terminal';
-import { checkoutState, processingDeadline } from './checkout-state';
+import { checkoutDeadline, checkoutState } from './checkout-state';
 import type { Rail } from './client';
 import { RailChoice } from './rail-choice';
 import { Receipt } from './receipt';
@@ -50,6 +50,7 @@ export function Checkout({
   const [accepted, setAccepted] = useState(0);
   const inFlight = useRef(false);
   const [ordered, setOrdered] = useState<{ item: string; price: string }>();
+  const [expiresAt, setExpiresAt] = useState<string>();
   const latest = data?.payments.find((p) => p.orderId === orderId);
   const frame = useStageSequence(latest);
   const payment = latest && frame ? { ...latest, ...frame } : undefined;
@@ -59,10 +60,11 @@ export function Checkout({
   const price = ordered?.price ?? latest?.order?.price ?? latest?.amount;
   const paid = view?.paid ?? false;
   const order = useOrderStatus(apiBaseUrl, orderId ?? null, accepted, paid);
-  const now = useTimeAfter(processingDeadline(payment));
+  const now = useTimeAfter(checkoutDeadline({ payment, expiresAt }));
   const checkout = checkoutState({
     status,
     orderId,
+    expiresAt,
     payment,
     paid,
     order,
@@ -83,6 +85,7 @@ export function Checkout({
       const { body } = response;
       if (body.orderId) {
         setOrderId(body.orderId);
+        setExpiresAt(body.expiresAt);
         setOrdered(
           body.item && body.price
             ? { item: body.item, price: body.price }

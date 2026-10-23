@@ -10,6 +10,8 @@ export type PurchaseAnswer = {
     position?: number;
     item?: string;
     price?: string;
+    /** When the order expires, as an ISO timestamp. */
+    expiresAt?: string;
     error?: string;
   };
 };

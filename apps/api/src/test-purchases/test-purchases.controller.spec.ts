@@ -173,6 +173,15 @@ it('rejects a test-purchase body over 4 KB', async () => {
   expect(await database.db.order.count()).toBe(0);
 });
 
+it('rejects a urlencoded body over 4 KB', async () => {
+  const response = await buy()
+    .set('content-type', 'application/x-www-form-urlencoded')
+    .send(`rail=chain&note=${'x'.repeat(5000)}`);
+  expect(response.statusCode).toBe(413);
+  expect(response.body).toEqual({ error: 'payload_too_large' });
+  expect(await database.db.order.count()).toBe(0);
+});
+
 it('admits back-to-back clicks from different visitors', async () => {
   const first = await buy('192.0.2.1');
   const second = await buy('192.0.2.2');
@@ -413,6 +422,7 @@ it('answers with the item and price of the order it created', async () => {
     position: 1,
     item: order.item,
     price: order.price.toString(),
+    expiresAt: order.expiresAt.toISOString(),
   });
 });
 
@@ -428,6 +438,7 @@ it('keeps the item and price when sending could not be queued', async () => {
     orderId: order.id,
     item: order.item,
     price: order.price.toString(),
+    expiresAt: order.expiresAt.toISOString(),
   });
 });
 

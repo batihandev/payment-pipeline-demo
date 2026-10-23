@@ -161,10 +161,13 @@ export class TestPurchasesService implements OnModuleInit, OnModuleDestroy {
     position: number;
     item: string;
     price: string;
+    expiresAt: string;
   }> {
     return this.exclusive(async () => {
       const now = this.now();
-      let created: { orderId: string; item: string; price: string } | undefined;
+      let created:
+        | { orderId: string; item: string; price: string; expiresAt: string }
+        | undefined;
       try {
         if (rail === 'card') {
           if (!(await this.cardRail.available()))
@@ -187,6 +190,7 @@ export class TestPurchasesService implements OnModuleInit, OnModuleDestroy {
           orderId: order.id,
           item: order.item,
           price: order.price.toString(),
+          expiresAt: order.expiresAt.toISOString(),
         };
         await this.orderQueue.queueSend(order.id, 'visitor');
         void this.refreshQueue();

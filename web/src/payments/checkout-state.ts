@@ -8,6 +8,11 @@ export const PROCESSING_BOUND_MS = 2 * 60_000;
 export const stillProcessingNote =
   'Still processing at Stripe. It will appear in the feed when it settles.';
 
+/** How long past its expiry an order with no payment may stay open before the checkout stops waiting. */
+export const ORDER_CLOSE_MARGIN_MS = 2 * 60_000;
+export const pastExpiryNote =
+  'This order is past its expiry. If it was paid, the payment will appear in the feed.';
+
 /** When a processing payment outlasts the bound, or null for any other payment. */
 export function processingDeadline(
   payment: Pick<Payment, 'stage' | 'processingAt'> | undefined,
@@ -17,14 +22,32 @@ export function processingDeadline(
 }
 
 /**
+ * When the checkout stops waiting: the processing bound once a payment exists, otherwise the
+ * order's expiry plus a margin, or null when neither is known.
+ */
+export function checkoutDeadline({
+  payment,
+  expiresAt,
+}: {
+  payment: Pick<Payment, 'stage' | 'processingAt'> | undefined;
+  expiresAt: string | undefined;
+}): number | null {
+  if (payment) return processingDeadline(payment);
+  const expiry = expiresAt ? Date.parse(expiresAt) : Number.NaN;
+  return Number.isNaN(expiry) ? null : expiry + ORDER_CLOSE_MARGIN_MS;
+}
+
+/**
  * Where the visitor's purchase stands. A purchase is closed when its payment did not go
  * through, or its order closed before any payment was sent; the rail buttons then reopen.
  * They also reopen, without closing the purchase, once the payment has been processing for
- * longer than the bound.
+ * longer than the bound, or once an order with no payment is well past its expiry without a
+ * close arriving.
  */
 export function checkoutState({
   status,
   orderId,
+  expiresAt,
   payment,
   paid,
   order,
@@ -34,6 +57,7 @@ export function checkoutState({
 }: {
   status: Snapshot['status'];
   orderId: string | undefined;
+  expiresAt?: string;
   payment: Payment | undefined;
   paid: boolean;
   order: OrderStatus;
@@ -45,9 +69,9 @@ export function checkoutState({
     Boolean(orderId) &&
     !paid &&
     (payment ? paymentFailed(payment) : order.closed);
-  const deadline = processingDeadline(payment);
-  const stillProcessing = !closed && deadline !== null && now > deadline;
-  const inProgress = Boolean(orderId) && !paid && !closed && !stillProcessing;
+  const deadline = checkoutDeadline({ payment, expiresAt });
+  const overdue = !closed && deadline !== null && now > deadline;
+  const inProgress = Boolean(orderId) && !paid && !closed && !overdue;
   return {
     busy: sending || inProgress,
     closed,
@@ -61,8 +85,10 @@ export function checkoutState({
         ? 'Demo offline'
         : closed
           ? `${failedNote} You can try again.`
-          : stillProcessing
-            ? stillProcessingNote
+          : overdue
+            ? payment
+              ? stillProcessingNote
+              : pastExpiryNote
             : message ||
               (order.position > 1 && !payment
                 ? `Queued · ${order.position - 1} ahead`

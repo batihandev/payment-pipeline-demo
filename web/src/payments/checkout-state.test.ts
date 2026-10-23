@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkoutState } from './checkout-state';
+import { checkoutDeadline, checkoutState } from './checkout-state';
 import { payment } from './test-fixtures';
 
 const note = 'This payment did not go through, so nothing was credited.';
@@ -15,6 +15,8 @@ const waiting = {
 };
 const calm =
   'Still processing at Stripe. It will appear in the feed when it settles.';
+const expired =
+  'This order is past its expiry. If it was paid, the payment will appear in the feed.';
 
 describe('checkoutState', () => {
   it('keeps the checkout busy while an accepted order waits to be sent', () => {
@@ -105,6 +107,23 @@ describe('checkoutState', () => {
       busyLabel: undefined,
       statusText: calm,
     });
+  });
+  it('reopens the rail buttons when an order with no payment never closes', () => {
+    const accepted = { ...waiting, expiresAt: '2026-10-23T09:58:00.000Z' };
+    expect(checkoutState(accepted).busy).toBe(true);
+    expect(checkoutState({ ...accepted, now: waiting.now + 1 })).toEqual({
+      busy: false,
+      closed: false,
+      busyLabel: undefined,
+      statusText: expired,
+    });
+    expect(
+      checkoutDeadline({ payment: undefined, expiresAt: accepted.expiresAt }),
+    ).toBe(waiting.now);
+    const sent = payment({ stage: 'sent', orderId: 'o1' });
+    expect(
+      checkoutState({ ...accepted, payment: sent, now: waiting.now + 1 }).busy,
+    ).toBe(true);
   });
   it('follows a payment that is still moving', () => {
     const state = checkoutState({
