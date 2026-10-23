@@ -26,23 +26,26 @@ On the chain rail, only transfers from `BUYER_ADDRESS` are matched to orders. An
 
 Chain payments follow `sent → received → confirming → settled → notified` and gain a final flag when the chain finalizes their block. The ledger's unique payment key enforces one credit per payment.
 
-Card payments follow `sent → processing → settled → notified`, with no confirmation count. The buyer creates a Stripe PaymentIntent for the order and records the payment as `processing`. The API's `POST /stripe/webhooks` route is the only writer of card settlement: `payment_intent.succeeded` writes the ledger entry, the shop notice and the order's `paid` status, and sets the final flag at once. The notice then marks the payment `notified`, as on the chain rail. A stage never moves backwards, whatever order the events arrive in.
+Card payments follow `sent → processing → settled → notified`, with no confirmation count, or end at the terminal `failed` stage. The buyer creates a Stripe PaymentIntent for the order and records the payment as `processing`. The API's `POST /stripe/webhooks` route is the only writer of card settlement: `payment_intent.succeeded` writes the ledger entry, the shop notice and the order's `paid` status, and sets the final flag at once. The notice then marks the payment `notified`, as on the chain rail. A stage never moves backwards, whatever order the events arrive in.
 
 Webhook handling:
 
 - The route verifies Stripe's signature over the exact request body and answers `400` `invalid_signature` for a missing or bad signature. Without `STRIPE_WEBHOOK_SECRET` it rejects every webhook the same way.
 - Each event id is stored once. An event delivered again changes nothing and is recorded as a `duplicate` incident.
 - A `payment_intent.succeeded` event that arrives before the buyer has written its payment creates the payment from the event, which names the order in its metadata. The buyer's later write neither duplicates it nor moves its stage back.
-- `payment_intent.processing` moves a payment that is still `sent` to `processing`. `payment_intent.payment_failed` closes the order and records a `card_failed` incident, unless the payment already settled.
-- An intent that names no known order is stored and recorded as an `unmatched` incident. Other event types are stored and ignored.
+- The outcome follows the PaymentIntent's status. `processing` moves a payment that is still `sent` to `processing`. `succeeded` settles it. `requires_payment_method` or `canceled`, which is what `payment_intent.payment_failed` carries, moves it to the terminal `failed` stage, closes the order and records one `card_failed` incident. Nothing moves a payment out of `failed` or back from `settled`.
+- An intent changes a payment only when it names a card order by the `orderId` in its metadata, its amount is the order's price in cents, its currency is `usd`, and the order has no other PaymentIntent. Any other intent is stored, changes nothing and is recorded as an `unmatched` incident. Other event types are stored and ignored.
+- The API reads a JSON body up to 4 KB, except that `POST /stripe/webhooks` accepts up to 64 KB. A larger body answers `413` `payload_too_large`.
 - Refunds and disputes are not handled.
+
+Reconciliation catches up on webhooks that never arrive. Every minute the buyer's upkeep queue reads from Stripe the card payments still `sent` or `processing` three minutes after their last stage time, oldest first, at most 20 a run. With room left, it searches Stripe for charges on card orders created in the last 24 hours that were tried but have no payment row (an order in `review`, or one that failed and expired). It applies each PaymentIntent through the same function as the webhook, so both paths give the same result. It does nothing while Stripe is cooling down.
 
 ## Purchases
 
 Two kinds of purchase share one queue and have separate limits.
 
-- **Scheduled purchases** make the shop look busy through the day. They share a daily budget per UTC day, by count and total amount (`DAILY_COUNT_CAP`, default 100; `DAILY_AMOUNT_CAP`, default 200 USDC). One in three is paid by card: the rail comes from the first byte of the SHA-256 of the order id, so it is repeatable, and only when the demo customer has a saved card. Every other scheduled purchase is paid on chain.
-- **Visitor test buys** (`POST /test-purchases`, body `{"rail": "chain" | "card"}`, default `chain`) are sent at once, at the highest queue priority and outside the daily budget, so a visitor never waits behind the schedule. The response carries the order id and its queue position; `GET /test-purchases/:id` returns `{position, closed}`: the position of a purchase that is still waiting and whether its order closed without a payment being sent. A card buy answers `503` `card_unavailable` while the demo customer has no saved card. The checkout shows "Queued · N ahead" until it is sent, and reopens with a "did not go through" note when the purchase fails.
+- **Scheduled purchases** make the shop look busy through the day. They share a daily budget per UTC day, by count and total amount (`DAILY_COUNT_CAP`, default 100; `DAILY_AMOUNT_CAP`, default 200 USDC). One in three is paid by card: the rail comes from the first byte of the SHA-256 of the order id, so it is repeatable, and only when the demo customer has a saved card and the buyer has `STRIPE_SECRET_KEY`. Every other scheduled purchase is paid on chain.
+- **Visitor test buys** (`POST /test-purchases`, body `{"rail": "chain" | "card"}`, default `chain`) are sent at once, at the highest queue priority and outside the daily budget, so a visitor never waits behind the schedule. The response carries the order id and its queue position; `GET /test-purchases/:id` returns `{position, closed}`: the position of a purchase that is still waiting and whether its order closed without a payment being sent. A card buy answers `503` `card_unavailable` unless the card rail is available. The checkout shows "Queued · N ahead" until it is sent, and reopens with a "did not go through" note when the purchase fails. If a card payment is still `processing` two minutes after Stripe accepted it, the checkout reopens its buttons with a calm "Still processing" note; the payment stays in the feed and settles when Stripe reports it.
 
 Both rails share the visitor limits and queue, the daily budget, orders, the ledger (one entry per payment), payment events, the live list, shop notices and retention. Only the chain rail uses the gas floor, funds hold, in-flight cap, nonces, confirmations, reorg handling and amount matching. Only the card rail uses the Stripe request limiter.
 
@@ -61,7 +64,7 @@ Visitor chain purchases pause while the buyer's gas balance is below `GAS_FLOOR`
 
 USDC circulates only between the buyer and shop wallets. A nightly sweep at 03:00 UTC returns the shop's USDC to the buyer. A refill does the same on demand: when the buyer's USDC falls below `REFILL_BELOW` and the shop holds USDC and enough gas, the shop sends its whole USDC balance to the buyer, at most once per `REFILL_COOLDOWN_SECONDS`. The running cost is gas.
 
-A nightly job deletes orders, payments, ledger entries, notices, events and incidents older than `RETENTION_DAYS` (default 30), and resolved scan gaps of the same age. Open orders and payments that are unsettled or not final are kept until they close. A transfer closed because it can never land is deleted by its send time.
+A nightly job deletes orders, payments, ledger entries, notices, payment events, order events, Stripe events and incidents older than `RETENTION_DAYS` (default 30), and resolved scan gaps of the same age. Open orders and payments that are unsettled or not final are kept until they close. A transfer closed because it can never land is deleted by its send time.
 
 ## RPC and Stripe budgets
 
@@ -88,7 +91,7 @@ Each tracker pass re-reads the last `RESCAN_BLOCKS` blocks. A log re-read inside
 | `GET /stats/daily`        | Per UTC day for the retained period: settled count, average time to settle, scheduled and visitor purchases                          |
 | `GET /incidents?limit=`   | Recent incidents                                                                                                                     |
 | `GET /health`             | Head, cursor, lag, open gaps, queue depth, cooldown state, balances, low-balance flags, `cardAvailable` and the `monitoring` signals |
-| `GET /events`             | Server-sent events relayed from Redis pub/sub                                                                                        |
+| `GET /events`             | Server-sent events relayed from Redis pub/sub: payments, order changes, the visitor queue and a heartbeat                            |
 | `POST /test-purchases`    | Visitor test buy                                                                                                                     |
 | `GET /test-purchases/:id` | Queue position of a waiting visitor purchase, and whether it closed without a payment being sent                                     |
 | `POST /stripe/webhooks`   | Receives Stripe events, verifies their signature, then moves the card payment they name                                              |
@@ -104,14 +107,14 @@ Set `TRUST_PROXY=true` when the API runs behind exactly one reverse proxy or tun
 
 `GET /health` includes a `monitoring` object that an external monitor can alert on:
 
-| Signal                                                          | Alert when      |
-| --------------------------------------------------------------- | --------------- |
-| Time since the tracker cursor last advanced                     | over 1 hour     |
-| Age of the oldest payment in `sent`, `received` or `confirming` | over 1 hour     |
-| Age of the oldest settled payment not yet notified              | over 1 hour     |
-| Time since the last scheduled purchase                          | over 24 hours   |
-| Time visitor test buys have been paused by the gas floor        | over 24 hours   |
-| `/health` itself unreachable                                    | over 30 minutes |
+| Signal                                                                        | Alert when      |
+| ----------------------------------------------------------------------------- | --------------- |
+| Time since the tracker cursor last advanced                                   | over 1 hour     |
+| Age of the oldest payment in `sent`, `received`, `confirming` or `processing` | over 1 hour     |
+| Age of the oldest settled payment not yet notified                            | over 1 hour     |
+| Time since the last scheduled purchase                                        | over 24 hours   |
+| Time visitor test buys have been paused by the gas floor                      | over 24 hours   |
+| `/health` itself unreachable                                                  | over 30 minutes |
 
 Each condition must hold for its whole window, so failures that the services recover from on their own do not alert.
 
@@ -119,7 +122,7 @@ Head and balances come from one chain reading that the API refreshes at most eve
 
 ## Web views
 
-The dashboard at `/` has a checkout card, a small widget and a full panel. The checkout is labelled "Test purchase · no real money · paid from the demo's own test account" and asks for nothing. It offers two buttons: "Pay on the test network" and "Pay with a test card". The card button appears only when `/health` reports `cardAvailable`. A test-card purchase shows a card terminal with the saved card's brand and last four digits, then the stages Sent, Processing and Settled. A chain purchase shows blocks stacking to the confirmation threshold. A card receipt carries a "Test card" badge and a link to Stripe's receipt, and has no confirmation bar. The panel's pipeline has a lane for Processing beside the chain lanes. Each receipt shows at most one note. The full panel charts settled payments per day and per week from `/stats/daily`. The widget can also be shown alone at `/?view=widget`.
+The dashboard at `/` has a checkout card, a small widget and a full panel. The checkout is labelled "Test purchase · no real money · paid from the demo's own test account" and asks for nothing. It offers two buttons: "Pay on the test network" and "Pay with a test card". The card button appears only when `/health` reports `cardAvailable`, which holds when the demo customer has a saved card and `STRIPE_WEBHOOK_SECRET` is set. A test-card purchase shows a card terminal with the saved card's brand and last four digits, then the stages Sent, Processing and Settled. A chain purchase shows blocks stacking to the confirmation threshold. A card receipt carries a "Test card" badge with the brand and last four digits (a long brand shortens, the digits stay) and a link to Stripe's receipt, and has no confirmation bar. A failed payment shows as Failed in the feed. The panel's pipeline has a lane for Processing beside the chain lanes. Failed card payments are in no lane; a line under the lanes counts them. The page follows the visitor's own order on the event stream: it reads `GET /test-purchases/:id` once and again each time the stream opens, and takes order changes and the queue from the stream's `order` and `queue` events, so nothing polls. Each receipt shows at most one note. The full panel charts settled payments per day and per week from `/stats/daily`. The widget can also be shown alone at `/?view=widget`.
 
 ## Run locally
 
@@ -151,17 +154,17 @@ PostgreSQL binds to `127.0.0.1:55432` and Redis to `127.0.0.1:56379`. `pnpm db:m
 
 ## Card payments
 
-The card rail uses Stripe test mode only. It is off until a test secret key is set and the demo customer exists. `STRIPE_SECRET_KEY` must start with `sk_test_`; the buyer refuses to start with any other prefix, `sk_live_` included. The demo charges a card saved on the demo customer, off-session, so no visitor enters card details. Each charge carries the idempotency key `order-<order id>`, so a retried send returns the same PaymentIntent and never charges twice.
+The card rail uses Stripe test mode only. The buyer charges only with a test secret key set, and the checkout offers the card only when the demo customer has a saved card and `STRIPE_WEBHOOK_SECRET` is set. `STRIPE_SECRET_KEY` must start with `sk_test_`; the buyer refuses to start with any other prefix, `sk_live_` included. The demo charges a card saved on the demo customer, off-session, so no visitor enters card details. Each charge carries the idempotency key `order-<order id>`, so a retried send returns the same PaymentIntent and never charges twice.
 
 Set it up in this order. Run the services from the repository root with a filled `.env`:
 
 1. Put a test secret key (`sk_test_…`) in `STRIPE_SECRET_KEY`, then run `pnpm stripe:setup`. It needs `DATABASE_URL` and `BUYER_PRIVATE_KEY` too, and the database must be migrated. It creates the demo customer in the database and in Stripe, attaches a test card (`STRIPE_PAYMENT_METHOD`, `pm_card_visa` by default) as the customer's payment method, and stores the Stripe IDs, the card brand and the last four digits. It records the chain address of `BUYER_PRIVATE_KEY` on the customer. It prints only the two IDs and the card label, and a second run changes nothing.
-2. Start the Stripe CLI and forward webhooks to the API: `stripe listen --forward-to localhost:<API_PORT>/stripe/webhooks` (3000 by default). It prints a signing secret that starts with `whsec_`. Put it in `STRIPE_WEBHOOK_SECRET`.
+2. Sign in to the Stripe CLI with `stripe login`, or pass a test key with `--api-key`. Then forward webhooks to the API: `stripe listen --forward-to localhost:<API_PORT>/stripe/webhooks` (3000 by default). It prints a signing secret that starts with `whsec_`. Put it in `STRIPE_WEBHOOK_SECRET`. For a deployed API, add a webhook endpoint at `/stripe/webhooks` in the Stripe Dashboard instead, subscribed to `payment_intent.processing`, `payment_intent.succeeded` and `payment_intent.payment_failed`, and use that endpoint's signing secret.
 3. Restart the API so it reads the secret, and start the buyer after step 1 so it reads the key.
 
-Until step 2 is done the API answers every webhook with `400`, so a card payment stays in `processing`. Once the saved card exists, `/health` reports `cardAvailable: true` and the checkout shows the card button.
+Until step 2 is done the API answers every webhook with `400`, so a card payment stays in `processing` until reconciliation reads it from Stripe. The card rail is offered only when the saved card exists and `STRIPE_WEBHOOK_SECRET` is set: then `/health` reports `cardAvailable: true` and the checkout shows the card button. Scheduled card purchases run only when the buyer has `STRIPE_SECRET_KEY`.
 
-Card orders cost their price in cents, in USD. A declined card closes the order with a `card_failed` incident and credits nothing. A Stripe error that retries cannot fix, such as a missing key or no saved card, closes the order with a `send_failed` incident; a transient error is retried with backoff and, once retries run out, the order goes to `review` with its reservation kept.
+Card orders cost their price in cents, in USD. A declined card moves the payment to `failed`, closes the order with a `card_failed` incident and credits nothing. A Stripe error that retries cannot fix, such as a missing key or no saved card, closes the order with a `send_failed` incident; a transient error is retried with backoff and, once retries run out, the order goes to `review` with its reservation kept.
 
 ## Configuration
 
@@ -206,7 +209,7 @@ Optional settings and their defaults:
 | `STREAMS_PER_IP`                             | 5                              | Open live-stream connections allowed per client address                                                                                                         |
 | `STREAMS_TOTAL`                              | 500                            | Open live-stream connections allowed in all                                                                                                                     |
 | `STRIPE_SECRET_KEY`                          | unset                          | Stripe test-mode secret key (`sk_test_…`) for the buyer and `pnpm stripe:setup`; other prefixes, `sk_live_` included, are refused; card charges fail without it |
-| `STRIPE_WEBHOOK_SECRET`                      | unset                          | API only: Stripe webhook signing secret (`whsec_…`); the API rejects every webhook with 400 without it                                                          |
+| `STRIPE_WEBHOOK_SECRET`                      | unset                          | API only: Stripe webhook signing secret (`whsec_…`); the API rejects every webhook with 400 and offers no card rail without it                                  |
 | `STRIPE_PAYMENT_METHOD`                      | `pm_card_visa`                 | Test payment method (`pm_…`) the setup script attaches to the demo customer; read by the setup script only                                                      |
 | `STRIPE_REQUESTS_PER_SECOND`                 | 5                              | Buyer's Stripe request rate                                                                                                                                     |
 | `TRUST_PROXY`                                | `false`                        | Set `true` to read the client address from proxy headers                                                                                                        |
@@ -223,7 +226,7 @@ pnpm test
 pnpm build
 ```
 
-Jest tests never call Stripe. Card specs inject a fake Stripe client, and webhook specs sign their bodies with `stripe.webhooks.generateTestHeaderString`, so they exercise the real signature check. They cover a settlement written once, a `succeeded` event that arrives before the buyer's own write, a repeated event counted as a duplicate, a late `processing` event that cannot move a settled payment back, bad and missing signatures, a payload over 4 KB, a failed payment closing its order, an event naming an unknown order, a retry after a timeout that never charges twice, a declined card, Stripe rate limiting that leaves chain sends running, and a card order never matched to a chain transfer. Jest tests also prove that each app's startup validation reports every missing required variable without exposing environment values. API route tests send HTTP requests with `supertest` to an application built with `@nestjs/testing`, covering the request limit, the stream cap, the payments cache, validation and signed notices. Vitest runs the web test suite, including the page's behaviour when the API or live stream fails. The initial migration creates the payment tables, foreign keys and unique constraints; Prisma generates the client during the build.
+Jest tests never call Stripe. Card specs inject a fake Stripe client, and webhook specs sign their bodies with `stripe.webhooks.generateTestHeaderString`, so they exercise the real signature check. They cover a settlement written once, a `succeeded` event that arrives before the buyer's own write, a repeated event counted as a duplicate, a late `processing` event that cannot move a settled payment back, bad and missing signatures, a payload over 4 KB that is refused globally but accepted on the webhook route up to 64 KB, a failed payment moving to `failed` and closing its order, an event whose order, amount, currency or intent count does not match, reconciliation of a missed webhook and of a charge with no payment row, the card rail offered only with a webhook secret, scheduled cards only with a Stripe key, order events and the queue snapshot on the stream, a processing charge that outlasts two minutes, a retry after a timeout that never charges twice, a declined card, Stripe rate limiting that leaves chain sends running, and a card order never matched to a chain transfer. Jest tests also prove that each app's startup validation reports every missing required variable without exposing environment values. API route tests send HTTP requests with `supertest` to an application built with `@nestjs/testing`, covering the request limit, the stream cap, the payments cache, validation and signed notices. Vitest runs the web test suite, including the page's behaviour when the API or live stream fails. The initial migration creates the payment tables, foreign keys and unique constraints; Prisma generates the client during the build.
 
 ## Buyer jobs
 
