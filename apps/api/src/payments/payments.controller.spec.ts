@@ -3,6 +3,7 @@ import request from 'supertest';
 import { payment as createPayment } from '../../testing/read-api';
 import { useReadApi } from '../../testing/read-api';
 import { publishPayment } from '../../../../libs/events/src/publish-payment';
+import { savePaymentEvent } from '../../../../libs/events/src/save-payment-event';
 import {
   encodePaymentCursor,
   paymentCursor,
@@ -295,4 +296,33 @@ it('caches only multiples of 20', async () => {
   expect((await get('/payments?limit=1')).body[0].receivedAt).toBe(
     '2026-10-20T13:00:00.000Z',
   );
+});
+it('bumps the payment version on every update', async () => {
+  const { db } = state.database;
+  const created = await payment();
+  const version = async () =>
+    (await get('/payments?limit=1')).body[0].version as number;
+  expect(await version()).toBe(0);
+  await db.$transaction(async (tx) => {
+    const updated = await tx.payment.update({
+      where: { id: created.id },
+      data: { confirmations: 1 },
+    });
+    await savePaymentEvent(tx, updated);
+  });
+  const event = await db.paymentEvent.findFirstOrThrow({
+    where: { paymentId: created.id },
+  });
+  expect(JSON.parse(event.body)).toMatchObject({ version: 1 });
+  await db.payment.updateMany({
+    where: { id: created.id },
+    data: { confirmations: 2 },
+  });
+  await db.$executeRaw`UPDATE payments SET confirmations = 3 WHERE id = ${created.id}::uuid`;
+  await db.payment.upsert({
+    where: { id: created.id },
+    create: { ...created, id: randomUUID() },
+    update: { confirmations: 4 },
+  });
+  expect(await version()).toBe(4);
 });

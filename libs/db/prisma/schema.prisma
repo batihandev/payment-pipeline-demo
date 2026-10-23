@@ -138,6 +138,9 @@ model Payment {
   finalAt         DateTime?       @map("final_at") @db.Timestamptz(3)
   /// When card reconciliation last read the payment's PaymentIntent from Stripe.
   reconciledAt    DateTime?       @map("reconciled_at") @db.Timestamptz(3)
+  /// Raised by one on every update by the `payments_version` trigger, so a reader can tell
+  /// which of two copies of a row is newer.
+  version         Int             @default(0)
   ledgerEntry     LedgerEntry?
   notice          Notice?
   incidents       Incident[]
