@@ -1,11 +1,16 @@
-import { once } from 'node:events';
+import { EventEmitter, once } from 'node:events';
 import type { IncomingMessage } from 'node:http';
 import { Logger, type MessageEvent } from '@nestjs/common';
-import { Subject } from 'rxjs';
+import type { ConfigService } from '@nestjs/config';
+import type { Request } from 'express';
+import { EMPTY, Subject } from 'rxjs';
 import { testDatabase } from '../../../../libs/db/testing/database';
 import { createTestApp } from '../../testing/app';
 import { openEventStream } from '../../testing/event-stream';
+import { EventsController } from './events.controller';
 import { EventsService } from './events.service';
+import { StreamLimit } from './stream-limit';
+import type { ApiConfig } from '../common/api-config';
 
 let database: Awaited<ReturnType<typeof testDatabase>>;
 beforeAll(async () => {
@@ -120,4 +125,21 @@ describe('stream cap', () => {
       await app.close();
     }
   });
+});
+
+it('frees the slot when the request closes before the stream is subscribed', () => {
+  const config = {
+    get: (name: string) => (name === 'STREAMS_PER_IP' ? 1 : 10),
+  } as unknown as ConfigService<ApiConfig, true>;
+  const controller = new EventsController(
+    { stream: () => EMPTY } as unknown as EventsService,
+    new StreamLimit(config),
+  );
+  const request = Object.assign(new EventEmitter(), {
+    ip: '7.7.7.7',
+  }) as unknown as Request;
+  controller.stream(request);
+  expect(() => controller.stream(request)).toThrow();
+  request.emit('close');
+  expect(() => controller.stream(request)).not.toThrow();
 });

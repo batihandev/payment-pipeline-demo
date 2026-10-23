@@ -27,6 +27,7 @@ export class EventsController {
         {},
         { 'Retry-After': RETRY_AFTER_SECONDS },
       );
+    request.once('close', release);
     return this.events.stream().pipe(finalize(release));
   }
 }
