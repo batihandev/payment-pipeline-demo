@@ -1,8 +1,8 @@
 import type {
   Payment as DatabasePayment,
   Order,
-  Incident as DatabaseIncident,
 } from '../../../libs/db/generated/client';
+import type { ReceiptNoteKind } from '../../../libs/core/src/receipt-notes';
 
 type Json<T> = T extends bigint | Date
   ? string
@@ -11,10 +11,10 @@ type Json<T> = T extends bigint | Date
     : T;
 export type Payment = Json<Omit<DatabasePayment, 'fromAddress'>> & {
   donorName: string | null;
+  noteKinds: ReceiptNoteKind[];
   order?: Json<Pick<Order, 'id' | 'item' | 'price'>> | null;
   explorerUrl?: string | null;
 };
-export type Incident = Json<DatabaseIncident>;
 export type Stats = {
   settledCount: number;
   averageTimeToSettleMs: number | null;
@@ -48,7 +48,6 @@ export type Dashboard = {
   daily: DailyStat[];
   /** Null until the first /health read arrives. */
   health: Health | null;
-  incidents: Incident[];
 };
 export type Snapshot = {
   status: 'loading' | 'live' | 'offline';

@@ -129,7 +129,7 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
                     payment={payment}
                     threshold={confirmationsNeeded(data.health)}
                     highlighted={isVisitorOrder(payment, visitorOrders)}
-                    note={receiptNote(payment, data.incidents)}
+                    note={receiptNote(payment)}
                   />
                 </div>
               ))}

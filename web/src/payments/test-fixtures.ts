@@ -1,4 +1,4 @@
-import type { Incident, Payment } from './types';
+import type { Payment } from './types';
 
 export function payment(overrides: Partial<Payment> = {}): Payment {
   return {
@@ -24,22 +24,7 @@ export function payment(overrides: Partial<Payment> = {}): Payment {
     notifiedAt: null,
     finalAt: null,
     donorName: null,
+    noteKinds: [],
     ...overrides,
-  };
-}
-
-export function incident(
-  kind: string,
-  paymentId: string | null = payment().id,
-): Incident {
-  return {
-    id: `incident-${kind}`,
-    kind,
-    whatHappened: 'Something happened.',
-    howHandled: 'It was handled.',
-    paymentId,
-    fromBlock: null,
-    toBlock: null,
-    createdAt: '2026-10-23T10:00:00.000Z',
   };
 }

@@ -112,6 +112,7 @@ export class PaymentsClient {
         order:
           event.order ??
           (previous?.orderId === event.orderId ? previous.order : null),
+        noteKinds: previous?.noteKinds ?? [],
         explorerUrl:
           event.explorerUrl ??
           (previous?.transactionHash === event.transactionHash
@@ -137,13 +138,8 @@ export class PaymentsClient {
     clearTimeout(this.retry);
     const generation = this.generation;
     try {
-      const paths = [
-        '/payments?limit=100',
-        '/stats',
-        '/stats/daily',
-        '/incidents?limit=100',
-      ];
-      const [payments, stats, daily, incidents] = await Promise.all(
+      const paths = ['/payments?limit=100', '/stats', '/stats/daily'];
+      const [payments, stats, daily] = await Promise.all(
         paths.map(async (path) => {
           const request = this.request;
           const response = await request(`${this.baseUrl}${path}`);
@@ -156,7 +152,6 @@ export class PaymentsClient {
         payments,
         stats,
         daily,
-        incidents,
         health: this.health,
       } as Dashboard;
       this.update({ status: 'live', data: this.merge(data, this.buffered) });

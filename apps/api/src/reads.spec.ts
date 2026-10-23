@@ -123,6 +123,53 @@ it('returns recent payments with safe order details, exact amounts and explorer 
   ]);
   expect(response.body).not.toContain('signedTransaction');
 });
+it('lists note kinds on each payment', async () => {
+  const noted = await payment();
+  await payment({ receivedAt: new Date('2026-10-20T11:00:00Z') });
+  await database.db.incident.createMany({
+    data: ['payment_reorg', 'duplicate', 'notice_failed', 'payment_reorg'].map(
+      (kind) => ({
+        kind,
+        whatHappened: 'Private detail.',
+        howHandled: 'Handled.',
+        paymentId: noted.id,
+      }),
+    ),
+  });
+  const response = await adapter.getInstance().inject('/payments');
+  expect(
+    (response.json() as { id: string; noteKinds: string[] }[]).map(
+      ({ id, noteKinds }) => ({ id, noteKinds }),
+    ),
+  ).toEqual([
+    { id: noted.id, noteKinds: ['payment_reorg'] },
+    { id: expect.any(String), noteKinds: [] },
+  ]);
+  expect(response.body).not.toContain('Private detail.');
+});
+it('keeps a note however many other incidents exist', async () => {
+  const older = await payment();
+  await database.db.incident.create({
+    data: {
+      kind: 'paid_after_expiry',
+      whatHappened: 'Late.',
+      howHandled: 'Credited.',
+      paymentId: older.id,
+      createdAt: new Date('2026-10-01T00:00:00Z'),
+    },
+  });
+  await database.db.incident.createMany({
+    data: Array.from({ length: 150 }, () => ({
+      kind: 'refilled',
+      whatHappened: 'Refilled.',
+      howHandled: 'None.',
+    })),
+  });
+  const response = await adapter.getInstance().inject('/payments');
+  expect(response.json()).toEqual([
+    expect.objectContaining({ id: older.id, noteKinds: ['paid_after_expiry'] }),
+  ]);
+});
 it('leaves out donations below DONATION_MIN', async () => {
   for (const amount of [9999n, 10000n]) {
     const row = await payment({

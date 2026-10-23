@@ -61,7 +61,7 @@ Each tracker pass re-reads the last `RESCAN_BLOCKS` blocks. A log re-read inside
 
 | Route                     | Purpose                                                                                                             |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `GET /payments?limit=`    | Recent payments with order, stage, confirmations, block and explorer URL                                            |
+| `GET /payments?limit=`    | Recent payments with order, stage, confirmations, block, explorer URL and note kinds                                |
 | `GET /stats`              | Today only: settled count, average time to settle, duplicates skipped, failures recovered                           |
 | `GET /stats/daily`        | Per UTC day for the retained period: settled count, average time to settle, scheduled and visitor purchases         |
 | `GET /incidents?limit=`   | Recent incidents                                                                                                    |

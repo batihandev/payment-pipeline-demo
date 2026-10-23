@@ -1,10 +1,16 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import { incident, payment } from './payments/test-fixtures';
+import { payment } from './payments/test-fixtures';
 import type { Dashboard } from './payments/types';
 
 const data: Dashboard = {
-  payments: [payment({ donation: true, donorName: 'Teal Otter' })],
+  payments: [
+    payment({
+      donation: true,
+      donorName: 'Teal Otter',
+      noteKinds: ['send_reverted'],
+    }),
+  ],
   stats: {
     settledCount: 1,
     averageTimeToSettleMs: null,
@@ -13,7 +19,6 @@ const data: Dashboard = {
   },
   daily: [],
   health: null,
-  incidents: [incident('send_reverted')],
 };
 
 vi.mock('./payments/use-payments', () => ({

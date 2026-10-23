@@ -5,6 +5,7 @@ import type { z } from 'zod';
 import type { apiSchema } from '../../../libs/config/src';
 import type { PrismaClient } from '../../../libs/db/src';
 import { publicPayment } from '../../../libs/events/src/public-payment';
+import { receiptNoteKinds } from '../../../libs/core/src/receipt-notes';
 import { cooldownKey } from '../../../libs/chain/src/service-limiter';
 import type {
   Balance,
@@ -48,6 +49,11 @@ export function registerReads(
       const rows = await db.payment.findMany({
         where: { id: { in: ids.map((row) => row.id) } },
         include: {
+          incidents: {
+            where: { kind: { in: [...receiptNoteKinds] } },
+            select: { kind: true },
+            distinct: ['kind'],
+          },
           order: {
             select: {
               id: true,
@@ -69,8 +75,9 @@ export function registerReads(
               ids.findIndex((row) => row.id === a.id) -
               ids.findIndex((row) => row.id === b.id),
           )
-          .map((row) => ({
+          .map(({ incidents, ...row }) => ({
             ...publicPayment(row),
+            noteKinds: incidents.map((incident) => incident.kind),
             order: row.order,
             explorerUrl: row.transactionHash
               ? `${config.BLOCK_EXPLORER_URL.replace(/\/$/, '')}/tx/${row.transactionHash}`

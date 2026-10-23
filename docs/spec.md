@@ -118,7 +118,7 @@ Stripe (phase 2): `received → processing → settled → notified`, without a 
 
 | Route                     | Purpose                                                                                                                           |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /payments?limit=`    | Recent payments with order or donor name, stage, confirmations, block, explorer URL                                               |
+| `GET /payments?limit=`    | Recent payments with order or donor name, stage, confirmations, block, explorer URL, note kinds                                   |
 | `GET /stats`              | Today: settled count, average time to settle, duplicates skipped, failures recovered. In-memory cache with a short TTL            |
 | `GET /stats/daily`        | Per UTC day for the retained period: settled count, average time to settle, scheduled and visitor purchases. Cached like `/stats` |
 | `GET /incidents?limit=`   | Recent incidents                                                                                                                  |
@@ -139,7 +139,7 @@ One React + Vite page with three parts:
 
 - The checkout shows "Queued · N ahead" while a visitor purchase waits, and each limit's message says which limit applies and when it lifts.
 - **Small widget:** a dark card showing the latest payment as a receipt (item, price, order and block), a confirmation bar filling to the threshold, a PAID stamp when settled, a four-step strip and a footer of counts. It runs without interaction. It can also be shown on its own at `/?view=widget`.
-- **Full panel:** header with a live indicator, test network label, one-line caption; a four-lane pipeline; a receipts feed in which a receipt shows at most one note (a reorg, a transfer that did not go through, a payment after its order expired, or a thank-you on a donation; the widget shows none); stats tiles.
+- **Full panel:** header with a live indicator, test network label, one-line caption; a four-lane pipeline; a receipts feed in which a receipt shows at most one note (a reorg, a transfer that did not go through, a payment after its order expired, or a thank-you on a donation; the widget shows none; `/payments` sends each payment's note kinds, the distinct incident kinds that have a note, never incident text); stats tiles.
 
 Confirmation progress reads "N of 10" until the threshold, then "10+ confirmations". The full panel adds a chart of settled payments per day and per week over the retained period, from `/stats/daily`, with scheduled and visitor purchases stacked and the average time to settle as a line.
 

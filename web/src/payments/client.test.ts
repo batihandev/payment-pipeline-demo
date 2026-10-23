@@ -29,6 +29,7 @@ const row = (id: string, stage = 'received') => ({
   receivedAt: null,
   order: { id: `order-${id}`, item: 'Gold rubber duck', price: '14000000' },
   explorerUrl: 'https://example.com/tx/123',
+  noteKinds: ['payment_reorg'],
 });
 function server() {
   let payments = [row('old')];
@@ -51,7 +52,6 @@ function server() {
           failuresRecovered: 0,
         },
         '/stats/daily': [],
-        '/incidents?limit=100': [],
         '/health': {
           confirmations: 7,
           head: '100',
@@ -152,6 +152,33 @@ describe('live payments', () => {
     expect(s.client.getSnapshot().data?.payments[0]?.explorerUrl).toBe(
       'https://example.com/tx/123',
     );
+    stop();
+  });
+  it('keeps note kinds when a payment arrives on the stream', async () => {
+    const s = server();
+    const stop = s.client.subscribe(() => {});
+    s.stream.open();
+    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    s.stream.send({ ...row('old', 'settled'), noteKinds: undefined });
+    expect(
+      s.client.getSnapshot().data?.payments.find((p) => p.id === 'old'),
+    ).toMatchObject({ stage: 'settled', noteKinds: ['payment_reorg'] });
+    await vi.waitFor(() => {
+      s.stream.send({ ...row('fresh'), noteKinds: undefined });
+      expect(
+        s.client.getSnapshot().data?.payments.find((p) => p.id === 'fresh')
+          ?.noteKinds,
+      ).toEqual([]);
+    });
+    stop();
+  });
+  it('does not request /incidents', async () => {
+    const s = server();
+    const stop = s.client.subscribe(() => {});
+    s.stream.open();
+    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    expect(s.requested).not.toContain('/incidents');
+    expect(s.client.getSnapshot().data).not.toHaveProperty('incidents');
     stop();
   });
   it('reads /health on load and on its timer, not on every event', async () => {

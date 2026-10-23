@@ -1,6 +1,7 @@
-import type { Incident, Payment } from './types';
+import type { ReceiptNoteKind } from '../../../libs/core/src/receipt-notes';
+import type { Payment } from './types';
 
-const notes: { kinds: string[]; text: string }[] = [
+const notes: { kinds: ReceiptNoteKind[]; text: string }[] = [
   {
     kinds: ['payment_reorg', 'settled_reorg'],
     text: 'The block with this payment was replaced, so the tracker checked it again.',
@@ -15,14 +16,10 @@ const notes: { kinds: string[]; text: string }[] = [
   },
 ];
 
-export function receiptNote(
-  payment: Payment,
-  incidents: Incident[],
-): string | null {
-  const kinds = new Set(
-    incidents.filter((i) => i.paymentId === payment.id).map((i) => i.kind),
+export function receiptNote(payment: Payment): string | null {
+  const match = notes.find((note) =>
+    note.kinds.some((kind) => payment.noteKinds.includes(kind)),
   );
-  const match = notes.find((note) => note.kinds.some((k) => kinds.has(k)));
   if (match) return match.text;
   return payment.donation
     ? 'Thank you for the donation. Only test USDC transfers show here.'
