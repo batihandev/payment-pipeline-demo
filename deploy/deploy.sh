@@ -10,8 +10,8 @@
 #    and keep running without a restart);
 # 5. record the deployed and previous tags in .deploy-state and IMAGE_TAG in the
 #    settings file;
-# 6. remove this repository's images other than the current and previous tags,
-#    then every dangling image.
+# 6. remove this image's other tags, untagged copies of this image, and the
+#    PostgreSQL, Redis and cloudflared images this stack stopped using.
 # Postgres, Redis and the tunnel are recreated only when their own config changes.
 # Rolling back is a deploy of the previous tag. DEPLOY_ENV_FILE selects another
 # settings file than .env beside this script.
@@ -98,6 +98,15 @@ step 'Pulling the app and migrate images'
 compose pull --quiet api
 compose --profile migrate pull --quiet migrate
 
+# The images the infra containers use now, so the ones a config change replaces
+# can be removed at the end.
+infra_images=()
+for svc in "${infra[@]}"; do
+  while read -r cid; do
+    [[ -n $cid ]] && infra_images+=("$(docker inspect -f '{{.Image}}' "$cid")")
+  done < <(compose ps -aq "$svc")
+done
+
 # Starts the stack's own services on a first deploy; a no-op afterwards unless
 # their config changed. The tunnel runs only when its profile is enabled.
 step "Ensuring ${infra[*]} are up"
@@ -135,8 +144,10 @@ alias_args=(--alias "$live_alias")
 while read -r name; do
   if [[ -n $name ]]; then alias_args+=(--alias "$name"); fi
 done < <(docker inspect -f "{{range (index .NetworkSettings.Networks \"$network\").Aliases}}{{println .}}{{end}}" "$new_api")
-docker network disconnect "$network" "$new_api"
-docker network connect "${alias_args[@]}" "$network" "$new_api"
+if ! docker network disconnect "$network" "$new_api" ||
+  ! docker network connect "${alias_args[@]}" "$network" "$new_api"; then
+  fail "could not give the new API the $live_alias alias; the previous API, if there is one, keeps $live_alias; rerun deploy.sh $tag"
+fi
 
 # Docker keeps a stopping container in DNS until it exits, but its closed port
 # refuses at once, and the tunnel then tries the next address.
@@ -169,16 +180,35 @@ else
   printf 'IMAGE_TAG=%s\n' "$tag" >>"$env_file"
 fi
 
-step 'Removing images other than the current and previous tags'
+step "Removing images this stack no longer uses"
 image_ref=$(docker inspect -f '{{.Config.Image}}' "$new_api")
 repository=${image_ref%:*}
 keep=" $tag $tag-migrate "
 [[ -n $previous ]] && keep+="$previous $previous-migrate "
-while read -r image_tag; do
-  [[ $image_tag == '<none>' || $keep == *" $image_tag "* ]] && continue
-  docker image rm "$repository:$image_tag" >/dev/null || echo "kept $image_tag: still in use"
-done < <(docker image ls "$repository" --format '{{.Tag}}')
-# Replaced Postgres, Redis and tunnel images become dangling, as do untagged app images.
-docker image prune -f >/dev/null
+remove_image() {
+  if docker image rm "$1" >/dev/null 2>&1; then
+    echo "removed $2"
+  else
+    echo "kept $2: still in use"
+  fi
+}
+# This image's other tags, then its untagged copies (a moved tag leaves one).
+while read -r image_tag image_id; do
+  if [[ $image_tag == '<none>' ]]; then
+    remove_image "$image_id" "untagged $repository image $image_id"
+  elif [[ $keep != *" $image_tag "* ]]; then
+    remove_image "$repository:$image_tag" "$repository:$image_tag"
+  fi
+done < <(docker image ls "$repository" --format '{{.Tag}} {{.ID}}')
+# Infra images a config change replaced; Docker refuses an image still in use.
+in_use=" "
+for svc in "${infra[@]}"; do
+  while read -r cid; do
+    [[ -n $cid ]] && in_use+="$(docker inspect -f '{{.Image}}' "$cid") "
+  done < <(compose ps -aq "$svc")
+done
+for image_id in $(printf '%s\n' "${infra_images[@]}" | sort -u); do
+  [[ $in_use == *" $image_id "* ]] || remove_image "$image_id" "replaced image $image_id"
+done
 
 step "Deployed $tag"
