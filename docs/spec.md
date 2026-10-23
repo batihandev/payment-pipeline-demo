@@ -8,7 +8,7 @@ A demo of payment tracking. A bot buys silly items from a demo shop and pays in 
 
 ## Principles
 
-- **Real data only.** Every number, note and incident the page shows comes from database rows written by the services. The front end animates real state; it never invents events.
+- **Real data only.** Every number and note the page shows comes from database rows written by the services. The front end animates real state; it never invents events.
 - **Small scope.** One provider per payment method, one instance per service.
 - **Configuration from the environment.** Keys and URLs come from environment variables, documented in `.env.example`, and are never committed or logged.
 - **Plain wording on the page.** The dashboard says payment, confirming, settled, test network. It does not say wallet, token, coin or gas.
@@ -43,7 +43,7 @@ A demo of payment tracking. A bot buys silly items from a demo shop and pays in 
 - An order picks a random item from a small catalogue of silly items (for example "Gold rubber duck") priced between $0.10 and $2.00.
 - USDC transfers carry no reference, so orders are matched by **unique amount**: price plus an offset of 1 to 9,999 micro-units, unique among orders of the last 24 hours. Example: $1.40 becomes 1.400731 USDC. The offsets bound orders to 9,999 a day; the visitor daily limit keeps well below it.
 - Only transfers whose sender is `BUYER_ADDRESS` (compared case-insensitively) are matched to orders. A buyer transfer that matches no open order is stored with no order and logged as an incident; it is never credited to an order.
-- Any other USDC transfer to the shop is a **donation**. It is stored with its sender (`from_address`, `donation`), settles with a ledger entry like any payment, and has no order, no shop notice and no incident. USDC is the only asset tracked. The API derives a stable two-word name from the sender and never returns the address. Donations below `DONATION_MIN` (default 10,000 micro-units, 0.01 USDC) stay stored but are left out of `/payments`, the event stream, `/stats` and `/stats/daily`.
+- Any other USDC transfer to the shop is a **donation**. It is stored with its sender (`from_address`, `donation`), settles with a ledger entry like any payment, and has no order, no shop notice and no `unmatched` incident (a reorg or duplicate still records its own incident). USDC is the only asset tracked. The API derives a stable two-word name from the sender and never returns the address. Donations below `DONATION_MIN` (default 10,000 micro-units, 0.01 USDC) stay stored but are left out of `/payments`, the event stream, `/stats` and `/stats/daily`.
 - An order not paid within a configured time expires.
 
 ## Pacing and test buys
@@ -129,7 +129,7 @@ Stripe (phase 2): `received → processing → settled → notified`, without a 
 | `POST /shop/notices`      | Receives the signed notice. Verifies the signature and timestamp, then marks the payment notified                                 |
 | `POST /stripe/webhook`    | Phase 2                                                                                                                           |
 
-Every 4xx answers with a fixed body holding a code for its status (for example `bad_request`, `not_found`, `rate_limited`); bodies never echo messages. CORS is allowed only for the configured web origin. With `TRUST_PROXY` set, client addresses come from the proxy's forwarding header, so per-visitor limits apply to visitors rather than to the proxy.
+Every 4xx answers with a fixed body. Errors that reach the error filter get a fixed code for their status (for example `bad_request`, `not_found`, `rate_limited`), and routes send their own fixed codes (for example `busy`, `daily_limit`); bodies never echo messages. CORS is allowed only for the configured web origin. With `TRUST_PROXY` set, client addresses come from the proxy's forwarding header, so per-visitor limits apply to visitors rather than to the proxy.
 
 ### web
 

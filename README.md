@@ -14,7 +14,7 @@ flowchart LR
   API --> Web[React dashboard]
 ```
 
-Only transfers from `BUYER_ADDRESS` are matched to orders. Any other USDC transfer to the shop is a donation: it is stored with its sender and settles with a ledger entry, but has no order, no shop notice and no incident. The API shows a donation under a stable two-word name derived from the sender and never returns the address. Donations below `DONATION_MIN` are stored but not listed, streamed or counted.
+Only transfers from `BUYER_ADDRESS` are matched to orders. Any other USDC transfer to the shop is a donation: it is stored with its sender and settles with a ledger entry, but has no order, no shop notice and no `unmatched` incident (a reorg or duplicate still records its own incident). The API shows a donation under a stable two-word name derived from the sender and never returns the address. Donations below `DONATION_MIN` are stored but not listed, streamed or counted.
 
 Chain payments follow `sent → received → confirming → settled → notified` and gain a final flag when the chain finalizes their block. The ledger's unique payment key enforces one credit per payment.
 
@@ -47,7 +47,7 @@ A nightly job deletes orders, payments, ledger entries, notices, events and inci
 The services run on free RPC tiers, so request volume stays inside their rate limits.
 
 - Each service has its own request rate (`RPC_REQUESTS_PER_SECOND_TRACKER`, `RPC_REQUESTS_PER_SECOND_BUYER` and `RPC_REQUESTS_PER_SECOND_API`; defaults 2, 2 and 1). Together they stay at or below the provider's rate, and a burst of purchases cannot stall confirmations. A limiter delays a call until its slot instead of refusing it.
-- The buyer makes about one RPC call per send: it signs locally with a nonce allocated in the database, a fixed gas limit and a fee cached for a few seconds. It checks for a receipt only when retrying.
+- The buyer makes about one RPC call per send (a send held for funds also reads the balance, a second call cached for 3 seconds): it signs locally with a nonce allocated in the database, a fixed gas limit and a fee cached for a few seconds. It checks for a receipt only when retrying.
 - At most `MAX_IN_FLIGHT` (default 10) transfers wait unconfirmed at once. A send beyond that returns to its queue for a moment and does not count as a failed attempt.
 - Before an order is sent, the buyer checks that its cached USDC balance, less the amounts in flight, covers the order. If not, the send is delayed 2 seconds and does not count as a failed attempt; the order can still expire and close.
 - Every minute the buyer checks transfers the tracker has not seen two minutes after sending. One that reverted, or whose nonce another transaction used, can never land. A revert, read from its receipt, is closed with an incident at once and leaves the in-flight count; one with no receipt and a used nonce is closed only after two consecutive checks agree, and an order that leaves the unseen list forgets the suspicion. Any other is broadcast again. This check and the refill check run on their own `buyer-upkeep` queue, so held sends never delay them.
@@ -71,7 +71,7 @@ Each tracker pass re-reads the last `RESCAN_BLOCKS` blocks. A log re-read inside
 | `GET /test-purchases/:id` | Queue position of a waiting visitor purchase                                                                        |
 | `POST /shop/notices`      | Receives the signed notice, verifies its signature and timestamp, then marks the payment notified                   |
 
-Each 4xx answers with a fixed body holding a code for its status, such as `bad_request` or `rate_limited`; bodies never echo messages.
+Each 4xx answers with a fixed body. Errors that reach the error filter get a fixed code for their status, such as `bad_request` or `rate_limited`, and routes send their own fixed codes, such as `busy` or `daily_limit`; bodies never echo messages.
 
 Set `TRUST_PROXY=true` when the API runs behind exactly one reverse proxy or tunnel. Client addresses then come from the proxy's forwarding header, so per-visitor limits apply to visitors rather than to the proxy. Leave it `false` when clients connect directly.
 
