@@ -21,35 +21,39 @@ export class FakeStripe implements StripeClient {
   failure: Error | null = null;
   failAfterAccepting = false;
 
-  async createPayment(input: CardPaymentInput): Promise<CardPayment> {
+  createPayment(input: CardPaymentInput): Promise<CardPayment> {
     this.requests.push(input);
-    if (this.failure && !this.failAfterAccepting) throw this.failure;
+    if (this.failure && !this.failAfterAccepting)
+      return Promise.reject(this.failure);
     const key = `order-${input.orderId}`;
     const intent = this.intents.get(key) ?? {
       id: `pi_${this.intents.size + 1}`,
       receiptUrl: 'https://pay.stripe.com/receipts/test',
     };
     this.intents.set(key, intent);
-    if (this.failure) throw this.failure;
-    return intent;
+    if (this.failure) return Promise.reject(this.failure);
+    return Promise.resolve(intent);
   }
 
-  async retrieve(intentId: string): Promise<Stripe.PaymentIntent> {
+  retrieve(intentId: string): Promise<Stripe.PaymentIntent> {
     this.lookups.push(intentId);
     const failure = this.failure ?? this.failures.get(intentId);
-    if (failure) throw failure;
+    if (failure) return Promise.reject(failure);
     const intent = this.stored.get(intentId);
     // Stripe answers 404 resource_missing, which the client maps to a permanent error.
-    if (!intent) throw new RpcError('permanent', 'resource_missing');
-    return intent;
+    if (!intent)
+      return Promise.reject(new RpcError('permanent', 'resource_missing'));
+    return Promise.resolve(intent);
   }
 
-  async search(orderId: string): Promise<Stripe.PaymentIntent[]> {
+  search(orderId: string): Promise<Stripe.PaymentIntent[]> {
     this.lookups.push(orderId);
     const failure = this.failure ?? this.failures.get(orderId);
-    if (failure) throw failure;
-    return [...this.stored.values()].filter(
-      (intent) => intent.metadata.orderId === orderId,
+    if (failure) return Promise.reject(failure);
+    return Promise.resolve(
+      [...this.stored.values()].filter(
+        (intent) => intent.metadata.orderId === orderId,
+      ),
     );
   }
 }

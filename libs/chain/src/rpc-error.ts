@@ -30,11 +30,11 @@ function chain(error: unknown): { text: string[]; codes: number[] } {
         ? ['shortMessage', 'details']
         : ['message', 'details'];
     for (const key of textKeys) {
-      const value = Reflect.get(error, key);
+      const value: unknown = Reflect.get(error, key);
       if (typeof value === 'string') text.push(value);
     }
     for (const key of ['code', 'status']) {
-      const value = Reflect.get(error, key);
+      const value: unknown = Reflect.get(error, key);
       if (typeof value === 'number') codes.push(value);
       else if (typeof value === 'string') text.push(value);
     }

@@ -16,7 +16,9 @@ function countingChain() {
         release = resolve;
       });
     },
-    release: () => release(),
+    release: () => {
+      release();
+    },
     fail(error: RpcError | null) {
       failure = error;
     },
@@ -30,11 +32,13 @@ function countingChain() {
         if (failure) throw failure;
         return { number: head, hash: '0x01' as const };
       },
-      getBalances: async (address: `0x${string}`) => {
+      getBalances: (address: `0x${string}`) => {
         calls.push(`getBalances:${address}`);
-        return address === buyer
-          ? { native: 5n, usdc: 6n }
-          : { native: 7n, usdc: 8n };
+        return Promise.resolve(
+          address === buyer
+            ? { native: 5n, usdc: 6n }
+            : { native: 7n, usdc: 8n },
+        );
       },
     },
   };
@@ -92,10 +96,9 @@ it('keeps the last snapshot with its time when a refresh fails', async () => {
   fake.fail(new RpcError('rate_limit'));
   time += 10000;
   await snapshot.refresh();
-  expect(snapshot.current()).toEqual({
-    reading: expect.objectContaining({ head: 100n, at: 1_000_000 }),
-    error: 'rate_limit',
-  });
+  const { reading, error } = snapshot.current();
+  expect(error).toBe('rate_limit');
+  expect(reading).toMatchObject({ head: 100n, at: 1_000_000 });
   fake.fail(null);
   time += 10000;
   await snapshot.refresh();
@@ -117,8 +120,9 @@ it('passes each new reading to the refresh hook', async () => {
     fake.chain,
     { buyer, shop },
     {
-      onRefresh: async (reading) => {
+      onRefresh: (reading) => {
         seen.push(reading.balances.buyer.native);
+        return Promise.resolve();
       },
     },
   );

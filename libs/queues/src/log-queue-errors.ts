@@ -13,6 +13,8 @@ export function logQueueErrors<T extends Queue>(
   message: string,
 ): T[] {
   for (const queue of queues)
-    queue.on('error', (error) => logger.error(message, errorFields(error)));
+    queue.on('error', (error) => {
+      logger.error(message, errorFields(error));
+    });
   return queues;
 }

@@ -79,7 +79,9 @@ export function useOrderStatus(
     return followOrder({
       client: paymentsClient(apiBaseUrl),
       orderId,
-      onStatus: (status) => setFollowed({ orderId, status }),
+      onStatus: (status) => {
+        setFollowed({ orderId, status });
+      },
     });
   }, [apiBaseUrl, orderId, paid]);
   if (!orderId || paid) return { position: 0, closed: false };

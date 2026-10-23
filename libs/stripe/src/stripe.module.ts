@@ -29,7 +29,10 @@ type Settings = {
           serviceLimiter(
             redis,
             'stripe',
-            config.get('STRIPE_REQUESTS_PER_SECOND', { infer: true }) ?? 5,
+            // Typed by key: ConfigService's path typing drops `undefined` from optional keys.
+            config.get<Settings['STRIPE_REQUESTS_PER_SECOND']>(
+              'STRIPE_REQUESTS_PER_SECOND',
+            ) ?? 5,
             config.get('RPC_COOLDOWN_MS', { infer: true }),
           ),
         );

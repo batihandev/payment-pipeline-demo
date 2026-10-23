@@ -18,14 +18,16 @@ function fakeStripe(create: jest.Mock) {
   return { paymentIntents: { create } } as unknown as Stripe;
 }
 
-function limiterWith(reportCooldown = jest.fn(async () => undefined)) {
+function limiterWith(
+  reportCooldown = jest.fn(() => Promise.resolve(undefined)),
+) {
   return {
     reportCooldown,
     limiter: new RpcLimiter(
       1000,
       1000,
       Date.now,
-      async () => undefined,
+      () => Promise.resolve(undefined),
       reportCooldown,
     ),
   };
@@ -38,7 +40,7 @@ const intent = {
 };
 
 it('sends the same idempotency key on a retry', async () => {
-  const create = jest.fn(async () => intent);
+  const create = jest.fn(() => Promise.resolve(intent));
   const client = new SdkStripeClient(fakeStripe(create), limiterWith().limiter);
   const first = await client.createPayment(input);
   const retry = await client.createPayment(input);
@@ -67,11 +69,13 @@ it('sends the same idempotency key on a retry', async () => {
 });
 
 it('leaves the receipt empty while the charge is not expanded', async () => {
-  const create = jest.fn(async () => ({
-    id: 'pi_2',
-    status: 'processing',
-    latest_charge: null,
-  }));
+  const create = jest.fn(() =>
+    Promise.resolve({
+      id: 'pi_2',
+      status: 'processing',
+      latest_charge: null,
+    }),
+  );
   const client = new SdkStripeClient(fakeStripe(create), limiterWith().limiter);
   await expect(client.createPayment(input)).resolves.toMatchObject({
     receiptUrl: null,
@@ -79,14 +83,16 @@ it('leaves the receipt empty while the charge is not expanded', async () => {
 });
 
 it('maps a declined card to CardDeclinedError', async () => {
-  const create = jest.fn(async () => {
-    throw new Stripe.errors.StripeCardError({
-      type: 'card_error',
-      code: 'card_declined',
-      decline_code: 'insufficient_funds',
-      message: 'Your card has insufficient funds.',
-      payment_intent: { id: 'pi_declined' } as Stripe.PaymentIntent,
-    });
+  const create = jest.fn(() => {
+    return Promise.reject(
+      new Stripe.errors.StripeCardError({
+        type: 'card_error',
+        code: 'card_declined',
+        decline_code: 'insufficient_funds',
+        message: 'Your card has insufficient funds.',
+        payment_intent: { id: 'pi_declined' } as Stripe.PaymentIntent,
+      }),
+    );
   });
   const client = new SdkStripeClient(fakeStripe(create), limiterWith().limiter);
   const error = await client.createPayment(input).catch((e: unknown) => e);
@@ -99,12 +105,14 @@ it('maps a declined card to CardDeclinedError', async () => {
 });
 
 it('maps a rate limit to a transient error and a cooldown', async () => {
-  const create = jest.fn(async () => {
-    throw new Stripe.errors.StripeRateLimitError({
-      type: 'invalid_request_error',
-      code: 'rate_limit',
-      message: 'Too many requests',
-    });
+  const create = jest.fn(() => {
+    return Promise.reject(
+      new Stripe.errors.StripeRateLimitError({
+        type: 'invalid_request_error',
+        code: 'rate_limit',
+        message: 'Too many requests',
+      }),
+    );
   });
   const { limiter, reportCooldown } = limiterWith();
   const client = new SdkStripeClient(fakeStripe(create), limiter);
@@ -131,8 +139,8 @@ it.each([
 ] as const)(
   'maps %s to a %s error without a cooldown',
   async (failure, kind) => {
-    const create = jest.fn(async () => {
-      throw failure;
+    const create = jest.fn(() => {
+      return Promise.reject(failure);
     });
     const { limiter, reportCooldown } = limiterWith();
     const client = new SdkStripeClient(fakeStripe(create), limiter);
@@ -156,8 +164,10 @@ it('classifies an authentication or permission error as an access error', async 
     [Stripe.errors.StripeAuthenticationError, 401],
     [Stripe.errors.StripePermissionError, 403],
   ] as const) {
-    const create = jest.fn(async () => {
-      throw new failure({ type: 'invalid_request_error', statusCode });
+    const create = jest.fn(() => {
+      return Promise.reject(
+        new failure({ type: 'invalid_request_error', statusCode }),
+      );
     });
     const client = new SdkStripeClient(
       fakeStripe(create),
@@ -175,12 +185,14 @@ it('classifies an authentication or permission error as an access error', async 
 });
 
 it('treats an idempotency conflict as transient', async () => {
-  const create = jest.fn(async () => {
-    throw new Stripe.errors.StripeIdempotencyError({
-      type: 'idempotency_error',
-      statusCode: 409,
-      message: 'A request with this key is still in progress',
-    });
+  const create = jest.fn(() => {
+    return Promise.reject(
+      new Stripe.errors.StripeIdempotencyError({
+        type: 'idempotency_error',
+        statusCode: 409,
+        message: 'A request with this key is still in progress',
+      }),
+    );
   });
   const { limiter, reportCooldown } = limiterWith();
   const client = new SdkStripeClient(fakeStripe(create), limiter);
@@ -191,11 +203,13 @@ it('treats an idempotency conflict as transient', async () => {
 });
 
 it('treats a 409 status as transient', async () => {
-  const create = jest.fn(async () => {
-    throw new Stripe.errors.StripeAPIError({
-      type: 'api_error',
-      statusCode: 409,
-    });
+  const create = jest.fn(() => {
+    return Promise.reject(
+      new Stripe.errors.StripeAPIError({
+        type: 'api_error',
+        statusCode: 409,
+      }),
+    );
   });
   const client = new SdkStripeClient(fakeStripe(create), limiterWith().limiter);
   await expect(client.createPayment(input)).rejects.toEqual(
@@ -204,7 +218,7 @@ it('treats a 409 status as transient', async () => {
 });
 
 it('retrieves a PaymentIntent with its charge', async () => {
-  const retrieve = jest.fn(async () => intent);
+  const retrieve = jest.fn(() => Promise.resolve(intent));
   const client = new SdkStripeClient(
     { paymentIntents: { retrieve } } as unknown as Stripe,
     limiterWith().limiter,
@@ -216,7 +230,7 @@ it('retrieves a PaymentIntent with its charge', async () => {
 });
 
 it('searches the PaymentIntents of an order', async () => {
-  const search = jest.fn(async () => ({ data: [intent] }));
+  const search = jest.fn(() => Promise.resolve({ data: [intent] }));
   const client = new SdkStripeClient(
     { paymentIntents: { search } } as unknown as Stripe,
     limiterWith().limiter,
@@ -229,11 +243,13 @@ it('searches the PaymentIntents of an order', async () => {
 });
 
 it('maps lookup errors like charge errors', async () => {
-  const failure = jest.fn(async () => {
-    throw new Stripe.errors.StripeRateLimitError({
-      type: 'invalid_request_error',
-      message: 'Too many requests',
-    });
+  const failure = jest.fn(() => {
+    return Promise.reject(
+      new Stripe.errors.StripeRateLimitError({
+        type: 'invalid_request_error',
+        message: 'Too many requests',
+      }),
+    );
   });
   const { limiter, reportCooldown } = limiterWith();
   const client = new SdkStripeClient(

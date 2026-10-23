@@ -74,11 +74,21 @@ function readOrderUpdate(data: string): OrderUpdate | undefined {
       Array.isArray(update.waiting) &&
       update.waiting.every((id) => typeof id === 'string')
     )
-      return { type: 'queue', waiting: update.waiting as string[] };
+      return { type: 'queue', waiting: update.waiting };
   } catch {
     // an unreadable update is skipped
   }
   return undefined;
+}
+function isPaymentEvent(value: unknown): value is Payment {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'id' in value &&
+    typeof value.id === 'string' &&
+    'stage' in value &&
+    typeof value.stage === 'string'
+  );
 }
 /** Whether `a` is a later copy of the row than `b`. A copy without a version is older than any versioned copy. */
 function isNewer(a: Pick<Payment, 'version'>, b: Pick<Payment, 'version'>) {
@@ -205,11 +215,10 @@ export class PaymentsClient {
         this.openStream();
       }, STREAM_REOPEN_MS);
     };
-    this.stream.onmessage = (event) => {
+    this.stream.onmessage = (event: MessageEvent<string>) => {
       try {
-        const payment = JSON.parse(event.data) as Payment;
-        if (!payment.id || !payment.stage)
-          throw new Error('Invalid payment event');
+        const payment: unknown = JSON.parse(event.data);
+        if (!isPaymentEvent(payment)) throw new Error('Invalid payment event');
         this.buffer(payment);
         if (this.feed) {
           this.applyEvents([payment]);

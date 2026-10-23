@@ -53,11 +53,13 @@ export class ChainSnapshotService {
     return this.loading;
   }
   /** The buyer's gas balance as visitor admission reads it, without an RPC call. */
-  async buyerGas(): Promise<GasReading> {
+  buyerGas(): Promise<GasReading> {
     const { reading } = this.current();
-    return reading
-      ? { native: reading.balances.buyer.native, at: reading.at }
-      : null;
+    return Promise.resolve(
+      reading
+        ? { native: reading.balances.buyer.native, at: reading.at }
+        : null,
+    );
   }
   private async load(): Promise<void> {
     this.startedAt = this.now();

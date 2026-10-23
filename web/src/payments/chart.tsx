@@ -34,12 +34,15 @@ function useWidth<T extends HTMLElement>() {
   useLayoutEffect(() => {
     const element = ref.current;
     if (!element) return;
-    const read = () =>
+    const read = () => {
       setWidth(Math.round(element.clientWidth) || DEFAULT_WIDTH);
+    };
     read();
     const observer = new ResizeObserver(read);
     observer.observe(element);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+    };
   }, []);
   return [ref, width] as const;
 }
@@ -85,7 +88,9 @@ export function SettledChart({ days }: { days: DailyStat[] }) {
               key={value}
               type="button"
               aria-pressed={mode === value}
-              onClick={() => setMode(value)}
+              onClick={() => {
+                setMode(value);
+              }}
             >
               {value === 'daily' ? 'Daily' : 'Weekly'}
             </button>

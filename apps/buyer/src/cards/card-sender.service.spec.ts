@@ -209,8 +209,8 @@ it('keeps a settled stage the webhook already wrote', async () => {
     stage: 'settled',
     final: true,
     receiptUrl: 'https://pay.stripe.com/receipts/test',
-    sentAt: expect.any(Date),
   });
+  expect(rows[0]?.sentAt).toBeInstanceOf(Date);
   expect((await stored(row.id)).sendState).toBe('sent');
 });
 

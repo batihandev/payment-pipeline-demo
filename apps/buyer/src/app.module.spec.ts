@@ -42,7 +42,7 @@ it('closes both workers and Redis on shutdown', async () => {
   let orderId = '';
   let afterClose: Promise<unknown> | undefined;
   const sender = {
-    inFlight: async () => 0,
+    inFlight: () => Promise.resolve(0),
     checkUnseen: async () => {},
     sendForOrder: async (id: string) => {
       if (id !== orderId) return;
@@ -63,15 +63,15 @@ it('closes both workers and Redis on shutdown', async () => {
     .overrideProvider(OrderSenderService)
     .useValue(sender)
     .overrideProvider(FundsService)
-    .useValue({ covers: async () => true })
+    .useValue({ covers: () => Promise.resolve(true) })
     .overrideProvider(PaceService)
-    .useValue({ pace: async () => null })
+    .useValue({ pace: () => Promise.resolve(null) })
     .overrideProvider(RefillService)
-    .useValue({ run: async () => 'not-needed' })
+    .useValue({ run: () => Promise.resolve('not-needed') })
     .overrideProvider(SweepService)
     .useValue({ run: async () => {} })
     .overrideProvider(ExpiryService)
-    .useValue({ expireOrders: async () => 0 })
+    .useValue({ expireOrders: () => Promise.resolve(0) })
     .compile();
   const probe = new Queue(QUEUES.buyer, {
     connection: { url: testRedisUrl() },
@@ -82,7 +82,7 @@ it('closes both workers and Redis on shutdown', async () => {
   const upkeep = module.get(UpkeepProcessor);
   const redis = module.get<Redis>(REDIS);
   let order: { id: string } | undefined;
-  let closed = false;
+  const shutdown = { closed: false };
   try {
     await module.init();
     order = await db.order.create({
@@ -120,9 +120,11 @@ it('closes both workers and Redis on shutdown', async () => {
       log.mockRestore();
     }
 
-    const closing = module.close().then(() => (closed = true));
+    const closing = module.close().then(() => {
+      shutdown.closed = true;
+    });
     await wait(500);
-    expect(closed).toBe(false);
+    expect(shutdown.closed).toBe(false);
     release();
     await closing;
 
@@ -135,7 +137,7 @@ it('closes both workers and Redis on shutdown', async () => {
     expect(redis.status).toBe('end');
   } finally {
     release();
-    if (!closed) await module.close();
+    if (!shutdown.closed) await module.close();
     if (order) {
       const admin = new PrismaClient({
         adapter: new PrismaPg({

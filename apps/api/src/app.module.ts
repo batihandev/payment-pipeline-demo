@@ -2,7 +2,6 @@ import { Module, type DynamicModule } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { BullModule } from '@nestjs/bullmq';
-import { ConfigService } from '@nestjs/config';
 import { appConfig } from '../../../libs/config/src/config.module';
 import { DatabaseModule } from '../../../libs/db/src';
 import { QueueErrorsModule } from '../../../libs/queues/src';
@@ -33,24 +32,11 @@ export class AppModule {
         RedisModule.forRoot({ service: 'API' }),
         QueueErrorsModule.forRoot({ message: 'API queue connection failed.' }),
         ClockModule,
-        BullModule.forRootAsync({
-          inject: [ConfigService],
-          useFactory: (config: ConfigService<ApiConfig, true>) => ({
-            connection: { url: config.get('REDIS_URL', { infer: true }) },
-          }),
-        }),
-        ThrottlerModule.forRootAsync({
-          inject: [ConfigService],
-          useFactory: (config: ConfigService<ApiConfig, true>) => ({
-            throttlers: [
-              {
-                ttl: 60_000,
-                limit: config.get('API_REQUESTS_PER_MINUTE', { infer: true }),
-              },
-            ],
-            // One budget per address across all routes.
-            generateKey: (_context, tracker, name) => `${name}:${tracker}`,
-          }),
+        BullModule.forRoot({ connection: { url: config.REDIS_URL } }),
+        ThrottlerModule.forRoot({
+          throttlers: [{ ttl: 60_000, limit: config.API_REQUESTS_PER_MINUTE }],
+          // One budget per address across all routes.
+          generateKey: (_context, tracker, name) => `${name}:${tracker}`,
         }),
         PaymentsModule,
         IncidentsModule,

@@ -24,19 +24,27 @@ function client(fail = false, receipt: unknown = null) {
     },
     new RpcLimiter(1000000, 1),
     custom({
-      request: async ({ method }) => {
+      request: ({ method }) => {
         if (fail)
-          throw { code: 429, message: 'https://secret.invalid/private-key' };
-        if (method === 'eth_getTransactionCount') return '0x7';
-        if (method === 'eth_getBalance') return '0x64';
-        if (method === 'eth_call') return `0x${'0'.repeat(62)}c8`;
-        if (method === 'eth_getTransactionReceipt') return receipt;
+          return Promise.reject(
+            Object.assign(new Error('https://secret.invalid/private-key'), {
+              code: 429,
+            }),
+          );
+        if (method === 'eth_getTransactionCount') return Promise.resolve('0x7');
+        if (method === 'eth_getBalance') return Promise.resolve('0x64');
+        if (method === 'eth_call')
+          return Promise.resolve(`0x${'0'.repeat(62)}c8`);
+        if (method === 'eth_getTransactionReceipt')
+          return Promise.resolve(receipt);
         if (method === 'eth_sendRawTransaction')
-          throw { code: -32000, message: 'already known' };
-        if (method === 'eth_gasPrice') return '0xa';
-        if (method === 'eth_estimateGas') return '0x186a0';
-        if (method === 'eth_getLogs') return [];
-        throw new Error(`Unexpected method ${method}`);
+          return Promise.reject(
+            Object.assign(new Error('already known'), { code: -32000 }),
+          );
+        if (method === 'eth_gasPrice') return Promise.resolve('0xa');
+        if (method === 'eth_estimateGas') return Promise.resolve('0x186a0');
+        if (method === 'eth_getLogs') return Promise.resolve([]);
+        return Promise.reject(new Error(`Unexpected method ${method}`));
       },
     }),
   );
@@ -109,10 +117,10 @@ it('signs three transfers within 5 s with one gas price call and no gas estimate
     },
     new RpcLimiter(1000000, 1),
     custom({
-      request: async ({ method }) => {
+      request: ({ method }: { method: string }) => {
         methods.push(method);
-        if (method === 'eth_gasPrice') return '0xa';
-        throw new Error(`Unexpected method ${method}`);
+        if (method === 'eth_gasPrice') return Promise.resolve('0xa');
+        return Promise.reject(new Error(`Unexpected method ${method}`));
       },
     }),
   );

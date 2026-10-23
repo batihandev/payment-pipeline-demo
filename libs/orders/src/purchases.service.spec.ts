@@ -174,9 +174,9 @@ it('creates a card order at the item price without an offset', async () => {
   expect(order).toMatchObject({
     rail: 'card',
     customerId: customer.id,
-    item: item?.name,
-    price: item?.priceCents && item.priceCents * 10000n,
-    expectedAmount: item?.priceCents && item.priceCents * 10000n,
+    item: item.name,
+    price: item.priceCents * 10000n,
+    expectedAmount: item.priceCents * 10000n,
   });
 });
 it('creates chain orders with a unique offset and the demo customer', async () => {

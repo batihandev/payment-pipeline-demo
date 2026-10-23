@@ -23,9 +23,9 @@ const redisProvider = (name: string): Provider => ({
     const redis = new Redis(config.get('REDIS_URL', { infer: true }), {
       maxRetriesPerRequest: 1,
     });
-    redis.on('error', (error) =>
-      logger.error(`${name} connection failed.`, errorFields(error)),
-    );
+    redis.on('error', (error) => {
+      logger.error(`${name} connection failed.`, errorFields(error));
+    });
     return redis;
   },
 });

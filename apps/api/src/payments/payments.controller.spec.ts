@@ -1,3 +1,5 @@
+import { expect } from '@jest/globals';
+import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { payment as createPayment } from '../../testing/read-api';
@@ -13,6 +15,15 @@ type Payment = { id: string; sentAt: string | null; receivedAt: string | null };
 
 const state = useReadApi();
 const get = (url: string) => request(state.app.getHttpServer()).get(url);
+/** The fields these tests read from each listed payment. */
+const listed = z.array(
+  z.object({
+    id: z.string(),
+    receivedAt: z.string().nullable(),
+    version: z.number(),
+  }),
+);
+const list = async (url: string) => listed.parse((await get(url)).body);
 const payment = (data = {}) => createPayment(state, data);
 it('returns recent payments with safe order details, exact amounts and explorer links', async () => {
   const order = await state.database.db.order.create({
@@ -155,11 +166,11 @@ it('leaves out donations below DONATION_MIN', async () => {
   expect(response.body).toEqual([
     expect.objectContaining({ amount: '10000', donation: true }),
   ]);
-  expect((await get('/stats')).body.settledCount).toBe(1);
-  const daily = (await get('/stats/daily')).body;
-  expect(
-    daily.find((entry: { day: string }) => entry.day === '2026-10-22').settled,
-  ).toBe(1);
+  expect((await get('/stats')).body).toMatchObject({ settledCount: 1 });
+  const daily = z
+    .array(z.object({ day: z.string(), settled: z.number() }))
+    .parse((await get('/stats/daily')).body);
+  expect(daily.find((entry) => entry.day === '2026-10-22')?.settled).toBe(1);
 });
 it('never returns a sender address', async () => {
   const sender = `0x${'ee'.repeat(20)}`;
@@ -179,7 +190,7 @@ it('puts a new sent purchase ahead of older received payments', async () => {
     receivedAt: null,
     sentAt: new Date('2026-10-20T12:01:00Z'),
   });
-  expect((await get('/payments?limit=1')).body[0].id).toBe(sent.id);
+  expect((await list('/payments?limit=1'))[0]?.id).toBe(sent.id);
 });
 
 it('answers 400 bad_request for an out-of-range or non-integer limit', async () => {
@@ -266,7 +277,7 @@ it('serves the change from a payment event on the next read, within the cache wi
   let length = 1;
   while (length === 1 && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 50));
-    length = (await get('/payments')).body.length;
+    length = (await list('/payments')).length;
   }
   expect(length).toBe(2);
 });
@@ -293,15 +304,14 @@ it('caches only multiples of 20', async () => {
   expect((await get('/payments?limit=200')).body).toHaveLength(1);
   expect((await get('/payments?limit=21')).body).toHaveLength(2);
   expect((await get('/payments?limit=1')).body).toHaveLength(1);
-  expect((await get('/payments?limit=1')).body[0].receivedAt).toBe(
+  expect((await list('/payments?limit=1'))[0]?.receivedAt).toBe(
     '2026-10-20T13:00:00.000Z',
   );
 });
 it('bumps the payment version on every update', async () => {
   const { db } = state.database;
   const created = await payment();
-  const version = async () =>
-    (await get('/payments?limit=1')).body[0].version as number;
+  const version = async () => (await list('/payments?limit=1'))[0]?.version;
   expect(await version()).toBe(0);
   await db.$transaction(async (tx) => {
     const updated = await tx.payment.update({

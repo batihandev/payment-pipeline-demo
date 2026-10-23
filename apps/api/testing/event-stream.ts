@@ -1,4 +1,4 @@
-import { get, type IncomingMessage } from 'node:http';
+import { get, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { INestApplication } from '@nestjs/common';
 
@@ -12,7 +12,7 @@ export function destroyEventStreams(app: INestApplication): void {
 
 /** Opens `/events` on a listening app and resolves with the response once its headers arrive. */
 export async function openEventStream(
-  app: INestApplication,
+  app: INestApplication<Server>,
   headers: Record<string, string> = {},
 ): Promise<IncomingMessage> {
   const server = app.getHttpServer();

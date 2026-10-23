@@ -40,11 +40,14 @@ export abstract class StripeClient {
 
 function classifyStripeError(error: unknown): RpcError | CardDeclinedError {
   if (error instanceof RpcError) return error;
-  if (error instanceof Stripe.errors.StripeCardError)
+  if (error instanceof Stripe.errors.StripeCardError) {
+    // The subclass types decline_code as always set; the base class, like the API, has it optional.
+    const declined: Stripe.errors.StripeError = error;
     return new CardDeclinedError(
-      error.decline_code ?? error.code ?? null,
+      declined.decline_code ?? declined.code ?? null,
       error.payment_intent?.id ?? null,
     );
+  }
   if (
     error instanceof Stripe.errors.StripeAuthenticationError ||
     error instanceof Stripe.errors.StripePermissionError

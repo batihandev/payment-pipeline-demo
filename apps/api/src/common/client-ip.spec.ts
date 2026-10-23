@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { Controller, Get } from '@nestjs/common';
 import request from 'supertest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -23,8 +24,11 @@ const start = async (header: string) => {
   });
 };
 const addressFor = async (headers: Record<string, string>) =>
-  (await request(app.getHttpServer()).get('/address').set(headers)).body
-    .address as string;
+  z
+    .object({ address: z.string() })
+    .parse(
+      (await request(app.getHttpServer()).get('/address').set(headers)).body,
+    ).address;
 
 it('takes the client address from CF-Connecting-IP', async () => {
   await start('cf-connecting-ip');

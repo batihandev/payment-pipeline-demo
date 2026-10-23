@@ -176,7 +176,7 @@ export class ScannerService {
     let to = end;
     let logs: TransferLog[] = [];
     let failure: RpcError | undefined;
-    while (true) {
+    for (;;) {
       try {
         logs = await this.rpc(() => this.chain.getTransferLogs(from, to));
         break;

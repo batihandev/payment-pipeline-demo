@@ -49,7 +49,7 @@ function order(
   });
 }
 function chainWith(usdc: bigint) {
-  return { getBalances: jest.fn(async () => ({ native: 0n, usdc })) };
+  return { getBalances: jest.fn(() => Promise.resolve({ native: 0n, usdc })) };
 }
 
 it('covers an order the balance can pay', async () => {
@@ -85,8 +85,8 @@ it('lets an already-signed order through without reading the balance', async () 
 it('holds the order when the balance read fails', async () => {
   const row = await order(1_000_000n);
   const chain = {
-    getBalances: jest.fn(async () => {
-      throw new Error('rpc down');
+    getBalances: jest.fn(() => {
+      return Promise.reject(new Error('rpc down'));
     }),
   };
   const funds = new FundsService(database.db, chain, buyer);

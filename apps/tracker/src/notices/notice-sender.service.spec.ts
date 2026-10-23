@@ -68,7 +68,10 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await new Promise<void>((resolve, fail) =>
-    server.close((error) => (error ? fail(error) : resolve())),
+    server.close((error) => {
+      if (error) fail(error);
+      else resolve();
+    }),
   );
   await f.close();
 });
@@ -138,12 +141,14 @@ it('retries a shop outage through BullMQ and delivers the same payment after rec
   );
   try {
     const complete = new Promise<void>((resolve, fail) => {
-      worker.once('completed', () => resolve());
+      worker.once('completed', () => {
+        resolve();
+      });
       worker.once('error', fail);
     });
     await new DeliveryService(
       f.db,
-      { publish: async () => 0 },
+      { publish: () => Promise.resolve(0) },
       queue,
       () => now,
     ).flush();

@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import request from 'supertest';
 import {
   payment as createPayment,
@@ -7,6 +8,16 @@ import {
 
 const state = useReadApi();
 const get = (url: string) => request(state.app.getHttpServer()).get(url);
+const dailyRows = z.array(
+  z.object({
+    day: z.string(),
+    settled: z.number(),
+    scheduled: z.number(),
+    visitor: z.number(),
+    averageTimeToSettleMs: z.number().nullable(),
+  }),
+);
+const daily = async () => dailyRows.parse((await get('/stats/daily')).body);
 const payment = (data = {}) => createPayment(state, data);
 it('computes statistics from ledger rows and incidents and refreshes after five seconds', async () => {
   const first = await get('/stats');
@@ -35,7 +46,7 @@ it('computes statistics from ledger rows and incidents and refreshes after five 
     })),
   });
   state.time = today + 4999;
-  expect((await get('/stats')).body.settledCount).toBe(0);
+  expect((await get('/stats')).body).toMatchObject({ settledCount: 0 });
   state.time = today + 5000;
   expect((await get('/stats')).body).toEqual({
     settledCount: 1,
@@ -103,8 +114,7 @@ it('returns 30 zero-filled days in /stats/daily with scheduled and visitor split
   await settle('2026-10-20T11:30:00Z', 'visitor', 10);
   await settle('2026-09-23T00:00:00Z');
   await settle('2026-09-22T23:59:59Z', 'visitor');
-  const response = await get('/stats/daily');
-  const days = response.body;
+  const days = await daily();
   expect(days).toHaveLength(30);
   expect(days[0]).toEqual({
     day: '2026-09-23',
@@ -136,7 +146,7 @@ it('returns 30 zero-filled days in /stats/daily with scheduled and visitor split
   });
   await settle('2026-10-22T11:45:00Z', 'visitor');
   state.time = today + 59999;
-  expect((await get('/stats/daily')).body[29].settled).toBe(2);
+  expect((await daily())[29]?.settled).toBe(2);
   state.time = today + 60000;
-  expect((await get('/stats/daily')).body[29].settled).toBe(3);
+  expect((await daily())[29]?.settled).toBe(3);
 });

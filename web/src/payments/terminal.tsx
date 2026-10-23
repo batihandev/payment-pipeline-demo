@@ -17,11 +17,12 @@ function StateLabel({ label }: { label: string }) {
     });
   useEffect(() => {
     if (!shown.swaps) return;
-    const timer = setTimeout(
-      () => setShown((state) => ({ ...state, previous: '' })),
-      labelSwapMs,
-    );
-    return () => clearTimeout(timer);
+    const timer = setTimeout(() => {
+      setShown((state) => ({ ...state, previous: '' }));
+    }, labelSwapMs);
+    return () => {
+      clearTimeout(timer);
+    };
   }, [shown.swaps]);
   return (
     <span className="tp-terminal-label">

@@ -2,8 +2,11 @@ import { z } from 'zod';
 
 const positiveInteger = z.coerce.number().int().positive();
 const microUnits = z.string().regex(/^\d+$/).transform(BigInt);
-const address = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
-const privateKey = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
+/** Typed as viem's `0x${string}` once the pattern has matched. */
+const hex = (pattern: RegExp) =>
+  z.string().regex(pattern).pipe(z.custom<`0x${string}`>());
+const address = hex(/^0x[0-9a-fA-F]{40}$/);
+const privateKey = hex(/^0x[0-9a-fA-F]{64}$/);
 const sandboxSecretKey = z.string().startsWith('sk_test_');
 const emptyAsUnset = (value: unknown) => (value === '' ? undefined : value);
 /** A bare http(s) origin: scheme, host and optional port, with no path or trailing slash. */

@@ -1,3 +1,4 @@
+import { expect } from '@jest/globals';
 import { Injectable, Module, type OnModuleDestroy } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ConfigError } from '../../config/src';
@@ -29,16 +30,18 @@ it('logs a startup failure as one JSON line naming the bad variables, not their 
     output.mockRestore();
   }
   expect(written.join('')).not.toMatch(/postgresql|secret/);
-  const records = written.map((line) => JSON.parse(line));
-  expect(
-    records.map(({ level, message, params }) => ({ level, message, params })),
-  ).toEqual([
-    {
+  const records = written.map((line): unknown => JSON.parse(line));
+  expect(records).toEqual([
+    expect.objectContaining({
       level: 'fatal',
       message: 'Startup failed.',
       params: { name: 'ConfigError', variables: ['DATABASE_URL', 'RPC_URL'] },
-    },
-    { level: 'fatal', message: 'Startup failed.', params: { name: 'Error' } },
+    }),
+    expect.objectContaining({
+      level: 'fatal',
+      message: 'Startup failed.',
+      params: { name: 'Error' },
+    }),
   ]);
 });
 

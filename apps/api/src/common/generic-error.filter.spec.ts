@@ -1,3 +1,5 @@
+import { expect } from '@jest/globals';
+import { z } from 'zod';
 import { Controller, Get, HttpException, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import request from 'supertest';
@@ -57,6 +59,7 @@ class FailingController {
 }
 
 let app: NestExpressApplication;
+const errorBody = z.object({ error: z.string() });
 beforeAll(async () => {
   app = await createTestApp({
     environment: { NOTICE_SECRET: 'error-test-secret'.repeat(3) },
@@ -90,7 +93,7 @@ it('keeps the error code for each 4xx', async () => {
     );
     expect(response.statusCode).toBe(status);
     expect(response.text).not.toMatch(/secret/);
-    codes[status] = response.body.error;
+    codes[status] = errorBody.parse(response.body).error;
   }
   expect(codes).toEqual({
     404: 'not_found',
@@ -155,7 +158,7 @@ describe('error log', () => {
     const records: unknown[] = log
       .split('\n')
       .filter(Boolean)
-      .map((line) => JSON.parse(line));
+      .map((line): unknown => JSON.parse(line));
     expect(records).toEqual([
       {
         level: 'error',
@@ -178,7 +181,7 @@ describe('error log', () => {
     const records: unknown[] = log
       .split('\n')
       .filter(Boolean)
-      .map((line) => JSON.parse(line));
+      .map((line): unknown => JSON.parse(line));
     expect(records).toEqual([
       {
         level: 'error',

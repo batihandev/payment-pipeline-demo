@@ -1,3 +1,5 @@
+import { expect } from '@jest/globals';
+import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { Queue } from 'bullmq';
 import request from 'supertest';
@@ -12,6 +14,20 @@ import { ChainSnapshotService } from './chain-snapshot.service';
 
 const state = useReadApi();
 const get = (url: string) => request(state.app.getHttpServer()).get(url);
+const at = z.string().nullable();
+/** The /health fields these tests read; monitoring is checked whole. */
+const healthRead = z.object({
+  cardAvailable: z.boolean(),
+  cooldowns: z.record(z.string(), z.number()).nullable(),
+  monitoring: z.strictObject({
+    cursorAdvancedAt: at,
+    oldestUnsettledAt: at,
+    oldestUnnotifiedAt: at,
+    lastScheduledPurchaseAt: at,
+    visitorPausedSince: at,
+  }),
+});
+const health = async () => healthRead.parse((await get('/health')).body);
 const payment = (data = {}) => createPayment(state, data);
 it('reports head, scoped cursor lag, open gaps, queued work and live balance warnings', async () => {
   await state.database.db.cursor.create({
@@ -66,16 +82,15 @@ it('reports an actual rate-limit cooldown and its expiry from live Redis state',
   // A long cooldown keeps the first read inside it however slow the database answers.
   const limiter = serviceLimiter(state.redis, 'tracker', 5, 60000);
   await expect(
-    limiter.run(async () => {
-      throw new RpcError('rate_limit');
+    limiter.run(() => {
+      return Promise.reject(new RpcError('rate_limit'));
     }),
   ).rejects.toThrow();
-  const cooling = (await get('/health')).body;
-  expect(cooling.cooldowns.tracker).toBeGreaterThan(0);
+  expect((await health()).cooldowns?.tracker).toBeGreaterThan(0);
   await state.redis.pexpire(cooldownKey('tracker'), 1);
   while (await state.redis.exists(cooldownKey('tracker')))
     await new Promise((resolve) => setTimeout(resolve, 5));
-  expect((await get('/health')).body.cooldowns.tracker).toBe(0);
+  expect((await health()).cooldowns?.tracker).toBe(0);
 });
 it('reports an unknown cursor and lag before the tracker initializes', async () => {
   expect((await get('/health')).body).toMatchObject({
@@ -95,20 +110,20 @@ it('reports the card rail available once the demo customer has a saved card', as
   process.env.STRIPE_WEBHOOK_SECRET = 'whsec_health';
   await state.rebuild();
   await state.database.db.customer.deleteMany();
-  expect((await get('/health')).body.cardAvailable).toBe(false);
+  expect((await health()).cardAvailable).toBe(false);
   await state.database.db.customer.create({ data: savedCard });
-  expect((await get('/health')).body.cardAvailable).toBe(true);
+  expect((await health()).cardAvailable).toBe(true);
   await state.database.db.customer.deleteMany();
 });
 it('reports the card rail unavailable without a webhook secret', async () => {
   delete process.env.STRIPE_WEBHOOK_SECRET;
   await state.rebuild();
   await state.database.db.customer.create({ data: savedCard });
-  expect((await get('/health')).body.cardAvailable).toBe(false);
+  expect((await health()).cardAvailable).toBe(false);
   await state.database.db.customer.deleteMany();
 });
 it('reports monitoring timestamps in /health', async () => {
-  expect((await get('/health')).body.monitoring).toEqual({
+  expect((await health()).monitoring).toEqual({
     cursorAdvancedAt: null,
     oldestUnsettledAt: null,
     oldestUnnotifiedAt: null,
@@ -181,7 +196,7 @@ it('reports monitoring timestamps in /health', async () => {
     String(Date.parse('2026-10-21T00:00:00Z')),
   );
   try {
-    expect((await get('/health')).body.monitoring).toEqual({
+    expect((await health()).monitoring).toEqual({
       cursorAdvancedAt: '2026-10-22T10:00:00.000Z',
       oldestUnsettledAt: '2026-10-22T08:00:00.000Z',
       oldestUnnotifiedAt: '2026-10-22T06:30:00.000Z',
@@ -198,7 +213,7 @@ it('leaves settled donations out of the unnotified signal', async () => {
     stage: 'settled',
     settledAt: new Date('2026-10-01T00:00:00Z'),
   });
-  expect((await get('/health')).body.monitoring.oldestUnnotifiedAt).toBeNull();
+  expect((await health()).monitoring.oldestUnnotifiedAt).toBeNull();
 });
 it('reports a processing card payment as unsettled', async () => {
   const order = await state.database.db.order.create({
@@ -220,7 +235,7 @@ it('reports a processing card payment as unsettled', async () => {
     sentAt: new Date('2026-10-22T08:00:00Z'),
     processingAt: new Date('2026-10-22T08:00:01Z'),
   });
-  expect((await get('/health')).body.monitoring.oldestUnsettledAt).toBe(
+  expect((await health()).monitoring.oldestUnsettledAt).toBe(
     '2026-10-22T08:00:01.000Z',
   );
 });
@@ -234,7 +249,7 @@ it('answers /health from a fresh chain snapshot without RPC calls', async () => 
 it('returns monitoring with null chain fields when the chain read fails', async () => {
   state.headFailure = new RpcError('timeout');
   await state.rebuild(false);
-  const before = (await get('/health')).body;
+  const before: unknown = (await get('/health')).body;
   expect(before).toMatchObject({
     head: null,
     lag: null,
@@ -291,7 +306,7 @@ it('leaves unmatched payments out of the oldest unsettled payment', async () => 
     stage: 'received',
     receivedAt: new Date('2026-10-22T09:00:00Z'),
   });
-  expect((await get('/health')).body.monitoring.oldestUnsettledAt).toBe(
+  expect((await health()).monitoring.oldestUnsettledAt).toBe(
     '2026-10-22T09:00:00.000Z',
   );
 });
@@ -314,5 +329,5 @@ it('leaves transfers closed as reverted or dropped out of the oldest unsettled p
     receivedAt: null,
     sentAt: new Date('2026-10-01T00:00:00Z'),
   });
-  expect((await get('/health')).body.monitoring.oldestUnsettledAt).toBeNull();
+  expect((await health()).monitoring.oldestUnsettledAt).toBeNull();
 });

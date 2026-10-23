@@ -2,7 +2,7 @@ import { testDatabase } from '../testing/database';
 import { BudgetReservation } from './budget-reservation';
 
 const day = new Date('2026-10-20T00:00:00Z');
-let database: Awaited<ReturnType<typeof testDatabase>>;
+let database: Awaited<ReturnType<typeof testDatabase>> | undefined;
 let db: Awaited<ReturnType<typeof testDatabase>>['db'];
 let budget: BudgetReservation;
 beforeAll(async () => {

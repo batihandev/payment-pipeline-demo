@@ -2,7 +2,7 @@ import { UnrecoverableError, type Job } from 'bullmq';
 import { JOBS } from '../../../../libs/queues/src';
 import { TrackerProcessor } from './tracker.processor';
 
-const done = () => jest.fn(async () => undefined);
+const done = () => jest.fn(() => Promise.resolve(undefined));
 
 function processor() {
   const delivery = { flush: done() };

@@ -19,6 +19,7 @@ export const today = Date.parse('2026-10-22T12:00:00Z');
  * a scripted chain, and a fresh app (with a loaded chain snapshot) before each test.
  */
 export function useReadApi() {
+  let built: NestExpressApplication | undefined;
   const state = {
     time: today,
     chainCalls: [] as string[],
@@ -28,8 +29,8 @@ export function useReadApi() {
     database: undefined as unknown as Awaited<ReturnType<typeof testDatabase>>,
     redis: undefined as unknown as Redis,
     async rebuild(loadSnapshot = true): Promise<void> {
-      await state.app?.close();
-      state.app = await createTestApp({
+      await built?.close();
+      state.app = built = await createTestApp({
         environment: { CONFIRMATIONS: '7' },
         queuePrefix: state.queuePrefix,
         override: (builder) => {
@@ -40,16 +41,18 @@ export function useReadApi() {
             .useValue(() => new Date(state.time))
             .overrideProvider(ChainClient)
             .useValue({
-              getHead: async () => {
+              getHead: () => {
                 state.chainCalls.push('getHead');
-                if (state.headFailure) throw state.headFailure;
-                return { number: 100n, hash: '0x01' };
+                if (state.headFailure) return Promise.reject(state.headFailure);
+                return Promise.resolve({ number: 100n, hash: '0x01' });
               },
-              getBalances: async (address: string) => {
+              getBalances: (address: string) => {
                 state.chainCalls.push('getBalances');
-                return address === `0x${'11'.repeat(20)}`
-                  ? { native: 1n, usdc: 20000000n }
-                  : { native: 2000000000000000n, usdc: 2n };
+                return Promise.resolve(
+                  address === `0x${'11'.repeat(20)}`
+                    ? { native: 1n, usdc: 20000000n }
+                    : { native: 2000000000000000n, usdc: 2n },
+                );
               },
             });
         },

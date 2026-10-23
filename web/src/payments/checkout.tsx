@@ -24,10 +24,14 @@ function useTimeAfter(deadline: number | null): number {
   useEffect(() => {
     if (deadline === null) return;
     const timer = setTimeout(
-      () => setNow(Math.max(Date.now(), deadline + 1)),
+      () => {
+        setNow(Math.max(Date.now(), deadline + 1));
+      },
       Math.max(0, deadline + 1 - Date.now()),
     );
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+    };
   }, [deadline]);
   return now;
 }
@@ -126,7 +130,9 @@ export function Checkout({
         <button
           type="button"
           disabled={status !== 'live'}
-          onClick={() => setOpened(true)}
+          onClick={() => {
+            setOpened(true);
+          }}
         >
           Open the counter
         </button>

@@ -59,10 +59,11 @@ it('stops the poll loop before closing workers, Redis and the database', async (
     .overrideProvider(PrismaService)
     .useValue(
       new Proxy(f.db, {
-        get: (target, name) =>
+        get: (target, name): unknown =>
           name === 'onModuleDestroy'
-            ? async () => {
+            ? () => {
                 order.push('database');
+                return Promise.resolve();
               }
             : Reflect.get(target, name, target),
       }),
@@ -73,7 +74,7 @@ it('stops the poll loop before closing workers, Redis and the database', async (
   const tracker = module.get(TrackerProcessor);
   const notices = module.get(ShopNoticesProcessor);
   const redis = module.get<Redis>(REDIS);
-  let closed = false;
+  const shutdown = { closed: false };
   try {
     await module.init();
     await inPass;
@@ -118,9 +119,11 @@ it('stops the poll loop before closing workers, Redis and the database', async (
       log.mockRestore();
     }
 
-    const closing = module.close().then(() => (closed = true));
+    const closing = module.close().then(() => {
+      shutdown.closed = true;
+    });
     await wait(300);
-    expect(closed).toBe(false);
+    expect(shutdown.closed).toBe(false);
     release();
     await closing;
 
@@ -137,7 +140,7 @@ it('stops the poll loop before closing workers, Redis and the database', async (
     expect(redis.status).toBe('end');
   } finally {
     release();
-    if (!closed) await module.close();
+    if (!shutdown.closed) await module.close();
     for (const name of [QUEUES.tracker, QUEUES.shopNotices]) {
       const probe = new Queue(name, {
         connection: { url: testRedisUrl() },

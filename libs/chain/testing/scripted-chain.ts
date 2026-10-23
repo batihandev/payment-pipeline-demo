@@ -13,59 +13,66 @@ export class ScriptedChain implements ChainClient, TransferSigner {
   fail:
     'sign' | 'broadcast' | 'permanent-broadcast' | 'after-broadcast' | null =
     null;
-  getHead = async () => ({ number: 1n, hash: '0xaa' as Hex });
-  getFinalized = async () => 0n;
-  getBlockHash = async () => '0xaa' as Hex;
-  getTransferLogs = async () => [];
-  getBalances = async (address: Address) => ({
-    native: 1n,
-    usdc: this.balances.get(address) ?? 500n,
-  });
-  getNonce = async () => {
+  getHead = () => Promise.resolve({ number: 1n, hash: '0xaa' as const });
+  getFinalized = () => Promise.resolve(0n);
+  getBlockHash = () => Promise.resolve('0xaa' as Hex);
+  getTransferLogs = () => Promise.resolve([]);
+  getBalances = (address: Address) =>
+    Promise.resolve({
+      native: 1n,
+      usdc: this.balances.get(address) ?? 500n,
+    });
+  getNonce = () => {
     this.calls.push('getNonce');
-    return this.nonce;
+    return Promise.resolve(this.nonce);
   };
-  getConfirmedNonce = async () => {
+  getConfirmedNonce = () => {
     this.calls.push('getConfirmedNonce');
-    return this.nonce;
+    return Promise.resolve(this.nonce);
   };
-  getTransactionReceipt = async (hash: Hex) => {
+  getTransactionReceipt = (hash: Hex) => {
     this.calls.push('getTransactionReceipt');
     if (this.reverted.has(hash))
-      return { blockNumber: 1n, status: 'reverted' as const };
-    return this.receipts.has(hash)
-      ? { blockNumber: 1n, status: 'success' as const }
-      : null;
+      return Promise.resolve({ blockNumber: 1n, status: 'reverted' as const });
+    return Promise.resolve(
+      this.receipts.has(hash)
+        ? { blockNumber: 1n, status: 'success' as const }
+        : null,
+    );
   };
-  async signTransfer(
+  signTransfer(
     from: Address,
     to: Address,
     amount: bigint,
     nonce: number,
   ): Promise<Hex> {
-    if (this.fail === 'sign') throw new RpcError('permanent');
+    if (this.fail === 'sign') return Promise.reject(new RpcError('permanent'));
     this.signed++;
     this.signedNonces.push(nonce);
-    return toHex(
-      JSON.stringify({
-        from,
-        to,
-        amount: amount.toString(),
-        nonce,
-        signing: this.signed,
-      }),
+    return Promise.resolve(
+      toHex(
+        JSON.stringify({
+          from,
+          to,
+          amount: amount.toString(),
+          nonce,
+          signing: this.signed,
+        }),
+      ),
     );
   }
-  async sendRawTransaction(raw: Hex): Promise<Hex> {
+  sendRawTransaction(raw: Hex): Promise<Hex> {
     this.calls.push('sendRawTransaction');
-    if (this.fail === 'broadcast') throw new RpcError('timeout');
-    if (this.fail === 'permanent-broadcast') throw new RpcError('permanent');
+    if (this.fail === 'broadcast')
+      return Promise.reject(new RpcError('timeout'));
+    if (this.fail === 'permanent-broadcast')
+      return Promise.reject(new RpcError('permanent'));
     const hash = keccak256(raw);
     if (
       !this.accepted.has(hash) &&
       (JSON.parse(hexToString(raw)) as { nonce: number }).nonce < this.nonce
     )
-      throw new RpcError('nonce_too_low');
+      return Promise.reject(new RpcError('nonce_too_low'));
     if (!this.accepted.has(hash)) {
       const transfer = JSON.parse(hexToString(raw)) as {
         from: Address;
@@ -85,8 +92,8 @@ export class ScriptedChain implements ChainClient, TransferSigner {
     }
     if (this.fail === 'after-broadcast') {
       this.receipts.add(hash);
-      throw new RpcError('timeout');
+      return Promise.reject(new RpcError('timeout'));
     }
-    return hash;
+    return Promise.resolve(hash);
   }
 }

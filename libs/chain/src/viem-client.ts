@@ -64,15 +64,12 @@ export class ViemChainClient implements ChainClient, TransferSigner {
   getHead(): Promise<{ number: bigint; hash: Hex }> {
     return this.call(async () => {
       const block = await this.client.getBlock({ blockTag: 'latest' });
-      if (block.number === null || block.hash === null)
-        throw new RpcError('transient');
       return { number: block.number, hash: block.hash };
     });
   }
   getFinalized(): Promise<bigint> {
     return this.call(async () => {
       const block = await this.client.getBlock({ blockTag: 'finalized' });
-      if (block.number === null) throw new RpcError('transient');
       return block.number;
     });
   }

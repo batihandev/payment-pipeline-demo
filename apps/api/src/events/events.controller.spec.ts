@@ -75,7 +75,9 @@ describe('stream cap', () => {
       let text = '';
       response.setEncoding('utf8');
       response.on('data', (chunk: string) => (text += chunk));
-      response.on('end', () => resolve(text));
+      response.on('end', () => {
+        resolve(text);
+      });
     });
   const from = (address: string) => ({ 'CF-Connecting-IP': address });
 

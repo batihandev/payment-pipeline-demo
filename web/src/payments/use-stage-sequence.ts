@@ -66,8 +66,10 @@ export function startStageSequence(
     push(next: StageFrame) {
       const frames = framesBetween(latest, next);
       latest = next;
-      if (frames.length === 1 && !queue.length && shown?.stage === next.stage)
-        return show(next);
+      if (frames.length === 1 && !queue.length && shown?.stage === next.stage) {
+        show(next);
+        return;
+      }
       if (frames.length === 1 && queue.at(-1)?.stage === next.stage)
         queue[queue.length - 1] = next;
       else queue.push(...frames);
@@ -92,7 +94,9 @@ export function useStageSequence(
   const id = payment?.id;
   useEffect(() => {
     if (!id) return;
-    const started = startStageSequence((frame) => setShown({ id, frame }));
+    const started = startStageSequence((frame) => {
+      setShown({ id, frame });
+    });
     sequence.current = started;
     return () => {
       started.stop();

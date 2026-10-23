@@ -21,11 +21,9 @@ export class ShopNoticesProcessor
   }
 
   onApplicationBootstrap(): void {
-    void this.worker
-      .run()
-      .catch((error: unknown) =>
-        this.logger.error('Shop notice worker stopped.', errorFields(error)),
-      );
+    void this.worker.run().catch((error: unknown) => {
+      this.logger.error('Shop notice worker stopped.', errorFields(error));
+    });
   }
 
   async onModuleDestroy(): Promise<void> {

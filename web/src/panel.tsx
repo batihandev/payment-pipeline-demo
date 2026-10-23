@@ -50,9 +50,9 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
           <Checkout
             apiBaseUrl={apiBaseUrl}
             repoUrl={import.meta.env.VITE_REPO_URL}
-            onOrder={(id) =>
-              setVisitorOrders((previous) => new Set([...previous, id]))
-            }
+            onOrder={(id) => {
+              setVisitorOrders((previous) => new Set([...previous, id]));
+            }}
           />
         </div>
         <div className="tp-widget-column">

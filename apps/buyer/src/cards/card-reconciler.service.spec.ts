@@ -233,7 +233,7 @@ it('stops the run without incidents when Stripe rejects the API key', async () =
 });
 
 it('stops the run without incidents when no Stripe key is set', async () => {
-  const noop = async () => undefined;
+  const noop = () => Promise.resolve(undefined);
   const keyless = new SdkStripeClient(
     undefined,
     new RpcLimiter(1000, 1000, Date.now, noop, noop),

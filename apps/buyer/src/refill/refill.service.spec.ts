@@ -31,10 +31,11 @@ beforeEach(async () => {
   await database.db.walletNonce.deleteMany();
   chain = new ScriptedChain();
   usdc = { [buyer]: 4_999_999n, [shop]: 38_000_000n };
-  chain.getBalances = async (address) => ({
-    native: 1n,
-    usdc: usdc[address] ?? 0n,
-  });
+  chain.getBalances = (address) =>
+    Promise.resolve({
+      native: 1n,
+      usdc: usdc[address] ?? 0n,
+    });
   sender = new OrderSenderService(
     database.db,
     chain,

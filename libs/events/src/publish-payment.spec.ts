@@ -20,9 +20,9 @@ it('publishes the complete saved payment with integer amounts encoded as decimal
     });
     await subscriber.subscribe(paymentChannel);
     const delivered = new Promise<string>((resolve) =>
-      subscriber.once('message', (_channel, message: string) =>
-        resolve(message),
-      ),
+      subscriber.once('message', (_channel, message: string) => {
+        resolve(message);
+      }),
     );
     await publishPayment(publisher, row);
     const message = JSON.parse(await delivered) as Record<string, unknown>;

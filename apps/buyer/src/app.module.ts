@@ -1,6 +1,5 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
-import { ConfigService } from '@nestjs/config';
 import { appConfig } from '../../../libs/config/src/config.module';
 import { DatabaseModule } from '../../../libs/db/src';
 import { QueueErrorsModule } from '../../../libs/queues/src';
@@ -21,12 +20,7 @@ export class AppModule {
         QueueErrorsModule.forRoot({
           message: 'Buyer queue connection failed.',
         }),
-        BullModule.forRootAsync({
-          inject: [ConfigService],
-          useFactory: (config: ConfigService<BuyerConfig, true>) => ({
-            connection: { url: config.get('REDIS_URL', { infer: true }) },
-          }),
-        }),
+        BullModule.forRoot({ connection: { url: config.REDIS_URL } }),
         JobsModule,
       ],
     };

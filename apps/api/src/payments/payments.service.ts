@@ -31,9 +31,9 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
 
   /** A page refetches after each live event, so a cached list must never predate one. */
   onModuleInit(): void {
-    this.subscription = this.events.paymentChanged.subscribe(() =>
-      this.cached.clear(),
-    );
+    this.subscription = this.events.paymentChanged.subscribe(() => {
+      this.cached.clear();
+    });
   }
 
   onModuleDestroy(): void {

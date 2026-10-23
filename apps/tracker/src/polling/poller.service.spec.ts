@@ -75,8 +75,9 @@ it('uses one head and finalized snapshot for every payment in a pass', async () 
   f.chain.logs = [log()];
   let head = 20n;
   let finalized = 0n;
-  f.chain.getHead = async () => ({ number: head++, hash: log().blockHash });
-  f.chain.getFinalized = async () => finalized++;
+  f.chain.getHead = () =>
+    Promise.resolve({ number: head++, hash: log().blockHash });
+  f.chain.getFinalized = () => Promise.resolve(finalized++);
   await poller.pass();
   expect(await f.db.payment.findFirstOrThrow()).toMatchObject({
     confirmations: 10,

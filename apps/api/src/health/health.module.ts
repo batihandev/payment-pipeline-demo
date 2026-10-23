@@ -5,7 +5,6 @@ import type { Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { ChainModule } from '../../../../libs/chain/src/chain.module';
 import { ChainClient } from '../../../../libs/chain/src/chain-client';
-import type { Address } from '../../../../libs/chain/src/chain-client';
 import { OrdersModule } from '../../../../libs/orders/src';
 import {
   QUEUES,
@@ -63,8 +62,8 @@ import { HealthController } from './health.controller';
         return new ChainSnapshotService(
           chain,
           {
-            buyer: config.get('BUYER_ADDRESS', { infer: true }) as Address,
-            shop: config.get('SHOP_ADDRESS', { infer: true }) as Address,
+            buyer: config.get('BUYER_ADDRESS', { infer: true }),
+            shop: config.get('SHOP_ADDRESS', { infer: true }),
           },
           {
             now: clock,

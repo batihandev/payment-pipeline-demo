@@ -67,14 +67,15 @@ export class TrackerChain implements Pick<
     5,
     30000,
     () => this.time,
-    async (ms) => {
+    (ms) => {
       this.time += ms;
+      return Promise.resolve();
     },
   );
   private request<T>(work: () => T): Promise<T> {
-    return this.limiter.run(async () => {
+    return this.limiter.run(() => {
       this.starts.push(this.time);
-      return work();
+      return Promise.resolve(work());
     });
   }
   getHead = () =>

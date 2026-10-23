@@ -91,7 +91,7 @@ async function lockPayment(
   intent: Stripe.PaymentIntent,
   now: Date,
 ): Promise<{ payment: OrderPayment; order: Order } | null> {
-  const orderId = intent.metadata?.orderId;
+  const orderId = intent.metadata.orderId;
   if (!orderId || !UUID.test(orderId)) return null;
   // The buyer locks the order before it writes the payment, so both sides agree on the order.
   await lockOrder(tx, orderId);

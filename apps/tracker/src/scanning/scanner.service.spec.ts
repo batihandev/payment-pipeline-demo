@@ -141,8 +141,9 @@ it('backs off transient failures and stores an exhausted range as a gap', async 
     f.chain,
     trackerConfig(),
     () => now,
-    async (ms) => {
+    (ms) => {
       waits.push(ms);
+      return Promise.resolve();
     },
     () => 0.5,
   );
@@ -240,7 +241,7 @@ it('initialises the cursor once when two first scans race', async () => {
   };
   const readsMeet = meeting();
   const writesMeet = meeting();
-  const bound = (target: object, key: string | symbol) => {
+  const bound = (target: object, key: string | symbol): unknown => {
     const value: unknown = Reflect.get(target, key, target);
     return typeof value === 'function' ? value.bind(target) : value;
   };

@@ -162,10 +162,11 @@ it('creates the payment when the webhook arrives first', async () => {
   const [created] = await payments();
   await (
     await cardSender({
-      createPayment: async () => ({
-        id: 'pi_1',
-        receiptUrl: 'https://pay.stripe.com/receipts/test',
-      }),
+      createPayment: () =>
+        Promise.resolve({
+          id: 'pi_1',
+          receiptUrl: 'https://pay.stripe.com/receipts/test',
+        }),
     })
   ).charge(id, false);
   const all = await payments();
@@ -387,8 +388,8 @@ it('records card_failed once for a declined card', async () => {
   await db().order.update({ where: { id }, data: { sendState: 'pending' } });
   await (
     await cardSender({
-      createPayment: async () => {
-        throw new CardDeclinedError('card_declined', 'pi_1');
+      createPayment: () => {
+        return Promise.reject(new CardDeclinedError('card_declined', 'pi_1'));
       },
     })
   ).charge(id, false);

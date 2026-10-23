@@ -10,9 +10,9 @@ export async function subscribeEvents(
   receivers: Record<string, (body: string) => void>,
 ): Promise<() => Promise<void>> {
   const subscriber = redis.duplicate();
-  subscriber.on('error', (error) =>
-    logger.error('Event subscription connection failed.', errorFields(error)),
-  );
+  subscriber.on('error', (error) => {
+    logger.error('Event subscription connection failed.', errorFields(error));
+  });
   subscriber.on('message', (channel, body) => receivers[channel]?.(body));
   try {
     await subscriber.subscribe(...Object.keys(receivers));

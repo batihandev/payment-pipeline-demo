@@ -44,6 +44,14 @@ const row = (id: string, stage = 'received') => ({
   noteKinds: ['payment_reorg'],
   version: 0,
 });
+/** The URL a fetch was called with, whatever form it took. */
+const href = (input: RequestInfo | URL) =>
+  typeof input === 'string'
+    ? input
+    : input instanceof URL
+      ? input.href
+      : input.url;
+
 function server() {
   let payments = [row('old')];
   let settledCount = 0;
@@ -77,7 +85,7 @@ function server() {
           balances: {},
         },
       });
-      const path = new URL(String(url)).pathname;
+      const path = new URL(href(url)).pathname;
       requested.push(path);
       await hold;
       if (!available) throw new Error('offline');
@@ -86,8 +94,8 @@ function server() {
       return new Response(
         JSON.stringify(
           snapshot[
-            (new URL(String(url)).pathname +
-              new URL(String(url)).search) as keyof typeof snapshot
+            (new URL(href(url)).pathname +
+              new URL(href(url)).search) as keyof typeof snapshot
           ],
         ),
       );
@@ -125,17 +133,17 @@ describe('live payments', () => {
     const s = server();
     const stop = s.client.subscribe(() => {});
     s.stream.open();
-    await vi.waitFor(() =>
-      expect(s.client.getSnapshot().data?.payments[0]?.id).toBe('old'),
-    );
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().data?.payments[0]?.id).toBe('old');
+    });
     s.stream.disconnect();
     s.replace();
     s.stream.open();
-    await vi.waitFor(() =>
+    await vi.waitFor(() => {
       expect(s.client.getSnapshot().data?.payments.map((p) => p.id)).toEqual([
         'new',
-      ]),
-    );
+      ]);
+    });
     expect(s.client.getSnapshot().data?.stats.settledCount).toBe(1);
     expect(s.client.getSnapshot().data?.daily).toEqual([]);
     stop();
@@ -144,7 +152,9 @@ describe('live payments', () => {
     const s = server();
     const stop = s.client.subscribe(() => {});
     s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
     s.stream.disconnect();
     let release = () => {};
     s.hold(
@@ -162,9 +172,9 @@ describe('live payments', () => {
     expect(s.client.getSnapshot().status).toBe('live');
     expect(s.client.getSnapshot().data?.payments[0]?.id).toBe('old');
     release();
-    await vi.waitFor(() =>
-      expect(s.client.getSnapshot().data?.payments[0]?.confirmations).toBe(3),
-    );
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().data?.payments[0]?.confirmations).toBe(3);
+    });
     expect(s.client.getSnapshot().data?.payments[0]?.order?.item).toBe(
       'Gold rubber duck',
     );
@@ -177,7 +187,9 @@ describe('live payments', () => {
     const s = server();
     const stop = s.client.subscribe(() => {});
     s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
     s.stream.send({ ...row('old', 'settled'), noteKinds: undefined });
     expect(
       s.client.getSnapshot().data?.payments.find((p) => p.id === 'old'),
@@ -195,7 +207,9 @@ describe('live payments', () => {
     const s = server();
     const stop = s.client.subscribe(() => {});
     s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
     expect(s.requested).not.toContain('/incidents');
     expect(s.client.getSnapshot().data).not.toHaveProperty('incidents');
     stop();
@@ -205,19 +219,21 @@ describe('live payments', () => {
     const s = server();
     const stop = s.client.subscribe(() => {});
     s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
-    await vi.waitFor(() =>
-      expect(s.client.getSnapshot().data?.health?.head).toBe('100'),
-    );
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().data?.health?.head).toBe('100');
+    });
     const health = () => s.requested.filter((p) => p === '/health').length;
     expect(health()).toBe(1);
     for (let index = 0; index < 5; index++) {
       s.stream.send(row(`event-${index}`, 'received'));
-      await vi.waitFor(() =>
+      await vi.waitFor(() => {
         expect(
           s.requested.filter((p) => p === '/payments').length,
-        ).toBeGreaterThan(index + 1),
-      );
+        ).toBeGreaterThan(index + 1);
+      });
       await vi.advanceTimersByTimeAsync(0);
     }
     expect(health()).toBe(1);
@@ -230,7 +246,9 @@ describe('live payments', () => {
     s.healthOffline();
     const stop = s.client.subscribe(() => {});
     s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
     expect(s.client.getSnapshot().data?.payments[0]?.id).toBe('old');
     expect(s.client.getSnapshot().data?.health).toBeNull();
     stop();
@@ -239,9 +257,9 @@ describe('live payments', () => {
     const s = server();
     s.offline();
     const stop = s.client.subscribe(() => {});
-    await vi.waitFor(() =>
-      expect(s.client.getSnapshot().status).toBe('offline'),
-    );
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('offline');
+    });
     expect(s.client.getSnapshot().data).toBeNull();
     stop();
   });
@@ -249,7 +267,9 @@ describe('live payments', () => {
     const s = server();
     const stop = s.client.subscribe(() => {});
     s.stream.disconnect();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
     expect(s.client.getSnapshot().data?.payments[0]?.id).toBe('old');
     stop();
   });
@@ -257,7 +277,9 @@ describe('live payments', () => {
     const s = server();
     const stop = s.client.subscribe(() => {});
     s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
     const before = s.client.getSnapshot();
     s.stream.disconnect();
     expect(s.client.getSnapshot()).toBe(before);
@@ -283,7 +305,9 @@ describe('live payments', () => {
     const s = server();
     const stop = s.client.subscribe(() => {});
     s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
     s.offline();
     const requests = s.requested.length;
     await vi.advanceTimersByTimeAsync(15000);
@@ -327,12 +351,14 @@ describe('test purchases', () => {
     const calls: { url: string; init?: RequestInit }[] = [];
     const client = new PaymentsClient(
       'https://api.example.com/',
-      async (url, init) => {
-        calls.push({ url: String(url), init });
-        return new Response(JSON.stringify({ error: 'card_unavailable' }), {
-          status: 503,
-          headers: { 'retry-after': '5' },
-        });
+      (url, init) => {
+        calls.push({ url: href(url), init });
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: 'card_unavailable' }), {
+            status: 503,
+            headers: { 'retry-after': '5' },
+          }),
+        );
       },
       () => new FakeEventSource(),
     );
@@ -376,7 +402,7 @@ describe('receipt window', () => {
     const client = new PaymentsClient(
       'https://api.example.com',
       async (url, init) => {
-        const { pathname, search, searchParams } = new URL(String(url));
+        const { pathname, search, searchParams } = new URL(href(url));
         if (pathname === '/payments') {
           reads.push(search);
           signals.push(init?.signal ?? undefined);
@@ -409,13 +435,15 @@ describe('receipt window', () => {
     const showMore = async () => {
       const shown = data().receipts.length;
       client.showMoreReceipts();
-      await vi.waitFor(() =>
-        expect(data().receipts.length).toBeGreaterThan(shown),
-      );
+      await vi.waitFor(() => {
+        expect(data().receipts.length).toBeGreaterThan(shown);
+      });
     };
     const load = async () => {
       stream.open();
-      await vi.waitFor(() => expect(client.getSnapshot().status).toBe('live'));
+      await vi.waitFor(() => {
+        expect(client.getSnapshot().status).toBe('live');
+      });
     };
     return {
       client,
@@ -483,11 +511,11 @@ describe('receipt window', () => {
     changed.stage = 'settled';
     s.stream.disconnect();
     s.stream.open();
-    await vi.waitFor(() =>
+    await vi.waitFor(() => {
       expect(s.data().receipts.find((p) => p.id === 'p110')?.stage).toBe(
         'settled',
-      ),
-    );
+      );
+    });
     expect(s.reads.slice(reads)).toEqual(['?limit=120']);
     expect(Math.min(...counts.slice(updates))).toBe(120);
     expect(s.data().receipts).toHaveLength(120);
@@ -526,9 +554,9 @@ describe('receipt window', () => {
       confirmations: 0,
       receivedAt: null,
     });
-    await vi.waitFor(() =>
-      expect(s.data().receipts[0]?.noteKinds).toEqual(['payment_reorg']),
-    );
+    await vi.waitFor(() => {
+      expect(s.data().receipts[0]?.noteKinds).toEqual(['payment_reorg']);
+    });
     expect(s.data().receipts[0]).toMatchObject({ stage: 'sent', version: 4 });
     stop();
   });
@@ -585,7 +613,9 @@ describe('receipt window', () => {
     const release = s.holdReads();
     const reads = s.reads.length;
     s.client.showMoreReceipts();
-    await vi.waitFor(() => expect(s.reads.length).toBe(reads + 1));
+    await vi.waitFor(() => {
+      expect(s.reads.length).toBe(reads + 1);
+    });
     // The read is in flight; the event moves p110 on, and the read's copy is the older one.
     s.stream.send({ ...s.rows[110], stage: 'settled', version: 5 });
     const p110 = () => s.data().receipts.find((p) => p.id === 'p110');
@@ -593,7 +623,9 @@ describe('receipt window', () => {
     // Notes come from incidents, so the read's notes apply even to a row the client keeps.
     Object.assign(s.rows[110] ?? {}, { noteKinds: ['paid_after_expiry'] });
     release();
-    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(140));
+    await vi.waitFor(() => {
+      expect(s.data().receipts).toHaveLength(140);
+    });
     expect(p110()).toMatchObject({
       stage: 'settled',
       version: 5,
@@ -614,7 +646,9 @@ describe('receipt window', () => {
     expect(s.data().olderReceipts).toBe('loading');
     expect(s.data().receipts).toHaveLength(120);
     release();
-    await vi.waitFor(() => expect(s.data().olderFailed).toBe(true));
+    await vi.waitFor(() => {
+      expect(s.data().olderFailed).toBe(true);
+    });
     expect(s.data().olderReceipts).toBe('more');
     expect(s.data().receipts).toHaveLength(120);
     expect(s.client.getSnapshot().status).toBe('live');
@@ -622,7 +656,9 @@ describe('receipt window', () => {
     const reads = s.reads.length;
     s.client.showMoreReceipts();
     expect(s.data().olderFailed).toBe(false);
-    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(140));
+    await vi.waitFor(() => {
+      expect(s.data().receipts).toHaveLength(140);
+    });
     expect(s.reads.slice(reads)).toEqual(['?limit=140']);
     stop();
   });
@@ -661,7 +697,9 @@ describe('receipt window', () => {
     const reads = s.reads.length;
     s.stream.disconnect();
     s.stream.open();
-    await vi.waitFor(() => expect(s.reads.length).toBeGreaterThan(reads));
+    await vi.waitFor(() => {
+      expect(s.reads.length).toBeGreaterThan(reads);
+    });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(s.data().olderFailed).toBe(false);
     expect(s.data().olderReceipts).toBe('more');
@@ -674,7 +712,9 @@ describe('receipt window', () => {
     await s.load();
     s.server.fail = true;
     s.client.showMoreReceipts();
-    await vi.waitFor(() => expect(s.data().olderFailed).toBe(true));
+    await vi.waitFor(() => {
+      expect(s.data().olderFailed).toBe(true);
+    });
     s.server.fail = false;
     await s.client.refresh();
     expect(s.data().olderFailed).toBe(false);
@@ -711,12 +751,16 @@ describe('receipt window', () => {
     const reads = s.reads.length;
     void s.client.refresh();
     s.client.showMoreReceipts();
-    await vi.waitFor(() => expect(s.reads.length).toBe(reads + 2));
+    await vi.waitFor(() => {
+      expect(s.reads.length).toBe(reads + 2);
+    });
     const [first, second] = s.signals.slice(reads);
     expect(first?.aborted).toBe(true);
     expect(second?.aborted).toBe(false);
     release();
-    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(40));
+    await vi.waitFor(() => {
+      expect(s.data().receipts).toHaveLength(40);
+    });
     stop();
     expect(second?.aborted).toBe(false);
   });

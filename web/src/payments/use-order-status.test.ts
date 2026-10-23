@@ -29,7 +29,9 @@ afterEach(() => {
 describe('order status', () => {
   it('reads the order once when it is accepted and once when the stream reopens', async () => {
     const stream = updates();
-    const request = vi.fn(async () => json({ position: 2, closed: false }));
+    const request = vi.fn(() =>
+      Promise.resolve(json({ position: 2, closed: false })),
+    );
     const seen: OrderStatus[] = [];
     followOrder({
       client: stream.client,
@@ -50,7 +52,7 @@ describe('order status', () => {
   });
   it('does not poll the order', async () => {
     const stream = updates();
-    const request = vi.fn(async () => json({}, 503));
+    const request = vi.fn(() => Promise.resolve(json({}, 503)));
     followOrder({
       client: stream.client,
       orderId: 'a',
@@ -66,7 +68,7 @@ describe('order status', () => {
     followOrder({
       client: stream.client,
       orderId: 'a',
-      request: async () => json({ position: 3, closed: false }),
+      request: () => Promise.resolve(json({ position: 3, closed: false })),
       onStatus: (status) => seen.push(status),
     });
     await vi.advanceTimersByTimeAsync(0);
@@ -84,7 +86,7 @@ describe('order status', () => {
     followOrder({
       client: stream.client,
       orderId: 'a',
-      request: async () => json({ position: 0, closed: false }),
+      request: () => Promise.resolve(json({ position: 0, closed: false })),
       onStatus: (status) => seen.push(status),
     });
     await vi.advanceTimersByTimeAsync(0);

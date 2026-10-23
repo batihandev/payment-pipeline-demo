@@ -29,7 +29,9 @@ export function RailChoice({
             type="button"
             className={`tp-rail-button tp-rail-${rail}`}
             disabled={disabled || (rail === 'card' && card !== 'available')}
-            onClick={() => onChoose(rail)}
+            onClick={() => {
+              onChoose(rail);
+            }}
           >
             {rail === chosen && busyLabel ? busyLabel : label}
           </button>

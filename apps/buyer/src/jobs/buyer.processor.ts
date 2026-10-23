@@ -60,11 +60,9 @@ export class BuyerProcessor
   }
 
   onApplicationBootstrap(): void {
-    void this.worker
-      .run()
-      .catch((error: unknown) =>
-        this.logger.error('Buyer worker stopped.', errorFields(error)),
-      );
+    void this.worker.run().catch((error: unknown) => {
+      this.logger.error('Buyer worker stopped.', errorFields(error));
+    });
   }
 
   async onModuleDestroy(): Promise<void> {

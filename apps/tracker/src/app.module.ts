@@ -1,6 +1,5 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 import { BullModule, getQueueToken } from '@nestjs/bullmq';
-import { ConfigService } from '@nestjs/config';
 import type { Queue } from 'bullmq';
 import { appConfig } from '../../../libs/config/src/config.module';
 import { DatabaseModule } from '../../../libs/db/src';
@@ -32,12 +31,7 @@ export class AppModule {
         QueueErrorsModule.forRoot({
           message: 'Tracker queue connection failed.',
         }),
-        BullModule.forRootAsync({
-          inject: [ConfigService],
-          useFactory: (config: ConfigService<TrackerConfig, true>) => ({
-            connection: { url: config.get('REDIS_URL', { infer: true }) },
-          }),
-        }),
+        BullModule.forRoot({ connection: { url: config.REDIS_URL } }),
         BullModule.registerQueue({ name: QUEUES.tracker }),
         DeliveryModule,
         NoticesModule,

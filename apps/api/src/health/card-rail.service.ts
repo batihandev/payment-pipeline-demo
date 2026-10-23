@@ -16,8 +16,12 @@ export class CardRailService {
 
   async available(): Promise<boolean> {
     return (
-      Boolean(this.config.get('STRIPE_WEBHOOK_SECRET', { infer: true })) &&
-      hasSavedCard(await this.customers.demo())
+      // Typed by key: ConfigService's path typing reads an optional key as `undefined`.
+      Boolean(
+        this.config.get<ApiConfig['STRIPE_WEBHOOK_SECRET']>(
+          'STRIPE_WEBHOOK_SECRET',
+        ),
+      ) && hasSavedCard(await this.customers.demo())
     );
   }
 }

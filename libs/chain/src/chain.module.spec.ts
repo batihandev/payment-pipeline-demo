@@ -67,6 +67,10 @@ it('derives the buyer and shop addresses from their keys once, for the buyer onl
     privateKeyToAccount(shopKey as `0x${string}`).address,
   );
   const tracker = await build('tracker');
-  expect(() => tracker.get(BUYER_ADDRESS)).toThrow();
-  expect(() => tracker.get(SHOP_ADDRESS)).toThrow();
+  expect(() => {
+    tracker.get(BUYER_ADDRESS);
+  }).toThrow();
+  expect(() => {
+    tracker.get(SHOP_ADDRESS);
+  }).toThrow();
 });

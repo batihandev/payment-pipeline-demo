@@ -59,7 +59,7 @@ it('retries a sweep with its saved amount and signature after an uncertain broad
   chain.fail = 'broadcast';
   await expect(sweep.run(day)).rejects.toMatchObject({ kind: 'timeout' });
   chain.fail = null;
-  chain.getBalances = async () => ({ native: 1n, usdc: 1000n });
+  chain.getBalances = () => Promise.resolve({ native: 1n, usdc: 1000n });
   await sweep.run(day);
   expect(chain.signed).toBe(1);
   expect(chain.accepted.size).toBe(1);
@@ -68,23 +68,22 @@ it('retries a sweep with its saved amount and signature after an uncertain broad
   ).toMatchObject({ amount: 500n, sendState: 'sent' });
 });
 it('leaves an empty shop balance alone without signing a zero transfer', async () => {
-  chain.getBalances = async () => ({ native: 1n, usdc: 0n });
+  chain.getBalances = () => Promise.resolve({ native: 1n, usdc: 0n });
   await sweep.run(day);
   expect(chain.signed).toBe(0);
   expect(await database.db.sweep.count()).toBe(0);
 });
 
 it('records a balance lookup failure without signing or losing the next retry', async () => {
-  chain.getBalances = async () => {
-    throw new RpcError('rate_limit');
+  chain.getBalances = () => {
+    return Promise.reject(new RpcError('rate_limit'));
   };
   await expect(sweep.run(day)).rejects.toMatchObject({ kind: 'rate_limit' });
   expect(chain.signed).toBe(0);
-  expect(await database.db.incident.findFirstOrThrow()).toMatchObject({
-    kind: 'sweep_failed',
-    howHandled: expect.stringContaining('No transfer was signed'),
-  });
-  chain.getBalances = async () => ({ native: 1n, usdc: 500n });
+  const incident = await database.db.incident.findFirstOrThrow();
+  expect(incident.kind).toBe('sweep_failed');
+  expect(incident.howHandled).toContain('No transfer was signed');
+  chain.getBalances = () => Promise.resolve({ native: 1n, usdc: 500n });
   await sweep.run(day);
   expect(chain.accepted.size).toBe(1);
 });

@@ -82,7 +82,9 @@ it('publishes persisted events over Redis and marks each published snapshot', as
   try {
     await subscriber.subscribe(paymentChannel);
     const received = new Promise<string>((resolve) =>
-      subscriber.once('message', (_channel, body: string) => resolve(body)),
+      subscriber.once('message', (_channel, body: string) => {
+        resolve(body);
+      }),
     );
     await new DeliveryService(f.db, redis, queue, () => now).flush();
     expect((await f.db.paymentEvent.findFirstOrThrow()).publishedAt).toEqual(
@@ -101,8 +103,8 @@ it('retains an event through publication failure and delivers it after restart',
   f.chain.logs = [log(19n)];
   await scanner.scanOnce();
   const unavailable = {
-    publish: async () => {
-      throw new Error('unavailable');
+    publish: () => {
+      return Promise.reject(new Error('unavailable'));
     },
   };
   await expect(
@@ -164,7 +166,9 @@ it('publishes an order event when an order closes', async () => {
   try {
     await subscriber.subscribe(orderChannel);
     const received = new Promise<string>((resolve) =>
-      subscriber.once('message', (_channel, body: string) => resolve(body)),
+      subscriber.once('message', (_channel, body: string) => {
+        resolve(body);
+      }),
     );
     await new DeliveryService(f.db, redis, queue, () => now).flush();
     expect(JSON.parse(await received)).toEqual({

@@ -1,5 +1,6 @@
 import {
   Catch,
+  HttpException,
   Logger,
   type ArgumentsHost,
   type ExceptionFilter,
@@ -27,14 +28,17 @@ function statusOf(error: unknown): number {
     return error.status;
   if ('statusCode' in error && typeof error.statusCode === 'number')
     return error.statusCode;
-  if ('getStatus' in error && typeof error.getStatus === 'function')
-    return Number(error.getStatus());
+  if (error instanceof HttpException) return error.getStatus();
   return 500;
 }
 
 /** The matched route's method and pattern, such as `GET /payments/:id`, never the URL. */
 function routeOf(request: Request): string | undefined {
-  const path: unknown = request.route?.path;
+  const route: unknown = request.route;
+  const path =
+    typeof route === 'object' && route !== null && 'path' in route
+      ? route.path
+      : undefined;
   return typeof path === 'string' ? `${request.method} ${path}` : undefined;
 }
 

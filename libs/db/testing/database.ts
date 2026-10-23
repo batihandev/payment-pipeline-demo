@@ -66,13 +66,10 @@ function sqlStatements(sql: string): string[] {
     .split(/(\$\$[\s\S]*?\$\$)/)
     .reduce<string[]>(
       (statements, part, index) => {
-        if (index % 2) {
-          statements[statements.length - 1] += part;
-          return statements;
-        }
+        const [current = '', ...earlier] = statements.toReversed();
+        if (index % 2) return [...earlier.toReversed(), current + part];
         const [first = '', ...rest] = part.split(';');
-        statements[statements.length - 1] += first;
-        return [...statements, ...rest];
+        return [...earlier.toReversed(), current + first, ...rest];
       },
       [''],
     )

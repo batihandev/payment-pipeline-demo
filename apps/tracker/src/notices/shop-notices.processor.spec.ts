@@ -10,7 +10,7 @@ const job = (attemptsMade: number, attempts: number) =>
   }) as unknown as Job<{ paymentId: string }>;
 
 it('sends the notice and marks only the last attempt as exhausted', async () => {
-  const send = jest.fn(async () => undefined);
+  const send = jest.fn(() => Promise.resolve(undefined));
   const processor = new ShopNoticesProcessor({ send } as never);
   await processor.process(job(0, 5));
   await processor.process(job(4, 5));

@@ -3,7 +3,7 @@ module.exports = {
   moduleNameMapper: { '^(\\.{1,2}/.*)\\.js$': '$1' },
   roots: ['<rootDir>/apps', '<rootDir>/libs'],
   testMatch: ['**/*.spec.ts'],
-  transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.spec.json' }] },
+  transform: { '^.+\\.ts$': ['ts-jest', { tsconfig: 'tsconfig.json' }] },
   collectCoverageFrom: [
     'apps/**/*.ts',
     'libs/**/*.ts',

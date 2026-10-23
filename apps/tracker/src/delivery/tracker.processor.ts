@@ -25,11 +25,9 @@ export class TrackerProcessor
   }
 
   onApplicationBootstrap(): void {
-    void this.worker
-      .run()
-      .catch((error: unknown) =>
-        this.logger.error('Tracker worker stopped.', errorFields(error)),
-      );
+    void this.worker.run().catch((error: unknown) => {
+      this.logger.error('Tracker worker stopped.', errorFields(error));
+    });
   }
 
   async onModuleDestroy(): Promise<void> {

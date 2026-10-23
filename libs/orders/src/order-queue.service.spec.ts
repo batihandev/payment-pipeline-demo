@@ -70,7 +70,9 @@ it('runs a visitor purchase ahead of queued scheduled sends without pacing or a 
   );
   try {
     const first = new Promise<void>((resolve, reject) => {
-      worker.once('completed', () => resolve());
+      worker.once('completed', () => {
+        resolve();
+      });
       worker.once('error', reject);
     });
     const running = worker.run();
