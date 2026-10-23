@@ -176,7 +176,7 @@ Confirmation progress reads "N of `CONFIRMATIONS`" until the threshold, then "`C
 
 Data comes from the REST routes on load and `/events` afterwards. Payment events and `/payments` rows carry the payment's version; when the page holds two copies of a payment, it shows the one with the higher version, so a reorg that moves a payment back to `sent` shows as `sent`. Note kinds always come from the latest read. Explorer links point to the configured block explorer.
 
-Failures are quiet. Once the page has data, a failed refresh or health read keeps what is shown and tries again on the next 15-second cycle. The page shows the offline state only when it has no data. A closed or failed live stream is reopened after 30 seconds, and the open stream triggers a refresh.
+Failures are quiet. Once the page has data, a failed refresh or health read keeps what is shown and tries again on the next 15-second cycle. The page shows the offline state only when it has no data. A dropped live stream is reconnected by the browser; a refused one, such as a `429` from the stream cap, is reopened after 30 seconds. Each open triggers a refresh, and the events of a 500 ms burst share one refresh.
 
 ## Data model
 

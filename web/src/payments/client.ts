@@ -49,14 +49,19 @@ function newestFirst(a: Payment, b: Payment): number {
     ) || b.id.localeCompare(a.id)
   );
 }
+/** How long a refused stream waits before the page opens it again. */
 export const STREAM_REOPEN_MS = 30000;
+/** EventSource's readyState once the browser has given up on the stream and will not retry. */
+const STREAM_CLOSED = 2;
+/** Events within this window share one read. */
+export const EVENT_REFRESH_MS = 500;
 
 /** A change to a visitor order, or the stream opening, which may mean updates were missed. */
 export type OrderUpdate = OrderEvent | QueueEvent | { type: 'opened' };
 
 export type EventStream = Pick<
   EventSource,
-  'onopen' | 'onerror' | 'onmessage' | 'close'
+  'onopen' | 'onerror' | 'onmessage' | 'close' | 'readyState'
 > & {
   addEventListener(
     type: 'order' | 'queue',
@@ -117,6 +122,8 @@ export class PaymentsClient {
   private buffered = new Map<string, PaymentEvent>();
   private retry?: ReturnType<typeof setTimeout>;
   private reopen?: ReturnType<typeof setTimeout>;
+  /** The read that the latest events asked for, waiting for the burst to end. */
+  private eventRefresh?: ReturnType<typeof setTimeout>;
   private health: Health | null = null;
   private healthTimer?: ReturnType<typeof setInterval>;
   readonly baseUrl: string;
@@ -146,6 +153,8 @@ export class PaymentsClient {
         this.stream = undefined;
         clearTimeout(this.retry);
         clearTimeout(this.reopen);
+        clearTimeout(this.eventRefresh);
+        this.eventRefresh = undefined;
         clearInterval(this.healthTimer);
       }
     };
@@ -201,9 +210,13 @@ export class PaymentsClient {
         const update = readEvent(orderUpdate, event.data);
         if (update) this.sendOrderUpdate(update);
       });
+    // A dropped connection is retried by the browser, and the next open reads the window again.
+    // A refused one, such as a 429 from the stream cap, is closed for good, so the page opens a
+    // new stream after a pause.
     this.stream.onerror = () => {
-      if (!this.listeners.size) return;
-      this.stream?.close();
+      if (!this.listeners.size || this.stream?.readyState !== STREAM_CLOSED)
+        return;
+      this.stream.close();
       this.stream = undefined;
       clearTimeout(this.reopen);
       this.reopen = setTimeout(() => {
@@ -221,8 +234,16 @@ export class PaymentsClient {
           this.publish();
         }
       }
-      if (!this.failing) void this.refresh();
+      this.refreshForEvents();
     };
+  }
+  /** Reads once for a burst of events: the first schedules the read and later ones join it. */
+  private refreshForEvents() {
+    if (this.failing || this.eventRefresh) return;
+    this.eventRefresh = setTimeout(() => {
+      this.eventRefresh = undefined;
+      void this.refresh();
+    }, EVENT_REFRESH_MS);
   }
   private buffer(payment: PaymentEvent) {
     const held = this.buffered.get(payment.id);

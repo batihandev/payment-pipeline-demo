@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  EVENT_REFRESH_MS,
   HEALTH_EVERY_MS,
   PaymentsClient,
   READ_TIMEOUT_MS,
@@ -11,6 +12,8 @@ import { health, order, payment } from './test-fixtures';
 import type { Payment, Stats } from './types';
 
 class FakeEventSource implements EventStream {
+  readyState = 0;
+  closed = false;
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
@@ -21,11 +24,22 @@ class FakeEventSource implements EventStream {
   emit(type: string, value: unknown) {
     this.named.get(type)?.({ data: JSON.stringify(value) });
   }
-  close() {}
+  close() {
+    this.closed = true;
+    this.readyState = 2;
+  }
   open() {
+    this.readyState = 1;
     this.onopen?.();
   }
+  /** A dropped connection, which the browser reconnects on its own. */
   disconnect() {
+    this.readyState = 0;
+    this.onerror?.();
+  }
+  /** A refused connection, such as a 429 from the stream cap, which the browser does not retry. */
+  refuse() {
+    this.readyState = 2;
     this.onerror?.();
   }
   send(value: unknown) {
@@ -328,18 +342,60 @@ describe('live payments', () => {
     expect(s.client.getSnapshot()).toBe(before);
     stop();
   });
-  it('reopens the stream after 30 s', async () => {
+  it('lets the browser reconnect a dropped stream', async () => {
+    vi.useFakeTimers();
+    const s = server();
+    const stop = s.client.subscribe(() => {});
+    s.stream.open();
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
+    s.stream.disconnect();
+    await vi.advanceTimersByTimeAsync(STREAM_REOPEN_MS * 2);
+    expect(s.streamsOpened()).toBe(1);
+    expect(s.stream.closed).toBe(false);
+    const reads = s.requested.filter((p) => p === '/payments').length;
+    s.stream.open();
+    await vi.waitFor(() => {
+      expect(s.requested.filter((p) => p === '/payments')).toHaveLength(
+        reads + 1,
+      );
+    });
+    stop();
+  });
+  it('reads once for a burst of events', async () => {
+    vi.useFakeTimers();
+    const s = server();
+    const stop = s.client.subscribe(() => {});
+    s.stream.open();
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
+    const reads = () => s.requested.filter((p) => p === '/payments').length;
+    const before = reads();
+    for (let index = 0; index < 5; index++) {
+      s.stream.send(row(`burst-${index}`));
+      await vi.advanceTimersByTimeAsync(EVENT_REFRESH_MS / 5);
+    }
+    await vi.advanceTimersByTimeAsync(EVENT_REFRESH_MS);
+    expect(reads()).toBe(before + 1);
+    expect(s.client.getSnapshot().data?.payments.map((p) => p.id)).toContain(
+      'burst-4',
+    );
+    stop();
+  });
+  it('reopens a refused stream after 30 s', async () => {
     vi.useFakeTimers();
     const s = server();
     const stop = s.client.subscribe(() => {});
     expect(s.streamsOpened()).toBe(1);
-    s.stream.disconnect();
+    s.stream.refuse();
     await vi.advanceTimersByTimeAsync(STREAM_REOPEN_MS - 1);
     expect(s.streamsOpened()).toBe(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(s.streamsOpened()).toBe(2);
     stop();
-    s.stream.disconnect();
+    s.stream.refuse();
     await vi.advanceTimersByTimeAsync(STREAM_REOPEN_MS * 2);
     expect(s.streamsOpened()).toBe(2);
   });
