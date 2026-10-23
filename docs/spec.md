@@ -22,7 +22,7 @@ A demo of payment tracking. A bot buys silly items from a demo shop and pays in 
 ## Stack
 
 - pnpm workspace. Node 24 LTS, TypeScript strict.
-- NestJS monorepo on the Fastify adapter: `apps/buyer`, `apps/tracker`, `apps/api`, shared code in `libs/`.
+- NestJS monorepo: `apps/buyer`, `apps/tracker`, `apps/api`, shared code in `libs/`. The API runs on the Express adapter with controllers, DTOs validated by `class-validator`, `@nestjs/throttler` for the request limit and `@nestjs/config` for settings. Buyer and tracker are application contexts whose jobs are `@nestjs/bullmq` processors. Each app is split into feature modules (a module, its controller or processor, its service and DTOs).
 - `web/`: React + Vite, one page.
 - Prisma with PostgreSQL. Redis for BullMQ, request rate limits and pub/sub.
 - viem for chain access.
@@ -62,7 +62,9 @@ Two kinds of purchase share one send path but not their limits: **scheduled** pu
 | Visitor purchases per UTC day | 2,000                      | `409` until 00:00 UTC            |
 | Buyer gas below `GAS_FLOOR`   | —                          | `503` until topped up            |
 
-The response returns the order id and its queue position, so the page can highlight the order and show "queued" until it is sent.## RPC budget and latency
+The response returns the order id and its queue position, so the page can highlight the order and show "queued" until it is sent.
+
+## RPC budget and latency
 
 The services run on free RPC tiers, so request volume is designed to stay inside their rate limits.
 
@@ -129,6 +131,12 @@ Stripe (phase 2): `received → processing → settled → notified`, without a 
 | `POST /shop/notices`      | Receives the signed notice. Verifies the signature and timestamp, then marks the payment notified                                 |
 | `POST /stripe/webhook`    | Phase 2                                                                                                                           |
 
+**Request limit:** one budget per client address across all routes, `API_REQUESTS_PER_MINUTE` (default 300) a minute, answered with `429`, `rate_limited` and `Retry-After`. `POST /shop/notices` is outside it; its signature is its check. The counted address is the same one the visitor limits and the stream cap use.
+
+**Live streams:** `GET /events` allows `STREAMS_PER_IP` (default 5) open connections per client address and `STREAMS_TOTAL` (default 500) in all. A connection over either cap gets `429`, `rate_limited` and `Retry-After: 5`. A closed connection frees its slot. The stream sends a `heartbeat` event every 15 seconds while idle, and a client that stops reading is dropped.
+
+**Payments cache:** `GET /payments` keeps its result per `limit` for 5 seconds, and concurrent requests share one database read.
+
 Every 4xx answers with a fixed body. Errors that reach the error filter get a fixed code for their status (for example `bad_request`, `not_found`, `rate_limited`), and routes send their own fixed codes (for example `busy`, `daily_limit`); bodies never echo messages. CORS is allowed only for the configured web origin. With `TRUST_PROXY` set, client addresses come from the proxy's forwarding header, so per-visitor limits apply to visitors rather than to the proxy.
 
 ### web
@@ -144,6 +152,8 @@ One React + Vite page with three parts:
 Confirmation progress reads "N of 10" until the threshold, then "10+ confirmations". The full panel adds a chart of settled payments per day and per week over the retained period, from `/stats/daily`, with scheduled and visitor purchases stacked and the average time to settle as a line.
 
 Data comes from the REST routes on load and `/events` afterwards. Explorer links point to the configured block explorer.
+
+Failures are quiet. Once the page has data, a failed refresh or health read keeps what is shown and tries again on the next 15-second cycle. The page shows the offline state only when it has no data. A closed or failed live stream is reopened after 30 seconds, and the open stream triggers a refresh.
 
 ## Data model
 
@@ -188,7 +198,8 @@ The monitor sends one message when a condition starts, one when it clears, and a
 
 ## Testing
 
-- Unit tests: pacing and budget reservation (including concurrent reservations at the cap), visitor limits and queue positions, refill triggering and cooldown, the in-flight cap, unique-amount allocation and matching, idempotent send retries, credit-once under repeated logs, the hold before a send, the two-run drop check, buyer-only matching and donations, cursor and overlap logic (silent re-reads versus recorded duplicates), range halving and gaps, reorg handling, notice signature verification, retention, and the monitoring signals.
+- Unit tests: the request limit, the stream cap and the `/payments` cache, pacing and budget reservation (including concurrent reservations at the cap), visitor limits and queue positions, refill triggering and cooldown, the in-flight cap, unique-amount allocation and matching, idempotent send retries, credit-once under repeated logs, the hold before a send, the two-run drop check, buyer-only matching and donations, cursor and overlap logic (silent re-reads versus recorded duplicates), range halving and gaps, reorg handling, notice signature verification, retention, and the monitoring signals.
+- API routes are tested over HTTP with `supertest` against an application built with `@nestjs/testing`.
 - Tracker logic runs against an RPC interface so tests can feed it scripted blocks and logs, including failures and reorgs.
 - One manual smoke run against Base Sepolia, documented in the README.
 

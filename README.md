@@ -4,12 +4,14 @@ A payment-tracking demo follows test USDC purchases on Base Sepolia from broadca
 
 ```mermaid
 flowchart LR
-  Buyer --> Chain[Base Sepolia]
-  Chain --> Tracker
+  Buyer["Buyer (jobs)"] --> Chain[Base Sepolia]
+  Chain --> Tracker["Tracker (jobs, poll loop)"]
   Buyer --> DB[(PostgreSQL)]
   Tracker --> DB
-  Tracker --> Redis[(Redis)]
-  Redis --> API
+  Buyer <--> Redis[(Redis)]
+  Tracker <--> Redis
+  Redis --> API["API (Express)"]
+  Tracker -- signed notice --> API
   API --> DB
   API --> Web[React dashboard]
 ```
@@ -73,6 +75,8 @@ Each tracker pass re-reads the last `RESCAN_BLOCKS` blocks. A log re-read inside
 
 Each 4xx answers with a fixed body. Errors that reach the error filter get a fixed code for their status, such as `bad_request` or `rate_limited`, and routes send their own fixed codes, such as `busy` or `daily_limit`; bodies never echo messages.
 
+The API allows each client address `API_REQUESTS_PER_MINUTE` requests a minute across all routes (signed shop notices excepted) and answers over-limit requests with `429` and `Retry-After`. `/events` holds at most `STREAMS_PER_IP` open connections per address and `STREAMS_TOTAL` in all, and `/payments` is cached for 5 seconds.
+
 Set `TRUST_PROXY=true` when the API runs behind exactly one reverse proxy or tunnel. Client addresses then come from the proxy's forwarding header, so per-visitor limits apply to visitors rather than to the proxy. Leave it `false` when clients connect directly.
 
 ## Monitoring
@@ -120,7 +124,7 @@ pnpm start:api
 pnpm dev:web
 ```
 
-Buyer and tracker run as Nest application contexts. The API serves HTTP on port 3000 by default. Vite serves the web app at `http://localhost:5173`. Each backend validates its configuration at startup. `pnpm dev:buyer`, `pnpm dev:tracker` and `pnpm dev:api` rebuild on changes.
+Buyer and tracker run as Nest application contexts. All three stop cleanly on `SIGTERM` and `SIGINT`: the buyer waits for its active job, the tracker finishes its current pass, and workers, queues and Redis close. The API serves HTTP on port 3000 by default. Vite serves the web app at `http://localhost:5173`. Each backend validates its configuration at startup. `pnpm dev:buyer`, `pnpm dev:tracker` and `pnpm dev:api` rebuild on changes.
 
 PostgreSQL binds to `127.0.0.1:55432` and Redis to `127.0.0.1:56379`. `pnpm db:migrate` waits for healthy services before running Prisma migrations. Compose volumes persist their data. `docker compose down` stops the services.
 
@@ -172,7 +176,7 @@ Optional settings and their defaults:
 
 ## Workspace and checks
 
-`apps/` holds the NestJS services. `libs/db` owns the Prisma schema and client module; `libs/config` owns environment validation. Shared chain, domain and event code belongs in `libs/chain`, `libs/core` and `libs/events`. `web/` uses React, Vite and Vitest; `scripts/` holds command-line utilities.
+`apps/api` is an Express application; `apps/buyer` and `apps/tracker` are application contexts with `@nestjs/bullmq` processors. Each app is split into feature folders holding a module, its controller or processor, its service and `dto/` classes, with specs beside the files they test. `libs/db` owns the Prisma schema and client module; `libs/config` owns environment validation. Shared chain, domain and event code belongs in `libs/chain`, `libs/core` and `libs/events`. `web/` uses React, Vite and Vitest; `scripts/` holds command-line utilities.
 
 ```sh
 pnpm lint
@@ -180,7 +184,7 @@ pnpm test
 pnpm build
 ```
 
-Jest tests prove that each app's startup validation reports every missing required variable without exposing environment values. Vitest runs the web test suite. The initial migration creates the payment tables, foreign keys and unique constraints; Prisma generates the client during the build.
+Jest tests prove that each app's startup validation reports every missing required variable without exposing environment values. API route tests send HTTP requests with `supertest` to an application built with `@nestjs/testing`, covering the request limit, the stream cap, the payments cache, validation and signed notices. Vitest runs the web test suite, including the page's behaviour when the API or live stream fails. The initial migration creates the payment tables, foreign keys and unique constraints; Prisma generates the client during the build.
 
 ## Buyer jobs
 
