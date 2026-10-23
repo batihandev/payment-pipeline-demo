@@ -141,36 +141,40 @@ PostgreSQL binds to `127.0.0.1:55432` and Redis to `127.0.0.1:56379`. `pnpm db:m
 
 Optional settings and their defaults:
 
-| Setting                                      | Default                        | Meaning                                                                                         |
-| -------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------- |
-| `API_PORT`                                   | 3000                           | API HTTP port                                                                                   |
-| `API_REQUESTS_PER_MINUTE`                    | 300                            | Requests one client address may make per minute, except signed shop notices                     |
-| `BLOCK_EXPLORER_URL`                         | `https://sepolia.basescan.org` | Base URL for explorer links                                                                     |
-| `CONFIRMATIONS`                              | 10                             | Blocks on top of a payment's block before it settles                                            |
-| `START_BLOCK`                                | `RESCAN_BLOCKS` below the head | First block the tracker scans when it has no cursor                                             |
-| `RESCAN_BLOCKS`                              | 5                              | Blocks re-read on each tracker pass                                                             |
-| `MAX_RANGE`, `MIN_RANGE`                     | 500, 10                        | Largest and smallest block range per log query; a rejected range is halved down to the minimum  |
-| `ACTIVE_POLL_MS`, `IDLE_POLL_MS`             | 2000, 30000                    | Tracker poll interval while payments are open, and otherwise                                    |
-| `RPC_COOLDOWN_MS`                            | 30000                          | Pause for a service after a rate-limit response                                                 |
-| `RPC_MAX_ATTEMPTS`, `GAP_MAX_ATTEMPTS`       | 3, 5                           | Attempts per RPC call, and attempts per stored scan gap                                         |
-| `ORDER_TTL_MINUTES`                          | 30                             | Minutes before an unpaid order expires                                                          |
-| `QUIET_START_HOUR_UTC`, `QUIET_END_HOUR_UTC` | 0, 7                           | UTC hours in which scheduled purchases are less likely                                          |
-| `LOW_NATIVE_BALANCE`, `LOW_USDC_BALANCE`     | 1000000000000000, 10000000     | Balances (wei, micro-units) below which `/health` flags `lowNative` / `lowUsdc`                 |
-| `RPC_REQUESTS_PER_SECOND_TRACKER`            | 2                              | Tracker's RPC request rate                                                                      |
-| `RPC_REQUESTS_PER_SECOND_BUYER`              | 2                              | Buyer's RPC request rate                                                                        |
-| `RPC_REQUESTS_PER_SECOND_API`                | 1                              | API's RPC request rate; the three together stay within the provider's rate                      |
-| `DAILY_COUNT_CAP`, `DAILY_AMOUNT_CAP`        | 100, 200000000                 | Scheduled purchases per UTC day and their total in micro-units (200 USDC)                       |
-| `VISITOR_PER_MINUTE`, `VISITOR_PER_DAY`      | 10, 100                        | Visitor purchase limits per client                                                              |
-| `VISITOR_QUEUE_LIMIT`                        | 30                             | Visitor purchases waiting at once                                                               |
-| `VISITOR_DAILY_LIMIT`                        | 2000                           | Visitor purchases per UTC day across all clients                                                |
-| `DONATION_MIN`                               | 10000                          | Smallest donation in micro-units (0.01 USDC) the API lists, streams and counts                  |
-| `GAS_FLOOR`                                  | 200000000000000                | Native balance floor in wei (0.0002 ETH)                                                        |
-| `REFILL_BELOW`, `REFILL_COOLDOWN_SECONDS`    | 5000000, 20                    | Buyer USDC balance in micro-units (5 USDC) that triggers a refill, and the wait between refills |
-| `MAX_IN_FLIGHT`                              | 10                             | Buyer purchases in flight at once                                                               |
-| `RETENTION_DAYS`                             | 30                             | Days that records are kept                                                                      |
-| `STREAMS_PER_IP`                             | 5                              | Open live-stream connections allowed per client address                                         |
-| `STREAMS_TOTAL`                              | 500                            | Open live-stream connections allowed in all                                                     |
-| `TRUST_PROXY`                                | `false`                        | Set `true` to read the client address from proxy headers                                        |
+| Setting                                      | Default                        | Meaning                                                                                                |
+| -------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------ |
+| `API_PORT`                                   | 3000                           | API HTTP port                                                                                          |
+| `API_REQUESTS_PER_MINUTE`                    | 300                            | Requests one client address may make per minute, except signed shop notices                            |
+| `BLOCK_EXPLORER_URL`                         | `https://sepolia.basescan.org` | Base URL for explorer links                                                                            |
+| `CONFIRMATIONS`                              | 10                             | Blocks on top of a payment's block before it settles                                                   |
+| `START_BLOCK`                                | `RESCAN_BLOCKS` below the head | First block the tracker scans when it has no cursor                                                    |
+| `RESCAN_BLOCKS`                              | 5                              | Blocks re-read on each tracker pass                                                                    |
+| `MAX_RANGE`, `MIN_RANGE`                     | 500, 10                        | Largest and smallest block range per log query; a rejected range is halved down to the minimum         |
+| `ACTIVE_POLL_MS`, `IDLE_POLL_MS`             | 2000, 30000                    | Tracker poll interval while payments are open, and otherwise                                           |
+| `RPC_COOLDOWN_MS`                            | 30000                          | Pause for a service after a rate-limit response                                                        |
+| `RPC_MAX_ATTEMPTS`, `GAP_MAX_ATTEMPTS`       | 3, 5                           | Attempts per RPC call, and attempts per stored scan gap                                                |
+| `ORDER_TTL_MINUTES`                          | 30                             | Minutes before an unpaid order expires                                                                 |
+| `QUIET_START_HOUR_UTC`, `QUIET_END_HOUR_UTC` | 0, 7                           | UTC hours in which scheduled purchases are less likely                                                 |
+| `LOW_NATIVE_BALANCE`, `LOW_USDC_BALANCE`     | 1000000000000000, 10000000     | Balances (wei, micro-units) below which `/health` flags `lowNative` / `lowUsdc`                        |
+| `RPC_REQUESTS_PER_SECOND_TRACKER`            | 2                              | Tracker's RPC request rate                                                                             |
+| `RPC_REQUESTS_PER_SECOND_BUYER`              | 2                              | Buyer's RPC request rate                                                                               |
+| `RPC_REQUESTS_PER_SECOND_API`                | 1                              | API's RPC request rate; the three together stay within the provider's rate                             |
+| `DAILY_COUNT_CAP`, `DAILY_AMOUNT_CAP`        | 100, 200000000                 | Scheduled purchases per UTC day and their total in micro-units (200 USDC)                              |
+| `VISITOR_PER_MINUTE`, `VISITOR_PER_DAY`      | 10, 100                        | Visitor purchase limits per client                                                                     |
+| `VISITOR_QUEUE_LIMIT`                        | 30                             | Visitor purchases waiting at once                                                                      |
+| `VISITOR_DAILY_LIMIT`                        | 2000                           | Visitor purchases per UTC day across all clients                                                       |
+| `DONATION_MIN`                               | 10000                          | Smallest donation in micro-units (0.01 USDC) the API lists, streams and counts                         |
+| `GAS_FLOOR`                                  | 200000000000000                | Native balance floor in wei (0.0002 ETH)                                                               |
+| `REFILL_BELOW`, `REFILL_COOLDOWN_SECONDS`    | 5000000, 20                    | Buyer USDC balance in micro-units (5 USDC) that triggers a refill, and the wait between refills        |
+| `MAX_IN_FLIGHT`                              | 10                             | Buyer purchases in flight at once                                                                      |
+| `RETENTION_DAYS`                             | 30                             | Days that records are kept                                                                             |
+| `STREAMS_PER_IP`                             | 5                              | Open live-stream connections allowed per client address                                                |
+| `STREAMS_TOTAL`                              | 500                            | Open live-stream connections allowed in all                                                            |
+| `STRIPE_SECRET_KEY`                          | unset                          | Stripe test-mode secret key (`sk_test_…`); the card rail is off without it; other prefixes are refused |
+| `STRIPE_WEBHOOK_SECRET`                      | unset                          | Stripe webhook signing secret (`whsec_…`); the API answers 404 on the webhook route without it         |
+| `STRIPE_PAYMENT_METHOD`                      | `pm_card_visa`                 | Test payment method the setup script attaches to the demo customer                                     |
+| `STRIPE_REQUESTS_PER_SECOND`                 | 5                              | Buyer's Stripe request rate                                                                            |
+| `TRUST_PROXY`                                | `false`                        | Set `true` to read the client address from proxy headers                                               |
 
 `NOTICE_SECRET` must contain at least 32 characters. Missing or invalid variables are reported together by name without printing their values. `TEST_DATABASE_URL` points database tests at the local PostgreSQL instance; tests needing isolation create and reset their own schema. `TEST_REDIS_URL` points Redis and queue tests at a Redis database separate from `REDIS_URL`, because they clear their queues. `pnpm test:local` starts the `docker-compose.yml` PostgreSQL and Redis, applies the migrations and runs the suite against them. `VITE_API_URL` supplies the web app's API origin and `VITE_REPO_URL` the repository link in the "How this works" text.
 

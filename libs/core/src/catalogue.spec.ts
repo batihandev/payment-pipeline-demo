@@ -10,9 +10,9 @@ it('offers twenty distinct items with positive whole-cent prices', () => {
   }
 });
 
-it('prices every item between $0.10 and $2.00', () => {
+it('prices every item between $0.50 and $2.00', () => {
   for (const item of catalogue) {
-    expect(item.priceCents).toBeGreaterThanOrEqual(10n);
+    expect(item.priceCents).toBeGreaterThanOrEqual(50n);
     expect(item.priceCents).toBeLessThanOrEqual(200n);
   }
 });

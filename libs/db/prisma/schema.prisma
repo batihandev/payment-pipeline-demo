@@ -19,6 +19,11 @@ enum OrderSource {
   visitor
 }
 
+enum PaymentRail {
+  chain
+  card
+}
+
 enum PaymentProvider {
   chain
   stripe
@@ -40,6 +45,9 @@ model Order {
   expectedAmount    BigInt      @map("expected_amount")
   status            OrderStatus @default(open)
   source            OrderSource
+  rail              PaymentRail @default(chain)
+  customerId        String?     @map("customer_id") @db.Uuid
+  customer          Customer?   @relation(fields: [customerId], references: [id])
   nonce             BigInt?
   signedTransaction String?     @map("signed_transaction")
   transactionHash   String?     @map("transaction_hash")
@@ -50,7 +58,30 @@ model Order {
   payments          Payment[]
 
   @@index([expectedAmount, createdAt])
+  @@index([customerId])
   @@map("orders")
+}
+
+model Customer {
+  id                    String   @id @default(uuid()) @db.Uuid
+  name                  String
+  chainAddress          String?  @map("chain_address")
+  stripeCustomerId      String?  @unique @map("stripe_customer_id")
+  stripePaymentMethodId String?  @map("stripe_payment_method_id")
+  cardBrand             String?  @map("card_brand")
+  cardLast4             String?  @map("card_last4")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  orders                Order[]
+
+  @@map("customers")
+}
+
+model StripeEvent {
+  id         String   @id
+  type       String
+  receivedAt DateTime @default(now()) @map("received_at") @db.Timestamptz(3)
+
+  @@map("stripe_events")
 }
 
 model DailyBudget {
@@ -91,6 +122,7 @@ model Payment {
   transactionHash String?         @map("transaction_hash")
   logIndex        Int?            @map("log_index")
   fromAddress     String?         @map("from_address")
+  receiptUrl      String?         @map("receipt_url")
   donation        Boolean         @default(false)
   final           Boolean         @default(false)
   sentAt          DateTime?       @map("sent_at") @db.Timestamptz(3)
