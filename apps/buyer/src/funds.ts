@@ -14,7 +14,10 @@ export class BuyerFunds {
     private readonly now = Date.now,
   ) {}
 
-  /** Whether the buyer's USDC, less transfers still in flight, can pay the order. */
+  /**
+   * Whether the buyer's USDC, less transfers still in flight, can pay the order.
+   * A failed balance read counts as not covered, so the send is held and retried.
+   */
   async covers(orderId: string): Promise<boolean> {
     const order = await this.db.order.findUnique({ where: { id: orderId } });
     if (
@@ -25,12 +28,13 @@ export class BuyerFunds {
     )
       return true;
     const [usdc, inFlight] = await Promise.all([
-      this.balance(),
+      this.balance().catch(() => null),
       this.db.order.aggregate({
         _sum: { expectedAmount: true },
         where: { sendState: 'sent', payments: { some: { stage: 'sent' } } },
       }),
     ]);
+    if (usdc === null) return false;
     return usdc - (inFlight._sum.expectedAmount ?? 0n) >= order.expectedAmount;
   }
 

@@ -80,6 +80,17 @@ it('lets an already-signed order through without reading the balance', async () 
   expect(chain.getBalances).not.toHaveBeenCalled();
 });
 
+it('holds the order when the balance read fails', async () => {
+  const row = await order(1_000_000n);
+  const chain = {
+    getBalances: jest.fn(async () => {
+      throw new Error('rpc down');
+    }),
+  };
+  const funds = new BuyerFunds(database.db, chain, buyer);
+  expect(await funds.covers(row.id)).toBe(false);
+});
+
 it('reads the balance once per ttl', async () => {
   const row = await order(1_000_000n);
   const chain = chainWith(5_000_000n);
