@@ -6,7 +6,10 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ChainClient } from '../../../../libs/chain/src/chain-client';
 import { testDatabase } from '../../../../libs/db/testing/database';
 import { PrismaService } from '../../../../libs/db/src';
-import { PurchasesService } from '../../../../libs/orders/src';
+import {
+  OrderQueueService,
+  PurchasesService,
+} from '../../../../libs/orders/src';
 import type { BuyerJobData } from '../../../../libs/queues/src';
 import { testRedisUrl } from '../../../../libs/config/testing/redis';
 import { createTestApp } from '../../testing/app';
@@ -342,4 +345,32 @@ it('gives orders created in the same millisecond distinct positions', async () =
     positions.push((await position(row.id)).body.position);
   expect(positions).toEqual([1, 2, 3]);
   expect((await buy()).body.position).toBe(4);
+});
+
+it('answers with the item and price of the order it created', async () => {
+  const response = await buy();
+  const order = await database.db.order.findUniqueOrThrow({
+    where: { id: response.body.orderId },
+  });
+  expect(response.body).toEqual({
+    orderId: order.id,
+    position: 1,
+    item: order.item,
+    price: order.price.toString(),
+  });
+});
+
+it('keeps the item and price when sending could not be queued', async () => {
+  jest
+    .spyOn(app.get(OrderQueueService), 'queueSend')
+    .mockRejectedValue(new Error('queue down'));
+  const response = await buy();
+  const order = await database.db.order.findFirstOrThrow();
+  expect(response.statusCode).toBe(503);
+  expect(response.body).toEqual({
+    error: 'purchase_pending',
+    orderId: order.id,
+    item: order.item,
+    price: order.price.toString(),
+  });
 });

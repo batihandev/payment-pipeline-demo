@@ -1,10 +1,54 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { paymentsClient, usePayments } from './use-payments';
 import { useQueuePosition } from './use-queue-position';
 import { ConfirmationBar, Receipt } from './receipt';
+import { useStageSequence } from './use-stage-sequence';
 import { confirmationsNeeded, money, purchaseMessage, stageView } from './view';
 import './styles.css';
 import './checkout.css';
+
+const labelSwapMs = 250;
+
+/** Slides the old label out and the new one in; the first label appears without a transition. */
+function StateLabel({ label }: { label: string }) {
+  const [shown, setShown] = useState({
+    current: label,
+    previous: '',
+    swaps: 0,
+  });
+  if (shown.current !== label)
+    setShown({
+      current: label,
+      previous: shown.current,
+      swaps: shown.swaps + 1,
+    });
+  useEffect(() => {
+    if (!shown.swaps) return;
+    const timer = setTimeout(
+      () => setShown((state) => ({ ...state, previous: '' })),
+      labelSwapMs,
+    );
+    return () => clearTimeout(timer);
+  }, [shown.swaps]);
+  return (
+    <span className="tp-terminal-label">
+      <strong
+        key={shown.swaps}
+        className={`tp-terminal-state ${shown.swaps ? 'tp-terminal-state-in' : ''}`}
+      >
+        {shown.current}
+      </strong>
+      {shown.previous && (
+        <strong
+          className="tp-terminal-state tp-terminal-state-out"
+          aria-hidden="true"
+        >
+          {shown.previous}
+        </strong>
+      )}
+    </span>
+  );
+}
 
 export function Checkout({
   apiBaseUrl,
@@ -22,11 +66,16 @@ export function Checkout({
   const [message, setMessage] = useState('');
   const [accepted, setAccepted] = useState(0);
   const inFlight = useRef(false);
-  const payment = data?.payments.find((p) => p.orderId === orderId);
+  const [ordered, setOrdered] = useState<{ item: string; price: string }>();
+  const latest = data?.payments.find((p) => p.orderId === orderId);
+  const frame = useStageSequence(latest);
+  const payment = latest && frame ? { ...latest, ...frame } : undefined;
   const view =
     payment && data
       ? stageView(payment, confirmationsNeeded(data.health))
       : null;
+  const item = ordered?.item ?? latest?.order?.item;
+  const price = ordered?.price ?? latest?.order?.price ?? latest?.amount;
   const position = useQueuePosition(
     apiBaseUrl,
     orderId ?? null,
@@ -48,10 +97,17 @@ export function Checkout({
       const body = (await response.json()) as {
         orderId?: string;
         position?: number;
+        item?: string;
+        price?: string;
         error?: string;
       };
       if (body.orderId) {
         setOrderId(body.orderId);
+        setOrdered(
+          body.item && body.price
+            ? { item: body.item, price: body.price }
+            : undefined,
+        );
         setAccepted(response.ok ? (body.position ?? 0) : 0);
         onOrder?.(body.orderId);
         setMessage(
@@ -131,23 +187,19 @@ export function Checkout({
                         ? 'Connecting to the demo…'
                         : '')}
           </div>
+          {item && price && (
+            <div className="tp-item" key={orderId}>
+              <span className="tp-mono">YOUR ITEM</span>
+              <strong>{item}</strong>
+              <span className="tp-price">{money(price)}</span>
+            </div>
+          )}
           {payment && data && view && (
             <>
-              <div className="tp-item" key={payment.id}>
-                <span className="tp-mono">YOUR ITEM</span>
-                <strong>
-                  {payment.order?.item ?? 'Order details pending'}
-                </strong>
-                <span className="tp-price">
-                  {money(payment.order?.price ?? payment.amount)}
-                </span>
-              </div>
               <div className="tp-terminal" aria-label="Payment terminal">
                 <div className="tp-terminal-screen">
                   <span className="tp-mono">TEST NETWORK</span>
-                  <strong key={payment.stage} className="tp-terminal-state">
-                    {view.label}
-                  </strong>
+                  <StateLabel label={view.label} />
                   <div
                     className="tp-block-stack"
                     aria-hidden="true"

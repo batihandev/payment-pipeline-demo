@@ -84,10 +84,20 @@
   font-size: 11px;
   letter-spacing: 0.1em;
 }
+.tp-terminal-label {
+  display: grid;
+  overflow: hidden;
+}
 .tp-terminal-state {
+  grid-area: 1 / 1;
   font-size: 26px;
   line-height: 1.2;
-  animation: tp-print 0.25s ease-out;
+}
+.tp-terminal-state-in {
+  animation: tp-label-in 0.25s ease-out;
+}
+.tp-terminal-state-out {
+  animation: tp-label-out 0.25s ease-in forwards;
 }
 .tp-terminal-keys {
   display: grid;
@@ -105,7 +115,10 @@
   background: #a3bea1;
 }
 .tp-printed-receipt {
-  animation: tp-print 0.6s ease-out;
+  animation: tp-receipt-out 0.6s ease-out;
+}
+.tp-printed-receipt .tp-receipt {
+  animation: none;
 }
 .tp-how {
   align-self: flex-start;
@@ -119,6 +132,36 @@
   to {
     transform: translateY(0);
     opacity: 1;
+  }
+}
+@keyframes tp-label-in {
+  from {
+    transform: translateY(-60%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@keyframes tp-label-out {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(60%);
+    opacity: 0;
+  }
+}
+@keyframes tp-receipt-out {
+  from {
+    transform: translateY(-48px);
+    clip-path: inset(0 -24px 100% -24px);
+  }
+  to {
+    transform: translateY(0);
+    clip-path: inset(0 -24px -24px -24px);
   }
 }
 @keyframes tp-item-in {
@@ -135,6 +178,9 @@
   .tp-checkout * {
     animation: none !important;
     transition: none !important;
+  }
+  .tp-terminal-state-out {
+    display: none;
   }
 }
 

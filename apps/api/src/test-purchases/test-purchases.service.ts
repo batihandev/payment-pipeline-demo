@@ -103,10 +103,15 @@ export class TestPurchasesService {
     );
   }
 
-  buy(address: string): Promise<{ orderId: string; position: number }> {
+  buy(address: string): Promise<{
+    orderId: string;
+    position: number;
+    item: string;
+    price: string;
+  }> {
     return this.exclusive(async () => {
       const now = this.now();
-      let orderId: string | undefined;
+      let created: { orderId: string; item: string; price: string } | undefined;
       try {
         if (await this.paused(now)) throw new ApiError(503, 'paused');
         if (
@@ -121,13 +126,17 @@ export class TestPurchasesService {
           this.limits.dailyLimit,
         );
         if (!order) throw new ApiError(409, 'daily_limit');
-        orderId = order.id;
+        created = {
+          orderId: order.id,
+          item: order.item,
+          price: order.price.toString(),
+        };
         await this.orderQueue.queueSend(order.id, 'visitor');
-        return { orderId: order.id, position: await this.position(order) };
+        return { ...created, position: await this.position(order) };
       } catch (error) {
         if (error instanceof ApiError) throw error;
-        throw orderId
-          ? new ApiError(503, 'purchase_pending', { orderId })
+        throw created
+          ? new ApiError(503, 'purchase_pending', created)
           : new ApiError(503, 'purchases_unavailable');
       }
     });
