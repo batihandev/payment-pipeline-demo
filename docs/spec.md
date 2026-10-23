@@ -1,4 +1,4 @@
-# testnet-payments: design spec
+# payment-pipeline-demo: design spec
 
 Date: 2026-10-20, revised 2026-10-23. Status: current.
 
@@ -219,7 +219,7 @@ The monitor sends one message when a condition starts, one when it clears, and a
   - Any other type is stored and ignored. An intent changes a payment only when its metadata names a card order, its amount equals the order's price in cents, its currency is `usd` and the order has no other PaymentIntent. Otherwise the event is stored, nothing changes and an `unmatched` incident is recorded.
 - **Order of events:** the webhook can arrive before the buyer has written its payment. It then creates the payment from the event, and the buyer's later write adds its send time and receipt link without duplicating the row or moving its stage back. Orders are row-locked, so the two writers agree.
 - **Rate limit:** the buyer's Stripe requests go through a limiter of their own (`STRIPE_REQUESTS_PER_SECOND`, default 5) with the same cooldown as RPC rate limits (`RPC_COOLDOWN_MS`), shown as `cooldowns.stripe` in `/health`. A rate-limited, unreachable or erroring Stripe delays card sends only, retried with backoff; chain sends and the API are unaffected.
-- **Locally:** after `stripe login` (or with `--api-key`), `stripe listen --forward-to localhost:<API_PORT>/stripe/webhooks` delivers webhooks and prints the `whsec_…` value for `STRIPE_WEBHOOK_SECRET`. A Dashboard endpoint at `/stripe/webhooks` subscribes to `payment_intent.processing`, `payment_intent.succeeded` and `payment_intent.payment_failed`.
+- **Locally:** after `stripe login` (or with `--api-key`), `stripe listen --events payment_intent.processing,payment_intent.succeeded,payment_intent.payment_failed --forward-to localhost:<API_PORT>/stripe/webhooks` delivers webhooks and prints the `whsec_…` value for `STRIPE_WEBHOOK_SECRET`. A Dashboard endpoint at `/stripe/webhooks` subscribes to `payment_intent.processing`, `payment_intent.succeeded` and `payment_intent.payment_failed`.
 - **Not handled:** refunds and disputes.
 
 ## Testing

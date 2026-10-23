@@ -1,4 +1,4 @@
-# testnet-payments
+# payment-pipeline-demo
 
 A payment-tracking demo follows test purchases through two payment rails into one ledger. On the chain rail, test USDC moves on Base Sepolia from broadcast through confirmation, settlement and shop notification. On the card rail, a saved Stripe test card is charged and the payment settles from a signed Stripe webhook. Separate buyer, tracker and API services share a PostgreSQL ledger and Redis, with a React dashboard showing payment progress.
 
@@ -159,7 +159,7 @@ The card rail uses Stripe test mode only. The buyer charges only with a test sec
 Set it up in this order. Run the services from the repository root with a filled `.env`:
 
 1. Put a test secret key (`sk_test_…`) in `STRIPE_SECRET_KEY`, then run `pnpm stripe:setup`. It needs `DATABASE_URL` and `BUYER_PRIVATE_KEY` too, and the database must be migrated. It creates the demo customer in the database and in Stripe, attaches a test card (`STRIPE_PAYMENT_METHOD`, `pm_card_visa` by default) as the customer's payment method, and stores the Stripe IDs, the card brand and the last four digits. It records the chain address of `BUYER_PRIVATE_KEY` on the customer. It prints only the two IDs and the card label, and a second run changes nothing.
-2. Sign in to the Stripe CLI with `stripe login`, or pass a test key with `--api-key`. Then forward webhooks to the API: `stripe listen --forward-to localhost:<API_PORT>/stripe/webhooks` (3000 by default). It prints a signing secret that starts with `whsec_`. Put it in `STRIPE_WEBHOOK_SECRET`. For a deployed API, add a webhook endpoint at `/stripe/webhooks` in the Stripe Dashboard instead, subscribed to `payment_intent.processing`, `payment_intent.succeeded` and `payment_intent.payment_failed`, and use that endpoint's signing secret.
+2. Sign in to the Stripe CLI with `stripe login`, or pass a test key with `--api-key`. Then forward webhooks to the API: `stripe listen --events payment_intent.processing,payment_intent.succeeded,payment_intent.payment_failed --forward-to localhost:<API_PORT>/stripe/webhooks` (3000 by default). It prints a signing secret that starts with `whsec_`. Put it in `STRIPE_WEBHOOK_SECRET`. For a deployed API, add a webhook endpoint at `/stripe/webhooks` in the Stripe Dashboard instead, subscribed to `payment_intent.processing`, `payment_intent.succeeded` and `payment_intent.payment_failed`, and use that endpoint's signing secret.
 3. Restart the API so it reads the secret, and start the buyer after step 1 so it reads the key.
 
 Until step 2 is done the API answers every webhook with `400`, so a card payment stays in `processing` until reconciliation reads it from Stripe. The card rail is offered only when the saved card exists and `STRIPE_WEBHOOK_SECRET` is set: then `/health` reports `cardAvailable: true` and the checkout shows the card button. Scheduled card purchases run only when the buyer has `STRIPE_SECRET_KEY`.

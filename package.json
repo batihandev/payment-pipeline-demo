@@ -1,5 +1,5 @@
 {
-  "name": "testnet-payments",
+  "name": "payment-pipeline-demo",
   "version": "0.0.0",
   "private": true,
   "packageManager": "pnpm@10.34.7",
