@@ -8,7 +8,7 @@
     "pnpm": ">=10 <11"
   },
   "scripts": {
-    "lint": "eslint . && tsc --noEmit && tsc --noEmit -p tsconfig.build.json && prettier --check .",
+    "lint": "eslint . && tsc --noEmit && tsc --noEmit -p tsconfig.build.json && pnpm --filter web exec tsc --noEmit && prettier --check .",
     "format": "prettier --write .",
     "test": "node --experimental-vm-modules --env-file-if-exists=.env node_modules/jest/bin/jest.js --runInBand && pnpm --filter web test",
     "test:local": "docker compose up -d --wait && DATABASE_URL=postgresql://testnet:local_testnet@127.0.0.1:55432/testnet_payments pnpm prisma migrate deploy && TEST_DATABASE_URL=postgresql://testnet:local_testnet@127.0.0.1:55432/testnet_payments TEST_REDIS_URL=redis://127.0.0.1:56379/1 pnpm test",
