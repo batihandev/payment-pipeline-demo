@@ -35,4 +35,22 @@ describe('PaymentsPanel', () => {
       'This payment did not go through, so nothing was credited.',
     );
   });
+  it('shows no balance warning when an account runs low', async () => {
+    const low = { native: '0', usdc: '0', lowNative: true, lowUsdc: true };
+    data.health = {
+      confirmations: 10,
+      head: '100',
+      cursor: '100',
+      lag: '0',
+      openGaps: 0,
+      queueDepth: null,
+      cooldowns: null,
+      balances: { buyer: low, shop: low },
+      chainError: null,
+    };
+    const { PaymentsPanel } = await import('./panel');
+    const html = renderToStaticMarkup(<PaymentsPanel apiBaseUrl="/api" />);
+    data.health = null;
+    expect(html).not.toContain('running low');
+  });
 });

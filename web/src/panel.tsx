@@ -73,14 +73,6 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
         <p role="status">Loading the payment trail…</p>
       ) : (
         <>
-          {Object.entries(data.health?.balances ?? {})
-            .filter(([, b]) => b.lowNative || b.lowUsdc)
-            .map(([account]) => (
-              <p key={account} className="tp-note" role="status">
-                The demo’s {account} test account is running low. Purchases may
-                pause until it is topped up.
-              </p>
-            ))}
           <section aria-label="Pipeline" className="tp-pipeline">
             {steps.map((step, index) => {
               const rows = data.payments.filter((p) => p.stage === step.stage);

@@ -36,7 +36,7 @@ A demo of payment tracking. A bot buys silly items from a demo shop and pays in 
 - Two wallets: **buyer** and **shop**. Keys live only in `.env`. A script `pnpm wallets:new` generates both keys and writes them to `.env` with mode 0600. It prints only the public addresses.
 - **Recycling:** a nightly job sweeps the shop's USDC back to the buyer. A **refill** does the same on demand: when the buyer's USDC falls below `REFILL_BELOW` and the shop holds USDC and enough gas, the shop sends its whole USDC balance to the buyer, at most once per `REFILL_COOLDOWN_SECONDS` (default 20). USDC only circulates between the two wallets; the running cost is gas, a fraction of a cent per purchase.
 - **Gas floor:** visitor test buys pause while the buyer's gas balance is below `GAS_FLOOR` (default 0.0002 ETH) and resume when it is topped up. The page says the demo account is being topped up, in its plain wording.
-- **Low balance:** the API reports buyer and shop balances (gas and USDC). The page shows a warning below configured thresholds. No faucet automation.
+- **Low balance:** the API reports buyer and shop balances (gas and USDC). `/health` flags each balance below its configured threshold for monitoring; the page shows no balance warnings. No faucet automation.
 
 ## Orders and matching
 
