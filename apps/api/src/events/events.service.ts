@@ -17,7 +17,8 @@ import { subscribeEvents } from '../../../../libs/events/src/subscribe-events';
 import { InjectRedis } from '../../../../libs/redis/src';
 import type { ApiConfig } from '../common/api-config';
 
-const HEARTBEAT_MS = 15000;
+/** Below the 100 s after which Cloudflare closes an idle connection. */
+const KEEP_ALIVE_MS = 30_000;
 
 function readOrder(body: string): OrderEvent | null {
   try {
@@ -90,7 +91,7 @@ export class EventsService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Each published payment as an unnamed event; order changes and the waiting queue as named
-   * `order` and `queue` events; and a named heartbeat.
+   * `order` and `queue` events; and a `keep-alive` comment every 30 seconds.
    */
   stream(): Observable<MessageEvent> {
     return merge(
@@ -101,8 +102,8 @@ export class EventsService implements OnModuleInit, OnModuleDestroy {
       this.queues.pipe(
         map((body): MessageEvent => ({ type: 'queue', data: body })),
       ),
-      interval(HEARTBEAT_MS).pipe(
-        map((): MessageEvent => ({ type: 'heartbeat', data: '' })),
+      interval(KEEP_ALIVE_MS).pipe(
+        map((): MessageEvent => ({ comment: 'keep-alive' })),
       ),
     ).pipe(takeUntil(this.closed));
   }

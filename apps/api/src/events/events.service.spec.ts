@@ -106,7 +106,7 @@ it('streams donations without the sender', async () => {
   expect(String(chunk)).not.toContain('ee'.repeat(20));
   stream.destroy();
 });
-it('keeps the stream open past 15 s with a heartbeat', async () => {
+it('sends a keep-alive comment every 30 seconds', async () => {
   jest.useFakeTimers({
     doNotFake: [
       'nextTick',
@@ -121,11 +121,33 @@ it('keeps the stream open past 15 s with a heartbeat', async () => {
     ],
   });
   const stream = await connect();
-  const received = once(stream, 'data');
-  jest.advanceTimersByTime(15000);
-  const [chunk] = await received;
-  expect(String(chunk)).toContain('event: heartbeat\n');
+  const chunks: string[] = [];
+  stream.on('data', (chunk: Buffer) => chunks.push(String(chunk)));
+  const nextChunk = async () => {
+    const count = chunks.length;
+    while (chunks.length === count)
+      await new Promise((resolve) => setImmediate(resolve));
+    return chunks.at(-1);
+  };
+  jest.advanceTimersByTime(29_999);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(chunks).toEqual([]);
+  jest.advanceTimersByTime(1);
+  expect(await nextChunk()).toBe(': keep-alive\n\n');
+  jest.advanceTimersByTime(30_000);
+  expect(await nextChunk()).toBe(': keep-alive\n\n');
+  // The stream's keep-alive timer, beside the throttler's sweep.
+  const timersWithStream = jest.getTimerCount();
+  const closed = once(stream, 'close');
   stream.destroy();
+  await closed;
+  for (
+    let wait = 0;
+    wait < 50 && jest.getTimerCount() === timersWithStream;
+    wait++
+  )
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  expect(jest.getTimerCount()).toBe(timersWithStream - 1);
 });
 it('relays order events to the stream as named order events', async () => {
   const stream = await connect();

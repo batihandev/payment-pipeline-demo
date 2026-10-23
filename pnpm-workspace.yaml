@@ -1,5 +1,9 @@
 packages:
   - web
+  - tools/migrate
+injectWorkspacePackages: true
+catalog:
+  prisma: 7.10.1
 onlyBuiltDependencies:
   - '@nestjs/core'
   - '@prisma/client'

@@ -3,6 +3,13 @@ lockfileVersion: '9.0'
 settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
+  injectWorkspacePackages: true
+
+catalogs:
+  default:
+    prisma:
+      specifier: 7.10.1
+      version: 7.10.1
 
 importers:
 
@@ -94,7 +101,7 @@ importers:
         specifier: ^3.9.10
         version: 3.9.10
       prisma:
-        specifier: 7.10.1
+        specifier: 'catalog:'
         version: 7.10.1(@types/node@24.19.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(typescript@6.0.3)
       supertest:
         specifier: 7.3.1
@@ -111,6 +118,12 @@ importers:
       typescript-eslint:
         specifier: ^8.72.0
         version: 8.72.0(eslint@10.13.0(jiti@2.7.0))(typescript@6.0.3)
+
+  tools/migrate:
+    dependencies:
+      prisma:
+        specifier: 'catalog:'
+        version: 7.10.1(@types/node@24.19.2)(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(typescript@6.0.3)
 
   web:
     dependencies:

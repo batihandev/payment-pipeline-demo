@@ -1,5 +1,7 @@
 # payment-pipeline-demo
 
+[![CI](https://github.com/batihandev/payment-pipeline-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/batihandev/payment-pipeline-demo/actions/workflows/ci.yml)
+
 A payment-tracking demo follows test purchases through two payment rails into one ledger. On the chain rail, test USDC moves on Base Sepolia from broadcast through confirmation, settlement and shop notification. On the card rail, a saved Stripe test card is charged and the payment settles from a signed Stripe webhook. Separate buyer, tracker and API services share a PostgreSQL ledger and Redis, with a React dashboard showing payment progress.
 
 Both rails run on test networks only. Stripe runs in test mode: configuration rejects any `sk_live_` key, and any other key that does not start with `sk_test_`. Visitors never enter card details; the demo pays with a test card saved in Stripe for the demo's own customer. No card data is stored beyond Stripe IDs, the card brand and its last four digits.
@@ -91,7 +93,7 @@ Each tracker pass re-reads the last `RESCAN_BLOCKS` blocks. A log re-read inside
 | `GET /stats/daily`        | Per UTC day for the retained period: settled count, average time to settle, scheduled and visitor purchases                          |
 | `GET /incidents?limit=`   | Recent incidents                                                                                                                     |
 | `GET /health`             | Head, cursor, lag, open gaps, queue depth, cooldown state, balances, low-balance flags, `cardAvailable` and the `monitoring` signals |
-| `GET /events`             | Server-sent events relayed from Redis pub/sub: payments, order changes, the visitor queue and a heartbeat                            |
+| `GET /events`             | Server-sent events relayed from Redis pub/sub: payments, order changes, the visitor queue and a keep-alive                           |
 | `POST /test-purchases`    | Visitor test buy                                                                                                                     |
 | `GET /test-purchases/:id` | Queue position of a waiting visitor purchase, and whether it closed without a payment being sent                                     |
 | `POST /stripe/webhooks`   | Receives Stripe events, verifies their signature, then moves the card payment they name                                              |
@@ -101,7 +103,7 @@ Each 4xx answers with a fixed body. Errors that reach the error filter get a fix
 
 The API allows each client address `API_REQUESTS_PER_MINUTE` requests a minute across all routes (signed shop notices and Stripe webhooks excepted) and answers over-limit requests with `429` and `Retry-After`. `/events` holds at most `STREAMS_PER_IP` open connections per address and `STREAMS_TOTAL` in all, and `/payments` is cached for 5 seconds.
 
-Set `TRUST_PROXY=true` when the API runs behind exactly one reverse proxy or tunnel. Client addresses then come from the proxy's forwarding header, so per-visitor limits apply to visitors rather than to the proxy. Leave it `false` when clients connect directly.
+The client address is the socket address. Set `CLIENT_IP_HEADER=cf-connecting-ip` when the API sits behind a Cloudflare Tunnel: the address then comes from `CF-Connecting-IP`, so per-visitor limits apply to visitors rather than to the tunnel. `X-Forwarded-For` is never read, so a client cannot choose its own address. `/events` sends a `: keep-alive` comment every 30 seconds, so Cloudflare does not close an idle stream.
 
 ## Monitoring
 
@@ -166,6 +168,57 @@ Until step 2 is done the API answers every webhook with `400`, so a card payment
 
 Card orders cost their price in cents, in USD. A declined card moves the payment to `failed`, closes the order with a `card_failed` incident and credits nothing. A Stripe error that retries cannot fix, such as a missing key or no saved card, closes the order with a `send_failed` incident; a transient error is retried with backoff and, once retries run out, the order goes to `review` with its reservation kept.
 
+## Deploy
+
+`deploy/` runs the demo on the server as its own compose project, `payment-pipeline-demo-deploy`, apart from any development services. It holds `compose.yaml`, `deploy.sh` and `.env.example`; the real settings live in `deploy/.env` on the server only.
+
+The stack has its own PostgreSQL and Redis with named volumes, a one-shot `migrate` service, the `api`, `tracker` and `buyer` services and a `cloudflared` connector. The three apps run from one image, `ghcr.io/batihandev/payment-pipeline-demo:<commit>`, and `migrate` from `<commit>-migrate`; CI pushes both from `main`. Nothing publishes a port: public traffic reaches the API only through the Cloudflare Tunnel, at `http://api-live:3000` on the stack's network. `deploy.sh` gives the `api-live` alias only to the API container it has seen turn healthy, so a starting API takes no traffic; the tracker sends its notices to the same address. The API reads client addresses from `CF-Connecting-IP`. Each service gets only the settings it needs; only the buyer holds the private keys and the Stripe secret key. Every container runs with a read-only root file system, all capabilities dropped and `no-new-privileges`; every long-running container restarts unless stopped; every container keeps at most three 10 MB log files.
+
+| Service       | Memory limit | Notes                                                                                                                       |
+| ------------- | ------------ | --------------------------------------------------------------------------------------------------------------------------- |
+| `api`         | 256 MB       | Health check on `/health`; 30 s to drain on stop                                                                            |
+| `tracker`     | 256 MB       | 60 s to finish its pass on stop                                                                                             |
+| `buyer`       | 256 MB       | 60 s to finish its active job on stop                                                                                       |
+| `postgres`    | 256 MB       | `shared_buffers=64MB`                                                                                                       |
+| `redis`       | 64 MB        | `maxmemory 48mb` with `noeviction`, so BullMQ keys are never evicted; append-only file synced each second, no RDB snapshots |
+| `cloudflared` | 64 MB        | Runs `tunnel run` with `TUNNEL_TOKEN`; on only with the `tunnel` profile                                                    |
+
+The limits add up to about 1.1 GB; the stack uses about 350 MB after start-up.
+
+### One-time setup
+
+1. Create a remote-managed Cloudflare Tunnel for the demo and give it a public hostname whose service is `http://api-live:3000`. Its token goes in `TUNNEL_TOKEN`.
+2. Copy `deploy/` to the server, then `cp .env.example .env`, `chmod 600 .env`, and replace every placeholder. Use the deploy's own buyer and shop wallets (`pnpm wallets:new`), not the development ones, and list the pages that call the API in `WEB_ORIGIN`.
+3. Create a Stripe sandbox for the deploy and put its test secret key in `STRIPE_SECRET_KEY`. In its Dashboard, add a webhook endpoint at `https://<public hostname>/stripe/webhooks` subscribed to `payment_intent.processing`, `payment_intent.succeeded` and `payment_intent.payment_failed`, and put its signing secret in `STRIPE_WEBHOOK_SECRET`.
+4. Run the first deploy (below), then set up the demo customer against the deploy database:
+
+   ```sh
+   docker compose -f deploy/compose.yaml --env-file deploy/.env run --rm --no-deps -T buyer node dist/scripts/scripts/stripe-setup.js
+   ```
+
+### Deploy and roll back
+
+```sh
+deploy/deploy.sh <commit>
+```
+
+The script works from any directory and prints one line per step, never a setting's value:
+
+1. It pulls both images while the running stack keeps serving.
+2. It runs `migrate`. Migrations are expand-only: they add tables and columns and drop them only in a later release, so the running code works on the new schema. A new column is nullable or has a default, and no code writes a new enum value while an older tag could still run or be rolled back to, because an older Prisma client fails on an enum value it does not know. If the migration fails, the script stops and the running stack is unchanged.
+3. It starts a second API on the new tag beside the running one and waits up to 90 seconds for its health check. The new API has no `api-live` alias yet, so it takes no traffic. If it never turns healthy, the script removes it and exits non-zero, and the previous API keeps serving. Otherwise the script gives it the alias and stops the previous API, which drains for up to 30 seconds; open event streams reconnect on their own.
+4. It recreates the tracker, then the buyer, each stopped before the new one starts, so neither ever runs twice. Jobs wait in Redis meanwhile. Each must still be running, with no restart, 5 and 10 seconds later; otherwise the script exits non-zero and names the previous tag to roll back to.
+5. It records the deployed and previous tags in `deploy/.deploy-state` and sets `IMAGE_TAG` in `deploy/.env`.
+6. It keeps the deployed and previous tags and their `-migrate` tags, and removes the rest of this image. It also removes the PostgreSQL, Redis and `cloudflared` images this stack stopped using. An infra image is removed by ID only after this stack stopped using it, and Docker refuses if any container still uses it; an identical image that another stack on the server keeps without a container could be removed too, and would be pulled again when that stack next starts.
+
+PostgreSQL, Redis and `cloudflared` are recreated only when their own configuration changes. Start and update the stack only with `deploy.sh`: a plain `docker compose up` could recreate the API without its alias. When deploying a newer commit that changes `deploy/`, copy its `deploy/` files to the server first; a rollback keeps the current files, so compose changes must also work with the previous tag. If `api-live` is missing, for example after a plain `docker compose up`, run `deploy/deploy.sh <current tag>`. To roll back, deploy the previous tag listed in `deploy/.deploy-state`; the older code runs on the newer schema. `DEPLOY_ENV_FILE` points the script at another settings file; with `COMPOSE_PROFILES` empty there, the stack runs without `cloudflared`.
+
+A failed migration stays recorded, and Prisma refuses later migrations until it is resolved. It may have applied some of its statements before failing, so first check the database for anything it created or changed, and undo it. Then fix the cause and mark the migration rolled back with the running tag's migrate image:
+
+```sh
+docker compose -f deploy/compose.yaml --env-file deploy/.env run --rm -T migrate node node_modules/prisma/build/index.js migrate resolve --rolled-back <migration name>
+```
+
 ## Configuration
 
 `.env.example` lists the environment variables; `libs/config/src/index.ts` defines validation and defaults. Money settings use integer micro-units; native balance thresholds use wei. Quiet-window hours and budget days use UTC.
@@ -182,6 +235,7 @@ Optional settings and their defaults:
 | Setting                                      | Default                        | Meaning                                                                                                                                                         |
 | -------------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `API_PORT`                                   | 3000                           | API HTTP port                                                                                                                                                   |
+| `API_HOST`                                   | `127.0.0.1`                    | Address the API binds to; set `0.0.0.0` inside a container                                                                                                      |
 | `API_REQUESTS_PER_MINUTE`                    | 300                            | Requests one client address may make per minute, except signed shop notices                                                                                     |
 | `BLOCK_EXPLORER_URL`                         | `https://sepolia.basescan.org` | Base URL for explorer links                                                                                                                                     |
 | `CONFIRMATIONS`                              | 10                             | Blocks on top of a payment's block before it settles                                                                                                            |
@@ -212,9 +266,9 @@ Optional settings and their defaults:
 | `STRIPE_WEBHOOK_SECRET`                      | unset                          | API only: Stripe webhook signing secret (`whsec_…`); the API rejects every webhook with 400 and offers no card rail without it                                  |
 | `STRIPE_PAYMENT_METHOD`                      | `pm_card_visa`                 | Test payment method (`pm_…`) the setup script attaches to the demo customer; read by the setup script only                                                      |
 | `STRIPE_REQUESTS_PER_SECOND`                 | 5                              | Buyer's Stripe request rate                                                                                                                                     |
-| `TRUST_PROXY`                                | `false`                        | Set `true` to read the client address from proxy headers                                                                                                        |
+| `CLIENT_IP_HEADER`                           | unset                          | API only: `cf-connecting-ip` reads the client address from that header behind a Cloudflare Tunnel; unset uses the socket address                                |
 
-`NOTICE_SECRET` must contain at least 32 characters. Missing or invalid variables are reported together by name without printing their values. `TEST_DATABASE_URL` points database tests at the local PostgreSQL instance; tests needing isolation create and reset their own schema. `TEST_REDIS_URL` points Redis and queue tests at a Redis database separate from `REDIS_URL`, because they clear their queues. `pnpm test:local` starts the `docker-compose.yml` PostgreSQL and Redis, applies the migrations and runs the suite against them. `VITE_API_URL` supplies the web app's API origin and `VITE_REPO_URL` the repository link in the "How this works" text.
+`NOTICE_SECRET` must contain at least 32 characters. `WEB_ORIGIN` takes one origin or a comma-separated list, each a bare `http` or `https` origin with no path or trailing slash. Missing or invalid variables are reported together by name without printing their values. `TEST_DATABASE_URL` points database tests at the local PostgreSQL instance; tests needing isolation create and reset their own schema. `TEST_REDIS_URL` points Redis and queue tests at a Redis database separate from `REDIS_URL`, because they clear their queues. `pnpm test:local` starts the `docker-compose.yml` PostgreSQL and Redis, applies the migrations and runs the suite against them. `VITE_API_URL` supplies the web app's API origin and `VITE_REPO_URL` the repository link in the "How this works" text.
 
 ## Workspace and checks
 

@@ -52,13 +52,18 @@ it('does not throttle signed shop notices', async () => {
   expect((await request(server).get('/ping')).statusCode).toBe(200);
 });
 
-it('counts the proxy-appended address, not a forged one', async () => {
-  await start({ TRUST_PROXY: 'true', API_REQUESTS_PER_MINUTE: '2' });
+it('counts the CF-Connecting-IP address, not a forged X-Forwarded-For', async () => {
+  await start({
+    CLIENT_IP_HEADER: 'cf-connecting-ip',
+    API_REQUESTS_PER_MINUTE: '2',
+  });
   const server = app.getHttpServer();
-  const from = (forwarded: string) =>
-    request(server).get('/ping').set('X-Forwarded-For', forwarded);
-  expect((await from('1.1.1.1, 9.9.9.9')).statusCode).toBe(200);
-  expect((await from('2.2.2.2, 9.9.9.9')).statusCode).toBe(200);
-  expect((await from('3.3.3.3, 9.9.9.9')).statusCode).toBe(429);
-  expect((await from('3.3.3.3, 8.8.8.8')).statusCode).toBe(200);
+  const from = (client: string, forwarded: string) =>
+    request(server)
+      .get('/ping')
+      .set({ 'CF-Connecting-IP': client, 'X-Forwarded-For': forwarded });
+  expect((await from('9.9.9.9', '1.1.1.1')).statusCode).toBe(200);
+  expect((await from('9.9.9.9', '2.2.2.2')).statusCode).toBe(200);
+  expect((await from('9.9.9.9', '3.3.3.3')).statusCode).toBe(429);
+  expect((await from('8.8.8.8', '3.3.3.3')).statusCode).toBe(200);
 });
