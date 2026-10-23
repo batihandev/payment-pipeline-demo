@@ -1,7 +1,7 @@
 import type { Payment } from './types';
 import {
   money,
-  railBadge,
+  railBadgeParts,
   shortId,
   failedStep,
   paymentFailed,
@@ -10,6 +10,22 @@ import {
   utcTime,
 } from './view';
 import './styles.css';
+
+/** The rail and card; only the name shortens, so the last four digits stay visible. */
+function RailBadge({ payment }: { payment: Payment }) {
+  const { name, last4 } = railBadgeParts(payment);
+  return (
+    <span className="tp-network tp-rail">
+      <span className="tp-rail-brand">{name}</span>
+      {last4 && (
+        <>
+          {' '}
+          <span className="tp-rail-last4">{last4}</span>
+        </>
+      )}
+    </span>
+  );
+}
 
 export function ConfirmationBar({
   payment,
@@ -120,7 +136,7 @@ export function Receipt({
       <div className="tp-row">
         <span className={`tp-stage tp-${view.color}`}>{view.label}</span>
         {view.final && <span className="tp-stage tp-green">Final</span>}
-        <span className="tp-network tp-rail">{railBadge(payment)}</span>
+        <RailBadge payment={payment} />
       </div>
       {!card && <ConfirmationBar payment={payment} threshold={threshold} />}
       {note && <p className="tp-note">{note}</p>}

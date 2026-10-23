@@ -93,19 +93,37 @@ export function cardBrandName(brand: string): string {
   const name = brand.replaceAll('_', ' ');
   return brandNames[brand] ?? name.charAt(0).toUpperCase() + name.slice(1);
 }
-/** "Visa ····4242", or null while the order's card is unknown. */
-export function cardLabel(payment: Pick<Payment, 'order'>): string | null {
+/** The saved card as its brand name and masked last four digits, or null while it is unknown. */
+function cardParts(
+  payment: Pick<Payment, 'order'>,
+): { brand: string; last4: string } | null {
   const card = payment.order?.customer;
   return card?.cardBrand && card.cardLast4
-    ? `${cardBrandName(card.cardBrand)} ····${card.cardLast4}`
+    ? { brand: cardBrandName(card.cardBrand), last4: `····${card.cardLast4}` }
     : null;
+}
+/** "Visa ····4242", or null while the order's card is unknown. */
+export function cardLabel(payment: Pick<Payment, 'order'>): string | null {
+  const card = cardParts(payment);
+  return card && `${card.brand} ${card.last4}`;
+}
+/** The receipt badge in two parts, so a long name can shorten without hiding the digits. */
+export function railBadgeParts(payment: Pick<Payment, 'provider' | 'order'>): {
+  name: string;
+  last4: string | null;
+} {
+  if (payment.provider !== 'stripe')
+    return { name: 'Test network', last4: null };
+  const card = cardParts(payment);
+  return card
+    ? { name: `Test card · ${card.brand}`, last4: card.last4 }
+    : { name: 'Test card', last4: null };
 }
 export function railBadge(
   payment: Pick<Payment, 'provider' | 'order'>,
 ): string {
-  if (payment.provider !== 'stripe') return 'Test network';
-  const card = cardLabel(payment);
-  return card ? `Test card · ${card}` : 'Test card';
+  const { name, last4 } = railBadgeParts(payment);
+  return last4 ? `${name} ${last4}` : name;
 }
 export function confirmationLabel(
   confirmations: number,

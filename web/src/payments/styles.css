@@ -101,10 +101,20 @@
   white-space: nowrap;
 }
 .tp-rail {
+  display: inline-flex;
+  gap: 0.4em;
   min-width: 0;
   max-width: 100%;
+}
+.tp-rail-brand {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tp-rail-last4 {
+  flex: none;
+  white-space: nowrap;
 }
 .tp-blue {
   --tp-stage-color: #1d4ed8;

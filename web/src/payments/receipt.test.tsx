@@ -58,12 +58,32 @@ describe('Receipt', () => {
     const html = renderToStaticMarkup(
       <Receipt payment={cardPayment()} threshold={7} />,
     );
-    expect(html).toContain('Test card · Visa ····4242');
+    expect(html.replaceAll(/<[^>]+>/g, '')).toContain(
+      'Test card · Visa ····4242',
+    );
     expect(html).toContain('href="https://pay.stripe.com/receipts/1"');
     expect(html).toContain('View Stripe receipt');
     expect(html).not.toContain('progressbar');
     expect(html).not.toContain('View on explorer');
     expect(html).not.toContain('block');
+  });
+  it('keeps the last four digits visible on a long brand', () => {
+    const html = renderToStaticMarkup(
+      <Receipt
+        payment={cardPayment({
+          order: {
+            id: 'o1',
+            item: 'Duck',
+            price: '500000',
+            customer: { cardBrand: 'cartes_bancaires', cardLast4: '4242' },
+          },
+        })}
+        threshold={7}
+      />,
+    );
+    expect(html).toMatch(
+      /<span class="tp-rail-brand">Test card · Cartes bancaires<\/span> <span class="tp-rail-last4">····4242<\/span>/,
+    );
   });
   it('leaves out the Stripe link until the receipt exists', () => {
     const html = renderToStaticMarkup(

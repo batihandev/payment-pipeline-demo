@@ -85,4 +85,21 @@ describe('PaymentsPanel', () => {
     expect(html).not.toContain('<span class="tp-network">Test network</span>');
     expect(html).toContain('on a public test network or with a test card');
   });
+  it('counts failed payments outside the pipeline lanes', async () => {
+    const before = data.payments;
+    data.payments = [
+      payment({ id: 'f1', provider: 'stripe', stage: 'failed', final: true }),
+      payment({ id: 'f2', provider: 'stripe', stage: 'failed', final: true }),
+      payment({ id: 'n1', stage: 'confirming' }),
+    ];
+    const { PaymentsPanel } = await import('./panel');
+    const html = renderToStaticMarkup(<PaymentsPanel apiBaseUrl="/api" />);
+    data.payments = before;
+    const lanes = [
+      ...html.matchAll(/<h2>(\d) · ([^<]+)<\/h2><strong>(\d+)<\/strong>/g),
+    ].map((m) => [m[2], Number(m[3])]);
+    expect(lanes.map(([label]) => label)).not.toContain('Failed');
+    expect(lanes.reduce((sum, [, count]) => sum + Number(count), 0)).toBe(1);
+    expect(html).toContain('2 did not go through');
+  });
 });
