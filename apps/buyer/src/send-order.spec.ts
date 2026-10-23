@@ -483,6 +483,25 @@ describe('transfers the tracker has not seen', () => {
     ).toMatchObject({ sendState: 'sent', status: 'open' });
     expect(await database.db.incident.count()).toBe(0);
   });
+  it('clears the suspicion when the order leaves the unseen list', async () => {
+    const row = await sentOrder();
+    chain.nonce = Number(row.nonce) + 1;
+    await sender.checkUnseen(checkedAt);
+    await database.db.payment.updateMany({
+      where: { orderId: row.id },
+      data: { stage: 'received' },
+    });
+    await sender.checkUnseen(checkedAt);
+    await database.db.payment.updateMany({
+      where: { orderId: row.id },
+      data: { stage: 'sent' },
+    });
+    await sender.checkUnseen(checkedAt);
+    expect(
+      await database.db.order.findUniqueOrThrow({ where: { id: row.id } }),
+    ).toMatchObject({ sendState: 'sent', status: 'open' });
+    expect(await database.db.incident.count()).toBe(0);
+  });
   it('clears the suspicion when the nonce is no longer past the order', async () => {
     const row = await sentOrder();
     chain.nonce = Number(row.nonce) + 1;

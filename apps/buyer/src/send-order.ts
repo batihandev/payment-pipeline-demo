@@ -45,7 +45,7 @@ export class OrderSender {
    * so the order is closed and leaves the in-flight count. A revert is read from a receipt and
    * closes at once. A dropped transfer has no receipt and a used nonce, and a lagging RPC backend
    * can report both for a transfer that landed, so it closes only when two consecutive runs find
-   * it dropped; a receipt or an unused nonce in between clears the suspicion. The suspicion is
+   * it dropped; a receipt, an unused nonce, or leaving the unseen list in between clears the suspicion. The suspicion is
    * kept in memory, so a restart delays a close by one run. Otherwise the stored transfer is
    * broadcast again, which is idempotent.
    */
@@ -62,6 +62,9 @@ export class OrderSender {
       },
       orderBy: { nonce: 'asc' },
     });
+    const listed = new Set(orders.map((order) => order.id));
+    for (const id of this.suspectedDropped)
+      if (!listed.has(id)) this.suspectedDropped.delete(id);
     if (!orders.length) return;
     // Read before the receipts, as in broadcast(), to narrow the lagging-node window.
     const confirmed = BigInt(
