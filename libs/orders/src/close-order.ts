@@ -1,4 +1,5 @@
 import { BudgetReservation, type Prisma } from '../../db/src';
+import { saveOrderEvents } from '../../events/src/order-events';
 
 type ClosableOrder = {
   id: string;
@@ -17,6 +18,7 @@ export async function closeOrder(
     where: { id: order.id },
     data: { sendState: 'failed', status: 'expired' },
   });
+  await saveOrderEvents(tx, [order.id]);
   if (order.source === 'schedule')
     await new BudgetReservation(tx).release(
       order.createdAt,

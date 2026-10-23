@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OrdersModule } from '../../../../libs/orders/src';
 import type { ApiConfig } from '../common/api-config';
+import { EventsModule } from '../events/events.module';
 import { HealthModule } from '../health/health.module';
 import { TestPurchasesController } from './test-purchases.controller';
 import { TestPurchasesService } from './test-purchases.service';
@@ -12,7 +13,7 @@ import {
 } from './visitor-limits';
 
 @Module({
-  imports: [OrdersModule, HealthModule],
+  imports: [OrdersModule, HealthModule, EventsModule],
   controllers: [TestPurchasesController],
   providers: [
     TestPurchasesService,

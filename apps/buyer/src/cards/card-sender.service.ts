@@ -5,6 +5,7 @@ import {
   BEFORE_PROCESSING,
   BEFORE_SETTLED,
 } from '../../../../libs/orders/src/card-stages';
+import { saveOrderEvents } from '../../../../libs/events/src/order-events';
 import { closeOrder } from '../../../../libs/orders/src/close-order';
 import { failCardPayment } from '../../../../libs/orders/src/fail-card-payment';
 import { lockOrder } from '../../../../libs/orders/src/lock-order';
@@ -122,6 +123,7 @@ export class CardSenderService {
         where: { id: orderId },
         data: { sendState: 'sent' },
       });
+      await saveOrderEvents(tx, [orderId]);
     });
   }
 
@@ -177,11 +179,13 @@ export class CardSenderService {
       });
       const closed = kind === 'permanent' && order.sendState === 'pending';
       if (closed) await closeOrder(tx, order);
-      else if (exhausted && order.sendState === 'pending')
+      else if (exhausted && order.sendState === 'pending') {
         await tx.order.update({
           where: { id: orderId },
           data: { sendState: 'review' },
         });
+        await saveOrderEvents(tx, [orderId]);
+      }
       await tx.incident.create({
         data: {
           kind: 'send_failed',

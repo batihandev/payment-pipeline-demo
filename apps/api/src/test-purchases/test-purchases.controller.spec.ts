@@ -13,7 +13,12 @@ import {
 } from '../../../../libs/orders/src';
 import type { BuyerJobData } from '../../../../libs/queues/src';
 import { testRedisUrl } from '../../../../libs/config/testing/redis';
+import {
+  orderChannel,
+  serializeOrder,
+} from '../../../../libs/events/src/order-events';
 import { createTestApp } from '../../testing/app';
+import { openEventStream } from '../../testing/event-stream';
 import { NOW } from '../common/clock.module';
 import {
   ChainSnapshotService,
@@ -487,4 +492,33 @@ it('counts card and chain purchases against one visitor limit', async () => {
     409,
     { error: 'daily_limit' },
   ]);
+});
+it('publishes the waiting queue on the stream when it changes', async () => {
+  const stream = await openEventStream(app);
+  let body = '';
+  stream.on('data', (chunk) => (body += String(chunk)));
+  const queues = () =>
+    [...body.matchAll(/event: queue\n(?:id: \d+\n)?data: (.*)\n/g)].map(
+      ([, data]) => JSON.parse(data ?? '') as unknown,
+    );
+  const until = async (count: number) => {
+    while (queues().length < count)
+      await new Promise((resolve) => setTimeout(resolve, 20));
+  };
+  const first = (await buy('192.0.2.1')).body.orderId as string;
+  const second = (await buy('192.0.2.2')).body.orderId as string;
+  await until(2);
+  expect(queues().at(-1)).toEqual({ type: 'queue', waiting: [first, second] });
+  const sent = await database.db.order.update({
+    where: { id: first },
+    data: { sendState: 'sent' },
+  });
+  await redis.publish(orderChannel, serializeOrder(sent));
+  await until(3);
+  expect(queues().at(-1)).toEqual({ type: 'queue', waiting: [second] });
+  await redis.publish(orderChannel, serializeOrder(sent));
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  expect(queues()).toHaveLength(3);
+  expect(body).not.toMatch(/"(item|price|expectedAmount)"/);
+  stream.destroy();
 });

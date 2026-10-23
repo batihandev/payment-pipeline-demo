@@ -40,23 +40,24 @@ enum PaymentStage {
 }
 
 model Order {
-  id                String      @id @default(uuid()) @db.Uuid
+  id                String       @id @default(uuid()) @db.Uuid
   item              String
   price             BigInt
-  expectedAmount    BigInt      @map("expected_amount")
-  status            OrderStatus @default(open)
+  expectedAmount    BigInt       @map("expected_amount")
+  status            OrderStatus  @default(open)
   source            OrderSource
-  rail              PaymentRail @default(chain)
-  customerId        String?     @map("customer_id") @db.Uuid
-  customer          Customer?   @relation(fields: [customerId], references: [id])
+  rail              PaymentRail  @default(chain)
+  customerId        String?      @map("customer_id") @db.Uuid
+  customer          Customer?    @relation(fields: [customerId], references: [id])
   nonce             BigInt?
-  signedTransaction String?     @map("signed_transaction")
-  transactionHash   String?     @map("transaction_hash")
-  sendState         String      @default("pending") @map("send_state")
-  sendAttempts      Int         @default(0) @map("send_attempts")
-  createdAt         DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
-  expiresAt         DateTime    @map("expires_at") @db.Timestamptz(3)
+  signedTransaction String?      @map("signed_transaction")
+  transactionHash   String?      @map("transaction_hash")
+  sendState         String       @default("pending") @map("send_state")
+  sendAttempts      Int          @default(0) @map("send_attempts")
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt         DateTime     @map("expires_at") @db.Timestamptz(3)
   payments          Payment[]
+  events            OrderEvent[]
 
   @@index([expectedAmount, createdAt])
   @@index([customerId])
@@ -206,6 +207,18 @@ model Sweep {
   createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@map("sweeps")
+}
+
+model OrderEvent {
+  id          BigInt    @id @default(autoincrement())
+  orderId     String    @map("order_id") @db.Uuid
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(3)
+
+  @@index([publishedAt, id])
+  @@index([orderId])
+  @@map("order_events")
 }
 
 model PaymentEvent {

@@ -123,6 +123,7 @@ it('deletes month-old settled history', async () => {
     dailyBudgets: 1,
     sweeps: 1,
     stripeEvents: 0,
+    orderEvents: 0,
   });
   expect(await db.payment.findUnique({ where: { id: unmatched.id } })).toBe(
     null,
@@ -381,4 +382,23 @@ it('prunes Stripe events older than the cutoff', async () => {
   expect((await db.stripeEvent.findMany()).map(({ id }) => id)).toEqual([
     'evt_recent',
   ]);
+});
+it('prunes published order events older than the cutoff', async () => {
+  const { db } = database;
+  const open = await order('open', recent);
+  await db.orderEvent.createMany({
+    data: [
+      { orderId: open.id, publishedAt: old },
+      { orderId: open.id, publishedAt: recent },
+      { orderId: open.id, createdAt: old },
+    ],
+  });
+  await expect(
+    new RetentionService(db).pruneOlderThan(cutoff),
+  ).resolves.toMatchObject({ orderEvents: 1 });
+  expect(
+    (await db.orderEvent.findMany({ orderBy: { id: 'asc' } })).map(
+      ({ publishedAt }) => publishedAt,
+    ),
+  ).toEqual([recent, null]);
 });

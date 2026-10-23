@@ -36,3 +36,20 @@ it('expires open orders one minute past expiry and preserves unexpired and paid 
   ]);
   expect(await new ExpiryService(database.db).expireOrders(now)).toBe(0);
 });
+it('records an order event for each order it expires', async () => {
+  await database.db.order.deleteMany();
+  const now = new Date('2026-10-21T12:00:00Z');
+  const late = await database.db.order.create({
+    data: {
+      item: 'Late',
+      expiresAt: new Date(now.getTime() - 60000),
+      price: 100n,
+      expectedAmount: 101n,
+      source: 'visitor',
+    },
+  });
+  await new ExpiryService(database.db).expireOrders(now);
+  expect(
+    await database.db.orderEvent.findMany({ select: { orderId: true } }),
+  ).toEqual([{ orderId: late.id }]);
+});

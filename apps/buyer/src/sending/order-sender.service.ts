@@ -13,6 +13,7 @@ import {
   PrismaService,
   type Prisma,
 } from '../../../../libs/db/src';
+import { saveOrderEvents } from '../../../../libs/events/src/order-events';
 import { closeOrder } from '../../../../libs/orders/src/close-order';
 import type { BuyerConfig } from '../buyer-config';
 import { RedisLock } from './redis-lock';
@@ -160,9 +161,10 @@ export class OrderSenderService {
       | 'sendState'
     >,
   ) {
-    if (target.kind === 'order')
+    if (target.kind === 'order') {
       await tx.order.update({ where: { id: target.id }, data });
-    else await tx.sweep.update({ where: { id: target.id }, data });
+      if (data.sendState !== undefined) await saveOrderEvents(tx, [target.id]);
+    } else await tx.sweep.update({ where: { id: target.id }, data });
   }
   private async lockRow(
     tx: Prisma.TransactionClient,

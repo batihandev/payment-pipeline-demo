@@ -1,16 +1,24 @@
 import { randomUUID, createHash } from 'node:crypto';
-import { Inject, Injectable } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
 import type { Redis } from 'ioredis';
+import type { Subscription } from 'rxjs';
 import { PrismaService, type PaymentRail } from '../../../../libs/db/src';
 import {
   CustomersService,
   OrderQueueService,
   PurchasesService,
 } from '../../../../libs/orders/src';
+import { orderClosed } from '../../../../libs/events/src/order-events';
 import { utcDateKey } from '../../../../libs/core/src/time';
 import { InjectRedis } from '../../../../libs/redis/src';
 import { ApiError } from '../common/api-error';
 import { InjectNow, type Now } from '../common/clock.module';
+import { EventsService } from '../events/events.service';
 import { ChainSnapshotService } from '../health/chain-snapshot.service';
 import {
   VISITOR_LIMITS,
@@ -28,9 +36,12 @@ const waiting = {
 } as const;
 
 @Injectable()
-export class TestPurchasesService {
+export class TestPurchasesService implements OnModuleInit, OnModuleDestroy {
   // Admissions run one at a time so the queue check and the new position stay exact.
   private turn: Promise<unknown> = Promise.resolve();
+  private queueReading?: Promise<void>;
+  private queueStale = false;
+  private subscription?: Subscription;
 
   constructor(
     private readonly db: PrismaService,
@@ -42,7 +53,44 @@ export class TestPurchasesService {
     @Inject(VISITOR_LIMITS) private readonly limits: VisitorLimits,
     @Inject(VISITOR_PREFIX) private readonly prefix: string,
     @InjectNow() private readonly now: Now,
+    private readonly events: EventsService,
   ) {}
+
+  onModuleInit(): void {
+    this.subscription = this.events.orderChanged.subscribe(
+      () => void this.refreshQueue(),
+    );
+  }
+
+  onModuleDestroy(): void {
+    this.subscription?.unsubscribe();
+  }
+
+  /**
+   * Reads the waiting visitor orders and sends them to the streams. A change that arrives during
+   * a read starts one more read after it, so the last snapshot sent is never older than a change.
+   */
+  private refreshQueue(): Promise<void> {
+    this.queueStale = true;
+    this.queueReading ??= (async () => {
+      while (this.queueStale) {
+        this.queueStale = false;
+        try {
+          const orders = await this.db.order.findMany({
+            where: waiting,
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+            take: this.limits.queueLimit,
+            select: { id: true },
+          });
+          this.events.publishQueue(orders.map(({ id }) => id));
+        } catch {
+          console.error('Could not read the visitor queue.');
+        }
+      }
+      this.queueReading = undefined;
+    })();
+    return this.queueReading;
+  }
 
   private exclusive<T>(task: () => Promise<T>): Promise<T> {
     const result = this.turn.then(task);
@@ -141,6 +189,7 @@ export class TestPurchasesService {
           price: order.price.toString(),
         };
         await this.orderQueue.queueSend(order.id, 'visitor');
+        void this.refreshQueue();
         return { ...created, position: await this.position(order) };
       } catch (error) {
         if (error instanceof ApiError) throw error;
@@ -163,7 +212,7 @@ export class TestPurchasesService {
       order.status === waiting.status;
     return {
       position: isWaiting ? await this.position(order) : 0,
-      closed: order.status === 'expired' && order.sendState !== 'sent',
+      closed: orderClosed(order),
     };
   }
 }

@@ -1,5 +1,6 @@
 import type { Payment } from '../../db/generated/client';
 import type { Prisma } from '../../db/src';
+import { saveOrderEvents } from '../../events/src/order-events';
 import { savePaymentEvent } from '../../events/src/save-payment-event';
 
 /**
@@ -32,6 +33,7 @@ export async function settlePayment(
       where: { id: settled.orderId },
       data: { status: 'paid' },
     });
+    await saveOrderEvents(tx, [settled.orderId]);
   }
   return settled;
 }

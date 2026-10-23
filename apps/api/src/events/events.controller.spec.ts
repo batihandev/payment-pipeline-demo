@@ -27,6 +27,7 @@ it('drops a client that stops reading as soon as one event is left unsent', asyn
       builder.overrideProvider(EventsService).useValue({
         stream: () => events.asObservable(),
         paymentChanged: EMPTY,
+        orderChanged: EMPTY,
       }),
   });
   const warn = jest
@@ -66,6 +67,7 @@ describe('stream cap', () => {
         builder.overrideProvider(EventsService).useValue({
           stream: () => idle.asObservable(),
           paymentChanged: EMPTY,
+          orderChanged: EMPTY,
         }),
     });
   const body = (response: IncomingMessage) =>
@@ -134,7 +136,11 @@ it('frees the slot when the request closes before the stream is subscribed', () 
     get: (name: string) => (name === 'STREAMS_PER_IP' ? 1 : 10),
   } as unknown as ConfigService<ApiConfig, true>;
   const controller = new EventsController(
-    { stream: () => EMPTY, paymentChanged: EMPTY } as unknown as EventsService,
+    {
+      stream: () => EMPTY,
+      paymentChanged: EMPTY,
+      orderChanged: EMPTY,
+    } as unknown as EventsService,
     new StreamLimit(config),
   );
   const request = Object.assign(new EventEmitter(), {

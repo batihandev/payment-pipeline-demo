@@ -63,8 +63,12 @@ export class RetentionService {
       const stripeEvents = await tx.stripeEvent.deleteMany({
         where: { receivedAt: { lt: cutoff } },
       });
+      const orderEvents = await tx.orderEvent.deleteMany({
+        where: { publishedAt: { lt: cutoff } },
+      });
       return {
         events: events.count,
+        orderEvents: orderEvents.count,
         notices: notices.count,
         ledgerEntries: ledgerEntries.count,
         incidents: incidents.count,
