@@ -60,6 +60,9 @@ export class RetentionService {
       const sweeps = await tx.sweep.deleteMany({
         where: { sendState: 'sent', createdAt: { lt: cutoff } },
       });
+      const stripeEvents = await tx.stripeEvent.deleteMany({
+        where: { receivedAt: { lt: cutoff } },
+      });
       return {
         events: events.count,
         notices: notices.count,
@@ -70,6 +73,7 @@ export class RetentionService {
         scanGaps: scanGaps.count,
         dailyBudgets: dailyBudgets.count,
         sweeps: sweeps.count,
+        stripeEvents: stripeEvents.count,
       };
     });
   }

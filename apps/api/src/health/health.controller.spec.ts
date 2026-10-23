@@ -192,6 +192,30 @@ it('leaves settled donations out of the unnotified signal', async () => {
   });
   expect((await get('/health')).body.monitoring.oldestUnnotifiedAt).toBeNull();
 });
+it('reports a processing card payment as unsettled', async () => {
+  const order = await state.database.db.order.create({
+    data: {
+      item: 'Duck',
+      price: 500000n,
+      expectedAmount: 500000n,
+      source: 'visitor',
+      rail: 'card',
+      sendState: 'sent',
+      expiresAt: new Date(),
+    },
+  });
+  await payment({
+    provider: 'stripe',
+    orderId: order.id,
+    stage: 'processing',
+    receivedAt: null,
+    sentAt: new Date('2026-10-22T08:00:00Z'),
+    processingAt: new Date('2026-10-22T08:00:01Z'),
+  });
+  expect((await get('/health')).body.monitoring.oldestUnsettledAt).toBe(
+    '2026-10-22T08:00:01.000Z',
+  );
+});
 it('answers /health from a fresh chain snapshot without RPC calls', async () => {
   const calls = state.chainCalls.length;
   const response = await get('/health');

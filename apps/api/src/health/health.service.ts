@@ -32,7 +32,7 @@ export class HealthService {
     const [unsettled, unnotified, scheduled] = await Promise.all([
       this.db.$queryRaw<
         { at: Date | null }[]
-      >`SELECT MIN(COALESCE(p.sent_at, p.received_at)) AS at FROM payments p JOIN orders o ON o.id = p.order_id WHERE o.send_state <> 'failed' AND p.stage IN ('sent', 'received', 'confirming')`,
+      >`SELECT MIN(COALESCE(p.processing_at, p.sent_at, p.received_at)) AS at FROM payments p JOIN orders o ON o.id = p.order_id WHERE o.send_state <> 'failed' AND p.stage IN ('sent', 'received', 'confirming', 'processing')`,
       this.db.payment.aggregate({
         where: { stage: 'settled', donation: false },
         _min: { settledAt: true },
