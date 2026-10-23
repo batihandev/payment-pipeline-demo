@@ -120,6 +120,8 @@ The client address is the socket address. Set `CLIENT_IP_HEADER=cf-connecting-ip
 
 Each condition must hold for its whole window, so failures that the services recover from on their own do not alert.
 
+Each app writes JSON log lines, one object per line, through one Nest logger. A server error is logged with the error's name and code, the status and the matched route, never the error message, since a database or Stripe message can carry connection details. Connection failures log a fixed line with the same name and code.
+
 Head and balances come from one chain reading that the API refreshes at most every 10 seconds, so `/health` never waits on the RPC provider. Before the first reading, or when the latest read failed, they are `null` and `chainError` names the error category. Queue depth and cooldowns are `null` while Redis is down. `/health` answers `503` only when the database is down.
 
 ## Web views
@@ -272,7 +274,7 @@ Optional settings and their defaults:
 
 ## Workspace and checks
 
-`apps/api` is an Express application; `apps/buyer` and `apps/tracker` are application contexts with `@nestjs/bullmq` processors. Each app is split into feature folders holding a module, its controller or processor, its service and `dto/` classes, with specs beside the files they test. `libs/db` owns the Prisma schema and client module; `libs/config` owns environment validation. Shared chain, domain and event code belongs in `libs/chain`, `libs/core` and `libs/events`. `web/` uses React, Vite and Vitest; `scripts/` holds command-line utilities.
+`apps/api` is an Express application; `apps/buyer` and `apps/tracker` are application contexts with `@nestjs/bullmq` processors. Each app is split into feature folders holding a module, its controller or processor, its service and `dto/` classes, with specs beside the files they test. `libs/db` owns the Prisma schema and client module; `libs/config` owns environment validation, which each app runs once at its entry point; `libs/logging` owns the JSON logger. Shared chain, domain and event code belongs in `libs/chain`, `libs/core` and `libs/events`. `web/` uses React, Vite and Vitest; `scripts/` holds command-line utilities.
 
 ```sh
 pnpm lint

@@ -1,15 +1,22 @@
-import type { OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
+import {
+  Logger,
+  type OnApplicationBootstrap,
+  type OnModuleDestroy,
+} from '@nestjs/common';
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { UnrecoverableError, type Job } from 'bullmq';
 import { JOBS, QUEUES } from '../../../../libs/queues/src';
 import { GapRecoveryService } from '../gaps/gap-recovery.service';
 import { DeliveryService } from './delivery.service';
+import { errorFields } from '../../../../libs/logging/src';
 
 @Processor(QUEUES.tracker, { concurrency: 1, autorun: false })
 export class TrackerProcessor
   extends WorkerHost
   implements OnApplicationBootstrap, OnModuleDestroy
 {
+  private readonly logger = new Logger(TrackerProcessor.name);
+
   constructor(
     private readonly delivery: DeliveryService,
     private readonly gaps: GapRecoveryService,
@@ -20,7 +27,9 @@ export class TrackerProcessor
   onApplicationBootstrap(): void {
     void this.worker
       .run()
-      .catch(() => console.error('Tracker worker stopped.'));
+      .catch((error: unknown) =>
+        this.logger.error('Tracker worker stopped.', errorFields(error)),
+      );
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -28,8 +37,8 @@ export class TrackerProcessor
   }
 
   @OnWorkerEvent('error')
-  onError(): void {
-    console.error('Tracker worker connection failed.');
+  onError(error: Error): void {
+    this.logger.error('Tracker worker connection failed.', errorFields(error));
   }
 
   async process(job: Job): Promise<void> {

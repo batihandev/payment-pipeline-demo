@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { apiSchema, validateConfig } from '../../../libs/config/src';
 import { bigintReplacer } from '../../../libs/core/src/json';
+import { appLogger } from '../../../libs/logging/src';
 import { AppModule } from './app.module';
 import type { ApiConfig } from './common/api-config';
 import { CLIENT_IP_HEADER_SETTING } from './common/client-ip';
@@ -17,7 +18,7 @@ const isStripeEvent = (request: IncomingMessage): boolean =>
   request.url?.split('?')[0] === STRIPE_WEBHOOKS &&
   /^application\/json\s*(;|$)/i.test(request.headers['content-type'] ?? '');
 
-export const applicationOptions = { rawBody: true, logger: false } as const;
+export const applicationOptions = { rawBody: true } as const;
 
 export function configureApp(
   app: NestExpressApplication,
@@ -46,7 +47,7 @@ export async function createApp(): Promise<NestExpressApplication> {
   const config = validateConfig(apiSchema, process.env);
   const app = await NestFactory.create<NestExpressApplication>(
     AppModule.forRoot(config),
-    applicationOptions,
+    { ...applicationOptions, logger: appLogger() },
   );
   configureApp(app, config);
   return app;

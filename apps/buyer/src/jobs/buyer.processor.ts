@@ -1,5 +1,6 @@
 import {
   Inject,
+  Logger,
   type OnApplicationBootstrap,
   type OnModuleDestroy,
 } from '@nestjs/common';
@@ -25,12 +26,15 @@ import { OrderSenderService } from '../sending/order-sender.service';
 import { holdWhenFull, holdWhenShort } from './holds';
 import { mapJobError } from './job-errors';
 import { PaceService } from './pace.service';
+import { errorFields } from '../../../../libs/logging/src';
 
 @Processor(QUEUES.buyer, { concurrency: 1, autorun: false })
 export class BuyerProcessor
   extends WorkerHost
   implements OnApplicationBootstrap, OnModuleDestroy
 {
+  private readonly logger = new Logger(BuyerProcessor.name);
+
   private readonly maxInFlight: number;
   private readonly retentionMs: number;
 
@@ -52,7 +56,11 @@ export class BuyerProcessor
   }
 
   onApplicationBootstrap(): void {
-    void this.worker.run().catch(() => console.error('Buyer worker stopped.'));
+    void this.worker
+      .run()
+      .catch((error: unknown) =>
+        this.logger.error('Buyer worker stopped.', errorFields(error)),
+      );
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -60,8 +68,8 @@ export class BuyerProcessor
   }
 
   @OnWorkerEvent('error')
-  onError(): void {
-    console.error('Buyer worker connection failed.');
+  onError(error: Error): void {
+    this.logger.error('Buyer worker connection failed.', errorFields(error));
   }
 
   async process(job: Job<BuyerJobData>, token?: string): Promise<void> {
@@ -95,7 +103,7 @@ export class BuyerProcessor
           const counts = await this.retention.pruneOlderThan(
             new Date(now.getTime() - this.retentionMs),
           );
-          console.log(`Retention removed ${JSON.stringify(counts)}`);
+          this.logger.log('Retention removed old rows.', counts);
           return;
         }
         case JOBS.buyer.visitorPurchase: {

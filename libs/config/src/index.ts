@@ -114,18 +114,24 @@ export const stripeSetupSchema = z.object({
   STRIPE_PAYMENT_METHOD: z.string().startsWith('pm_').default('pm_card_visa'),
 });
 
+/** A configuration that failed validation. It names the variables, never their values. */
+export class ConfigError extends Error {
+  override readonly name = 'ConfigError';
+
+  constructor(readonly variables: string[]) {
+    super(`Invalid or missing environment variables: ${variables.join(', ')}`);
+  }
+}
+
 export function validateConfig<T extends z.ZodType>(
   schema: T,
   environment: Record<string, string | undefined>,
 ): z.output<T> {
   const result = schema.safeParse(environment);
   if (!result.success) {
-    const names = [
+    throw new ConfigError([
       ...new Set(result.error.issues.map((issue) => issue.path.join('.'))),
-    ];
-    throw new Error(
-      `Invalid or missing environment variables: ${names.join(', ')}`,
-    );
+    ]);
   }
   return result.data;
 }

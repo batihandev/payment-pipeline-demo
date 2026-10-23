@@ -1,6 +1,7 @@
 import {
   Global,
   Inject,
+  Logger,
   Module,
   type DynamicModule,
   type OnModuleDestroy,
@@ -8,6 +9,9 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Redis } from 'ioredis';
+import { errorFields } from '../../logging/src';
+
+const logger = new Logger('Redis');
 
 export const REDIS = Symbol('REDIS');
 export const InjectRedis = () => Inject(REDIS);
@@ -19,7 +23,9 @@ const redisProvider = (name: string): Provider => ({
     const redis = new Redis(config.get('REDIS_URL', { infer: true }), {
       maxRetriesPerRequest: 1,
     });
-    redis.on('error', () => console.error(`${name} connection failed.`));
+    redis.on('error', (error) =>
+      logger.error(`${name} connection failed.`, errorFields(error)),
+    );
     return redis;
   },
 });

@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { UnrecoverableError, type Job } from 'bullmq';
 import type { ConfigService } from '@nestjs/config';
 import { JOBS, type BuyerJobData } from '../../../../libs/queues/src';
@@ -63,7 +64,7 @@ const owners = [
 ];
 
 beforeEach(() => {
-  jest.spyOn(console, 'log').mockImplementation(() => {});
+  jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
 });
 afterEach(() => {
   jest.restoreAllMocks();

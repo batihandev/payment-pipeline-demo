@@ -1,9 +1,12 @@
 import {
   Catch,
+  Logger,
   type ArgumentsHost,
   type ExceptionFilter,
 } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
+import type { Request } from 'express';
+import { errorFields } from '../../../../libs/logging/src';
 import { ApiError } from './api-error';
 
 const clientErrorCodes: Record<number, string> = {
@@ -29,21 +32,36 @@ function statusOf(error: unknown): number {
   return 500;
 }
 
+/** The matched route's method and pattern, such as `GET /payments/:id`, never the URL. */
+function routeOf(request: Request): string | undefined {
+  const path: unknown = request.route?.path;
+  return typeof path === 'string' ? `${request.method} ${path}` : undefined;
+}
+
 /**
  * Answers every error that reaches the HTTP adapter with a fixed body. The adapters' and
  * Nest's defaults echo the error message, and a database error's message can carry
  * connection details. Request errors keep their 4xx status and get a code for it; an
  * `ApiError` keeps the code its route chose. An error after the headers went out, such as
- * one in a started event stream, only ends the response.
+ * one in a started event stream, only ends the response. A server error is logged with its
+ * name, code, status and route, and never its message.
  */
 @Catch()
 export class GenericErrorFilter implements ExceptionFilter {
+  private readonly logger = new Logger(GenericErrorFilter.name);
+
   constructor(private readonly adapterHost: HttpAdapterHost) {}
 
   catch(error: unknown, host: ArgumentsHost): void {
     const { httpAdapter } = this.adapterHost;
-    const response: unknown = host.switchToHttp().getResponse();
+    const http = host.switchToHttp();
+    const response: unknown = http.getResponse();
+    const route = routeOf(http.getRequest<Request>());
     if (httpAdapter.isHeadersSent(response)) {
+      this.logger.error('Request failed after its response started.', {
+        ...errorFields(error),
+        route,
+      });
       httpAdapter.end(response);
       return;
     }
@@ -60,6 +78,13 @@ export class GenericErrorFilter implements ExceptionFilter {
         { error: clientErrorCodes[status] ?? 'bad_request' },
         status,
       );
-    else httpAdapter.reply(response, { error: 'internal' }, 500);
+    else {
+      this.logger.error('Request failed.', {
+        ...errorFields(error),
+        status: 500,
+        route,
+      });
+      httpAdapter.reply(response, { error: 'internal' }, 500);
+    }
   }
 }

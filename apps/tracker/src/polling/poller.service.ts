@@ -1,15 +1,19 @@
 import { setTimeout } from 'node:timers/promises';
 import {
   Injectable,
+  Logger,
   Optional,
   type OnApplicationBootstrap,
   type OnModuleDestroy,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../../libs/db/src';
+import { errorFields } from '../../../../libs/logging/src';
 import { ScannerService } from '../scanning/scanner.service';
 import { ProgressService } from '../scanning/progress.service';
 import type { TrackerConfig } from '../tracker-config';
+const logger = new Logger('PollerService');
+
 @Injectable()
 export class PollerService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly stopped = new AbortController();
@@ -54,8 +58,11 @@ export class PollerService implements OnApplicationBootstrap, OnModuleDestroy {
                 'Retained database state and scheduled the next poll.',
             },
           });
-        } catch {
-          console.error('Tracker database connection failed.');
+        } catch (error) {
+          logger.error(
+            'Tracker database connection failed.',
+            errorFields(error),
+          );
         }
       }
       try {

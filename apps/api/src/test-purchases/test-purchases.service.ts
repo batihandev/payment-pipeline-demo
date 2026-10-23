@@ -2,12 +2,14 @@ import { randomUUID, createHash } from 'node:crypto';
 import {
   Inject,
   Injectable,
+  Logger,
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import type { Subscription } from 'rxjs';
 import { PrismaService, type PaymentRail } from '../../../../libs/db/src';
+import { errorFields } from '../../../../libs/logging/src';
 import {
   OrderQueueService,
   PurchasesService,
@@ -34,6 +36,8 @@ const waiting = {
   sendState: 'pending',
   status: 'open',
 } as const;
+
+const logger = new Logger('TestPurchasesService');
 
 @Injectable()
 export class TestPurchasesService implements OnModuleInit, OnModuleDestroy {
@@ -83,8 +87,8 @@ export class TestPurchasesService implements OnModuleInit, OnModuleDestroy {
             select: { id: true },
           });
           this.events.publishQueue(orders.map(({ id }) => id));
-        } catch {
-          console.error('Could not read the visitor queue.');
+        } catch (error) {
+          logger.error('Could not read the visitor queue.', errorFields(error));
         }
       }
       this.queueReading = undefined;

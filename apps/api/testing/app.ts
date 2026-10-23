@@ -1,5 +1,5 @@
 import { getSharedConfigToken } from '@nestjs/bullmq';
-import type { Type } from '@nestjs/common';
+import type { LoggerService, Type } from '@nestjs/common';
 import { Test, type TestingModuleBuilder } from '@nestjs/testing';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { apiSchema, validateConfig } from '../../../libs/config/src';
@@ -36,6 +36,8 @@ export async function createTestApp(
     controllers?: Type[];
     /** Keeps the queues' Redis keys apart from other tests'. */
     queuePrefix?: string;
+    /** The app's logger; tests run silent unless they pass one. */
+    logger?: LoggerService;
   } = {},
 ): Promise<NestExpressApplication> {
   Object.assign(process.env, apiTestEnvironment(), options.environment);
@@ -51,8 +53,10 @@ export async function createTestApp(
     });
   options.override?.(builder);
   const module = await builder.compile();
-  const app =
-    module.createNestApplication<NestExpressApplication>(applicationOptions);
+  const app = module.createNestApplication<NestExpressApplication>({
+    ...applicationOptions,
+    logger: options.logger ?? false,
+  });
   configureApp(app, config);
   try {
     await app.listen(0, '127.0.0.1');

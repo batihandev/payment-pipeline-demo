@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { getQueueToken, getSharedConfigToken } from '@nestjs/bullmq';
 import { Test } from '@nestjs/testing';
@@ -95,7 +96,9 @@ it('stops the poll loop before closing workers, Redis and the database', async (
     expect(tracker.worker.isRunning()).toBe(true);
     expect(notices.worker.isRunning()).toBe(true);
 
-    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const log = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => {});
     try {
       module
         .get<Queue>(getQueueToken(QUEUES.tracker), { strict: false })
@@ -106,10 +109,10 @@ it('stops the poll loop before closing workers, Redis and the database', async (
       tracker.worker.emit('error', new Error('refused'));
       notices.worker.emit('error', new Error('refused'));
       expect(log.mock.calls).toEqual([
-        ['Tracker queue connection failed.'],
-        ['Shop notice queue connection failed.'],
-        ['Tracker worker connection failed.'],
-        ['Shop notice worker connection failed.'],
+        ['Tracker queue connection failed.', { name: 'Error' }],
+        ['Shop notice queue connection failed.', { name: 'Error' }],
+        ['Tracker worker connection failed.', { name: 'Error' }],
+        ['Shop notice worker connection failed.', { name: 'Error' }],
       ]);
     } finally {
       log.mockRestore();

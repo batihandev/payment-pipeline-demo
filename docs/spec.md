@@ -13,6 +13,7 @@ Both rails are test-only. Stripe runs in test mode, and configuration rejects ev
 - **Real data only.** Every number and note the page shows comes from database rows written by the services. The front end animates real state; it never invents events.
 - **Small scope.** One provider per payment method, one instance per service.
 - **Configuration from the environment.** Keys and URLs come from environment variables, documented in `.env.example`, and are never committed or logged.
+- **Structured logs.** Each app logs JSON lines through one Nest logger. Errors are logged by name, code, status and route; an error message is never logged.
 - **Plain wording on the page.** The dashboard says payment, confirming, settled, test network. It does not say wallet, token, coin or gas.
 
 ## Scope

@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import {
   fixture,
   clear,
@@ -131,7 +132,9 @@ describe('poll loop', () => {
   });
 
   it('records an incident and waits for the next poll when a pass fails', async () => {
-    const error = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const error = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => {});
     const pass = jest
       .spyOn(poller, 'pass')
       .mockRejectedValue(new Error('rpc down'));

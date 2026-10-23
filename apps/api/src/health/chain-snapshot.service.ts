@@ -2,7 +2,11 @@ import type {
   Address,
   ChainClient,
 } from '../../../../libs/chain/src/chain-client';
+import { Logger } from '@nestjs/common';
 import { RpcError } from '../../../../libs/chain/src/rpc-error';
+import { errorFields } from '../../../../libs/logging/src';
+
+const logger = new Logger('ChainSnapshotService');
 
 export type GasReading = { native: bigint; at: number } | null;
 export type Balance = { native: bigint; usdc: bigint };
@@ -77,8 +81,8 @@ export class ChainSnapshotService {
     this.error = null;
     try {
       await this.options.onRefresh?.(reading);
-    } catch {
-      console.error('Could not record the chain reading.');
+    } catch (error) {
+      logger.error('Could not record the chain reading.', errorFields(error));
     }
   }
 }

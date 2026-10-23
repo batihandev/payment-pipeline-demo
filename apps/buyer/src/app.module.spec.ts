@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { getQueueToken, getSharedConfigToken } from '@nestjs/bullmq';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -99,7 +100,9 @@ it('closes both workers and Redis on shutdown', async () => {
     expect(buyer.worker.isRunning()).toBe(true);
     expect(upkeep.worker.isRunning()).toBe(true);
 
-    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const log = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => {});
     try {
       for (const name of Object.values(QUEUES).slice(0, 2))
         module
@@ -108,10 +111,10 @@ it('closes both workers and Redis on shutdown', async () => {
       buyer.worker.emit('error', new Error('refused'));
       upkeep.worker.emit('error', new Error('refused'));
       expect(log.mock.calls).toEqual([
-        ['Buyer queue connection failed.'],
-        ['Buyer upkeep queue connection failed.'],
-        ['Buyer worker connection failed.'],
-        ['Buyer upkeep worker connection failed.'],
+        ['Buyer queue connection failed.', { name: 'Error' }],
+        ['Buyer upkeep queue connection failed.', { name: 'Error' }],
+        ['Buyer worker connection failed.', { name: 'Error' }],
+        ['Buyer upkeep worker connection failed.', { name: 'Error' }],
       ]);
     } finally {
       log.mockRestore();

@@ -1,5 +1,8 @@
+import { Logger } from '@nestjs/common';
 import type { Redis } from 'ioredis';
+import { errorFields } from '../../logging/src';
 import { RpcLimiter } from './rpc-limiter';
+const logger = new Logger('RpcLimiter');
 export const cooldownKey = (service: string) => `rpc-cooldown:${service}`;
 export function serviceLimiter(
   redis: Redis,
@@ -10,8 +13,8 @@ export function serviceLimiter(
   return new RpcLimiter(rate, cooldown, Date.now, undefined, async () => {
     try {
       await redis.set(cooldownKey(service), '1', 'PX', cooldown);
-    } catch {
-      console.error('Could not report RPC cooldown.');
+    } catch (error) {
+      logger.error('Could not report RPC cooldown.', errorFields(error));
     }
   });
 }
