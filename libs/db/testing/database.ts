@@ -58,7 +58,8 @@ export async function testDatabase(
 
 /**
  * Splits a migration into statements at each `;` outside a `$$` body, since the driver runs
- * one statement per call.
+ * one statement per call. Only untagged `$$` bodies are recognised: a tagged body such as
+ * `$fn$ ... $fn$` would be split at its semicolons.
  */
 function sqlStatements(sql: string): string[] {
   return sql
