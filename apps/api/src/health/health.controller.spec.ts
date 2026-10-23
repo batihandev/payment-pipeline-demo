@@ -84,19 +84,27 @@ it('reports an unknown cursor and lag before the tracker initializes', async () 
     openGaps: 0,
   });
 });
+const savedCard = {
+  name: 'Demo customer',
+  stripeCustomerId: 'cus_health',
+  stripePaymentMethodId: 'pm_health',
+  cardBrand: 'visa',
+  cardLast4: '4242',
+};
 it('reports the card rail available once the demo customer has a saved card', async () => {
+  process.env.STRIPE_WEBHOOK_SECRET = 'whsec_health';
+  await state.rebuild();
   await state.database.db.customer.deleteMany();
   expect((await get('/health')).body.cardAvailable).toBe(false);
-  await state.database.db.customer.create({
-    data: {
-      name: 'Demo customer',
-      stripeCustomerId: 'cus_health',
-      stripePaymentMethodId: 'pm_health',
-      cardBrand: 'visa',
-      cardLast4: '4242',
-    },
-  });
+  await state.database.db.customer.create({ data: savedCard });
   expect((await get('/health')).body.cardAvailable).toBe(true);
+  await state.database.db.customer.deleteMany();
+});
+it('reports the card rail unavailable without a webhook secret', async () => {
+  delete process.env.STRIPE_WEBHOOK_SECRET;
+  await state.rebuild();
+  await state.database.db.customer.create({ data: savedCard });
+  expect((await get('/health')).body.cardAvailable).toBe(false);
   await state.database.db.customer.deleteMany();
 });
 it('reports monitoring timestamps in /health', async () => {

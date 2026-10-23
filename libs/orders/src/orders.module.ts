@@ -34,6 +34,7 @@ const BUYER_QUEUE_ERRORS = Symbol('BUYER_QUEUE_ERRORS');
             QUIET_END_HOUR_UTC: config.get('QUIET_END_HOUR_UTC', {
               infer: true,
             }),
+            STRIPE_SECRET_KEY: config.get('STRIPE_SECRET_KEY', { infer: true }),
           }),
           Math.random,
           customers,

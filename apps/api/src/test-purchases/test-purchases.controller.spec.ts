@@ -57,7 +57,10 @@ async function build(
 ) {
   await app?.close();
   app = await createTestApp({
-    environment: { TRUST_PROXY: String(trustProxy) },
+    environment: {
+      TRUST_PROXY: String(trustProxy),
+      STRIPE_WEBHOOK_SECRET: 'whsec_test',
+    },
     queuePrefix,
     override: (builder) => {
       builder
@@ -103,6 +106,7 @@ beforeEach(async () => {
       ttlMinutes: 30,
       quietStart: 0,
       quietEnd: 7,
+      cardRail: true,
     },
     () => 0,
     new CustomersService(database.db),

@@ -8,7 +8,7 @@ type SavedCard = NonNullable<Customer> & {
   stripePaymentMethodId: string;
 };
 
-/** The one saved card is the signal that the card rail is available. */
+/** Whether the customer has a saved card that the buyer can charge. */
 export function hasSavedCard(customer: Customer): customer is SavedCard {
   return Boolean(customer?.stripeCustomerId && customer.stripePaymentMethodId);
 }
@@ -19,9 +19,5 @@ export class CustomersService {
 
   demo(): Promise<Customer> {
     return this.db.customer.findFirst({ orderBy: { createdAt: 'asc' } });
-  }
-
-  async cardAvailable(): Promise<boolean> {
-    return hasSavedCard(await this.demo());
   }
 }

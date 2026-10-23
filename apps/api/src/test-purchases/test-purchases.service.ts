@@ -9,7 +9,6 @@ import type { Redis } from 'ioredis';
 import type { Subscription } from 'rxjs';
 import { PrismaService, type PaymentRail } from '../../../../libs/db/src';
 import {
-  CustomersService,
   OrderQueueService,
   PurchasesService,
 } from '../../../../libs/orders/src';
@@ -19,6 +18,7 @@ import { InjectRedis } from '../../../../libs/redis/src';
 import { ApiError } from '../common/api-error';
 import { InjectNow, type Now } from '../common/clock.module';
 import { EventsService } from '../events/events.service';
+import { CardRailService } from '../health/card-rail.service';
 import { ChainSnapshotService } from '../health/chain-snapshot.service';
 import {
   VISITOR_LIMITS,
@@ -48,7 +48,7 @@ export class TestPurchasesService implements OnModuleInit, OnModuleDestroy {
     @InjectRedis() private readonly redis: Redis,
     private readonly purchases: PurchasesService,
     private readonly orderQueue: OrderQueueService,
-    private readonly customers: CustomersService,
+    private readonly cardRail: CardRailService,
     private readonly snapshot: ChainSnapshotService,
     @Inject(VISITOR_LIMITS) private readonly limits: VisitorLimits,
     @Inject(VISITOR_PREFIX) private readonly prefix: string,
@@ -167,7 +167,7 @@ export class TestPurchasesService implements OnModuleInit, OnModuleDestroy {
       let created: { orderId: string; item: string; price: string } | undefined;
       try {
         if (rail === 'card') {
-          if (!(await this.customers.cardAvailable()))
+          if (!(await this.cardRail.available()))
             throw new ApiError(503, 'card_unavailable');
         } else if (await this.paused(now)) throw new ApiError(503, 'paused');
         if (

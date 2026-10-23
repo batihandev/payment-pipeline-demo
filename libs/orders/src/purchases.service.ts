@@ -24,6 +24,8 @@ type Options = {
   ttlMinutes: number;
   quietStart: number;
   quietEnd: number;
+  /** Whether scheduled purchases may use the card rail: the buyer has a Stripe key. */
+  cardRail: boolean;
 };
 function minuteId(now: Date): string {
   const hex = createHash('sha256')
@@ -88,7 +90,9 @@ export class PurchasesService {
       id,
       now,
       undefined,
-      hasSavedCard(customer) && paidByCard(id) ? 'card' : 'chain',
+      this.options.cardRail && hasSavedCard(customer) && paidByCard(id)
+        ? 'card'
+        : 'chain',
       customer,
     );
   }
@@ -199,6 +203,7 @@ export function purchaseOptions(
     | 'ORDER_TTL_MINUTES'
     | 'QUIET_START_HOUR_UTC'
     | 'QUIET_END_HOUR_UTC'
+    | 'STRIPE_SECRET_KEY'
   >,
 ): Options {
   return {
@@ -207,5 +212,6 @@ export function purchaseOptions(
     ttlMinutes: config.ORDER_TTL_MINUTES,
     quietStart: config.QUIET_START_HOUR_UTC,
     quietEnd: config.QUIET_END_HOUR_UTC,
+    cardRail: Boolean(config.STRIPE_SECRET_KEY),
   };
 }

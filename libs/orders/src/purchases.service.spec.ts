@@ -3,7 +3,7 @@ import { catalogue } from '../../core/src/catalogue';
 import { dailyTarget } from '../../core/src/pacing';
 import { testDatabase } from '../../db/testing/database';
 import { CustomersService } from './customers.service';
-import { PurchasesService } from './purchases.service';
+import { PurchasesService, purchaseOptions } from './purchases.service';
 
 const now = new Date('2026-10-20T12:00:00Z');
 const day = new Date('2026-10-20');
@@ -13,6 +13,7 @@ const options = {
   ttlMinutes: 30,
   quietStart: 0,
   quietEnd: 7,
+  cardRail: true,
 };
 let database: Awaited<ReturnType<typeof testDatabase>>;
 let purchases: PurchasesService;
@@ -255,6 +256,32 @@ it('schedules exactly the card ids among fixed ids', async () => {
     '663d43c5-6e35-347f-a401-508dc5354c97',
   ]);
   expect(demo).toHaveBeenCalledTimes(30);
+});
+it('schedules no card purchases without a Stripe key', async () => {
+  await database.db.customer.create({ data: savedCard });
+  purchases = new PurchasesService(
+    database.db,
+    {
+      ...purchaseOptions({
+        DAILY_COUNT_CAP: 500,
+        DAILY_AMOUNT_CAP: 100000000000n,
+        CHAIN_ID: 84532,
+        ORDER_TTL_MINUTES: 30,
+        QUIET_START_HOUR_UTC: 0,
+        QUIET_END_HOUR_UTC: 7,
+        STRIPE_SECRET_KEY: undefined,
+      }),
+    },
+    () => 0,
+    new CustomersService(database.db),
+  );
+  const rails = new Set<string>();
+  for (let minute = 0; minute < 30; minute++)
+    rails.add(
+      (await purchases.pace(new Date(now.getTime() + minute * 60000)))?.rail ??
+        'none',
+    );
+  expect([...rails]).toEqual(['chain']);
 });
 it('counts card and chain purchases against one visitor limit', async () => {
   expect(await purchases.visitor(randomUUID(), 'card', now, 2)).not.toBeNull();

@@ -16,6 +16,7 @@ import { REDIS } from '../../../../libs/redis/src';
 import type { ApiConfig } from '../common/api-config';
 import { NOW, type Now } from '../common/clock.module';
 import { recordGasPause } from '../test-purchases/visitor-limits';
+import { CardRailService } from './card-rail.service';
 import { ChainSnapshotService } from './chain-snapshot.service';
 import { HEALTH_QUEUES, HealthService } from './health.service';
 import { HealthController } from './health.controller';
@@ -33,6 +34,7 @@ import { HealthController } from './health.controller';
   controllers: [HealthController],
   providers: [
     HealthService,
+    CardRailService,
     {
       provide: HEALTH_QUEUES,
       inject: [
@@ -76,6 +78,6 @@ import { HealthController } from './health.controller';
       },
     },
   ],
-  exports: [ChainSnapshotService],
+  exports: [ChainSnapshotService, CardRailService],
 })
 export class HealthModule {}

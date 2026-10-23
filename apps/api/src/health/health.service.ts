@@ -5,10 +5,10 @@ import type { Redis } from 'ioredis';
 import { PrismaService } from '../../../../libs/db/src';
 import { cooldownKey } from '../../../../libs/chain/src/service-limiter';
 import { VISITOR_PAUSED_SINCE } from '../../../../libs/core/src/redis-keys';
-import { CustomersService } from '../../../../libs/orders/src';
 import { InjectRedis } from '../../../../libs/redis/src';
 import { ApiError } from '../common/api-error';
 import type { ApiConfig } from '../common/api-config';
+import { CardRailService } from './card-rail.service';
 import {
   ChainSnapshotService,
   type Balance,
@@ -25,7 +25,7 @@ export class HealthService {
     @InjectRedis() private readonly redis: Redis,
     @Inject(HEALTH_QUEUES) private readonly queues: Queue[],
     private readonly snapshot: ChainSnapshotService,
-    private readonly customers: CustomersService,
+    private readonly cardRail: CardRailService,
   ) {}
 
   private async readMonitoring() {
@@ -93,7 +93,7 @@ export class HealthService {
         }),
         this.db.scanGap.count({ where: { resolvedAt: null } }),
         this.readMonitoring(),
-        this.customers.cardAvailable(),
+        this.cardRail.available(),
       ]),
       this.readRedis(),
     ]);

@@ -35,6 +35,7 @@ beforeEach(async () => {
         ttlMinutes: 30,
         quietStart: 0,
         quietEnd: 7,
+        cardRail: true,
       },
       () => 0,
       new CustomersService(database.db),
