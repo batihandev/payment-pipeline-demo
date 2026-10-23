@@ -1,0 +1,15 @@
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!web/package.json
+!apps
+!libs
+!scripts
+!tsconfig*.json
+!nest-cli.json
+!prisma.config.ts
+**/*.spec.ts
+**/testing
+**/node_modules
+libs/db/generated
