@@ -226,7 +226,8 @@ body {
   }
   .tp-checkout,
   .tp-chart,
-  .tp-health {
+  .tp-health,
+  .tp-feed .tp-receipt {
     padding: var(--tp-space-4);
   }
   .tp-lane {

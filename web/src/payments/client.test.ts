@@ -386,7 +386,11 @@ describe('receipts', () => {
       },
       () => stream,
     );
-    const snapshot = () => client.getSnapshot().data!;
+    const snapshot = () => {
+      const data = client.getSnapshot().data;
+      if (!data) throw new Error('No data yet');
+      return data;
+    };
     const ids = () => snapshot().receipts.map((p) => p.id);
     const stop = client.subscribe(() => {});
     stream.open();
@@ -402,9 +406,9 @@ describe('receipts', () => {
     expect(snapshot().olderReceipts).toBe('loading');
     await vi.waitFor(() => expect(ids()).toHaveLength(120));
     expect(ids()).toEqual(rows.slice(0, 120).map((r) => r.id));
-    expect(decodeTestCursor(beforeOf(requested.at(-1)!))).toEqual({
-      at: rows[99]!.sentAt,
-      id: rows[99]!.id,
+    expect(decodeTestCursor(beforeOf(requested.at(-1) ?? ''))).toEqual({
+      at: rows[99]?.sentAt,
+      id: rows[99]?.id,
     });
     expect(snapshot().olderReceipts).toBe('more');
 
@@ -415,7 +419,7 @@ describe('receipts', () => {
     stream.send({ ...row('fresh', 'received'), sentAt: at(-1) });
     expect(ids()[0]).toBe('fresh');
     expect(ids()).toHaveLength(131);
-    stream.send({ ...rows[125]!, stage: 'notified' });
+    stream.send({ ...rows[125], stage: 'notified' });
     await vi.waitFor(() =>
       expect(snapshot().receipts.find((p) => p.id === 'p125')?.stage).toBe(
         'notified',
@@ -459,7 +463,9 @@ describe('receipts when every payment is live', () => {
   });
 });
 function beforeOf(path: string): string {
-  return new URL(path, 'https://api.example.com').searchParams.get('before')!;
+  return (
+    new URL(path, 'https://api.example.com').searchParams.get('before') ?? ''
+  );
 }
 function decodeTestCursor(value: string): { at: string; id: string } {
   return JSON.parse(atob(value.replaceAll('-', '+').replaceAll('_', '/'))) as {

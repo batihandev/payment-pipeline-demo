@@ -203,7 +203,9 @@ it('pages older payments with a before cursor', async () => {
   const undated = await payment({ receivedAt: null });
   const firstPage = (await get('/payments?limit=2')).body as Payment[];
   expect(firstPage.map((p) => p.id)).toEqual([newest.id, tiedFirst.id]);
-  const before = encodePaymentCursor(paymentCursor(firstPage[1]!));
+  const lastOnPage = firstPage[1];
+  if (!lastOnPage) throw new Error('The first page has two payments');
+  const before = encodePaymentCursor(paymentCursor(lastOnPage));
   const older = await get(`/payments?limit=2&before=${before}`);
   expect(older.statusCode).toBe(200);
   expect((older.body as Payment[]).map((p) => p.id)).toEqual([
