@@ -80,6 +80,11 @@ function readOrderUpdate(data: string): OrderUpdate | undefined {
   }
   return undefined;
 }
+/** Whether `a` is a later copy of the row than `b`. A copy without a version is older than any versioned copy. */
+function isNewer(a: Pick<Payment, 'version'>, b: Pick<Payment, 'version'>) {
+  return (a.version ?? -1) > (b.version ?? -1);
+}
+
 export class PaymentsClient {
   private snapshot: Snapshot = { status: 'loading', data: null };
   private status: Snapshot['status'] = 'loading';
@@ -219,7 +224,7 @@ export class PaymentsClient {
   }
   private buffer(payment: Payment) {
     const held = this.buffered.get(payment.id);
-    if (held && held.version > payment.version) return;
+    if (held && isNewer(held, payment)) return;
     this.buffered.delete(payment.id);
     this.buffered.set(payment.id, payment);
     // The oldest entries go first; the next read returns those payments anyway.
@@ -260,7 +265,7 @@ export class PaymentsClient {
     const rows = new Map(this.feed.rows.map((p) => [p.id, p]));
     for (const event of events) {
       const previous = rows.get(event.id);
-      if (previous && previous.version > event.version) continue;
+      if (previous && isNewer(previous, event)) continue;
       rows.set(event.id, {
         ...previous,
         ...event,
@@ -337,7 +342,7 @@ export class PaymentsClient {
         // from incidents rather than the row, so they always come from the read.
         rows: rows.map((p) => {
           const known = held.get(p.id);
-          return known && known.version > p.version
+          return known && isNewer(known, p)
             ? { ...known, noteKinds: p.noteKinds }
             : p;
         }),

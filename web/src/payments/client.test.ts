@@ -554,6 +554,29 @@ describe('receipt window', () => {
     });
     stop();
   });
+  it('treats a missing version as older', async () => {
+    const s = windowed();
+    Object.assign(s.rows[0] ?? {}, { stage: 'confirming', version: 2 });
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    // An event without a version does not replace the versioned row the page holds.
+    s.stream.send({ ...s.rows[0], stage: 'sent', version: undefined });
+    expect(s.data().receipts[0]).toMatchObject({
+      stage: 'confirming',
+      version: 2,
+    });
+    await settle();
+    // Nor does a read whose copy has no version.
+    s.stream.send({ ...s.rows[1], stage: 'settled', version: 1 });
+    await settle();
+    Object.assign(s.rows[1] ?? {}, { stage: 'confirming', version: undefined });
+    await s.client.refresh();
+    expect(s.data().receipts[1]).toMatchObject({
+      stage: 'settled',
+      version: 1,
+    });
+    stop();
+  });
   it('keeps a newer event over a late read with a lower version', async () => {
     const s = windowed();
     const stop = s.client.subscribe(() => {});

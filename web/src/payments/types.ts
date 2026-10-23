@@ -11,8 +11,13 @@ type Json<T> = T extends bigint | Date
     ? { [K in keyof T]: Json<T[K]> }
     : T;
 export type Payment = Json<
-  Omit<DatabasePayment, 'fromAddress' | 'externalKey' | 'reconciledAt'>
+  Omit<
+    DatabasePayment,
+    'fromAddress' | 'externalKey' | 'reconciledAt' | 'version'
+  >
 > & {
+  /** Rises with every update to the row. An API older than the version column omits it. */
+  version?: number;
   /** Set for chain payments only; a card payment's PaymentIntent id stays private. */
   externalKey?: string;
   donorName: string | null;
