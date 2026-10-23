@@ -29,6 +29,7 @@ export class OrderSender {
     private readonly lock: RedisLock,
     private readonly options: SenderOptions,
   ) {}
+  private readonly suspectedDropped = new Set<string>();
   /** Buyer-wallet transfers broadcast but not yet seen by the tracker. */
   inFlight(): Promise<number> {
     return this.db.order.count({
@@ -41,7 +42,11 @@ export class OrderSender {
   /**
    * Closes or rebroadcasts buyer transfers the tracker has not seen two minutes after sending.
    * A transfer that reverted, or whose nonce another transaction used, can never pay its order,
-   * so the order is closed and leaves the in-flight count. Otherwise the stored transfer is
+   * so the order is closed and leaves the in-flight count. A revert is read from a receipt and
+   * closes at once. A dropped transfer has no receipt and a used nonce, and a lagging RPC backend
+   * can report both for a transfer that landed, so it closes only when two consecutive runs find
+   * it dropped; a receipt or an unused nonce in between clears the suspicion. The suspicion is
+   * kept in memory, so a restart delays a close by one run. Otherwise the stored transfer is
    * broadcast again, which is idempotent.
    */
   async checkUnseen(now = new Date()): Promise<void> {
@@ -67,19 +72,25 @@ export class OrderSender {
       const receipt = await this.chain.getTransactionReceipt(
         order.transactionHash as Hex,
       );
+      const dropped =
+        !receipt && order.nonce !== null && confirmed > order.nonce;
+      if (!dropped) this.suspectedDropped.delete(order.id);
       if (receipt?.status === 'reverted')
         await this.closeUnseen(order.id, {
           kind: 'send_reverted',
           whatHappened: 'Transfer reverted on chain.',
         });
       else if (receipt) continue;
-      else if (order.nonce !== null && confirmed > order.nonce)
-        await this.closeUnseen(order.id, {
-          kind: 'send_dropped',
-          whatHappened:
-            'Another transfer used this nonce, so it can never land.',
-        });
-      else await this.chain.sendRawTransaction(order.signedTransaction as Hex);
+      else if (dropped) {
+        if (this.suspectedDropped.delete(order.id))
+          await this.closeUnseen(order.id, {
+            kind: 'send_dropped',
+            whatHappened:
+              'Another transfer used this nonce, so it can never land.',
+          });
+        else this.suspectedDropped.add(order.id);
+      } else
+        await this.chain.sendRawTransaction(order.signedTransaction as Hex);
     }
   }
   private async closeUnseen(

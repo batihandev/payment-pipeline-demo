@@ -416,14 +416,14 @@ it('counts in-flight transfers from the database after a restart', async () => {
 });
 
 describe('transfers the tracker has not seen', () => {
-  const checkedAt = new Date(Date.now() + 3 * 60 * 1000);
+  const checkedAt = new Date(Date.now() + 30 * 60 * 1000);
   async function sentOrder(source: 'visitor' | 'schedule' = 'visitor') {
     const row = await order(source);
     await sender.sendForOrder(row.id);
     chain.calls = [];
     return database.db.order.findUniqueOrThrow({ where: { id: row.id } });
   }
-  it('closes a transfer that reverted on chain', async () => {
+  it('closes a reverted transfer on the first run', async () => {
     const row = await sentOrder('schedule');
     chain.reverted.add(row.transactionHash as Hex);
     expect(await sender.inFlight()).toBe(1);
@@ -449,9 +449,14 @@ describe('transfers the tracker has not seen', () => {
       await database.db.dailyBudget.findUniqueOrThrow({ where: { day } }),
     ).toMatchObject({ reservedCount: 0, reservedAmount: 0n });
   });
-  it('closes a transfer whose nonce another transaction used', async () => {
+  it('closes a dropped transfer only on the second run', async () => {
     const row = await sentOrder();
     chain.nonce = Number(row.nonce) + 1;
+    await sender.checkUnseen(checkedAt);
+    expect(
+      await database.db.order.findUniqueOrThrow({ where: { id: row.id } }),
+    ).toMatchObject({ sendState: 'sent', status: 'open' });
+    expect(await database.db.incident.count()).toBe(0);
     await sender.checkUnseen(checkedAt);
     expect(
       await database.db.order.findUniqueOrThrow({ where: { id: row.id } }),
@@ -464,6 +469,31 @@ describe('transfers the tracker has not seen', () => {
     expect(
       await database.db.dailyBudget.findUniqueOrThrow({ where: { day } }),
     ).toMatchObject({ reservedCount: 1, reservedAmount: 100n });
+  });
+  it('clears the suspicion when a receipt appears', async () => {
+    const row = await sentOrder();
+    chain.nonce = Number(row.nonce) + 1;
+    await sender.checkUnseen(checkedAt);
+    chain.receipts.add(row.transactionHash as Hex);
+    await sender.checkUnseen(checkedAt);
+    chain.receipts.delete(row.transactionHash as Hex);
+    await sender.checkUnseen(checkedAt);
+    expect(
+      await database.db.order.findUniqueOrThrow({ where: { id: row.id } }),
+    ).toMatchObject({ sendState: 'sent', status: 'open' });
+    expect(await database.db.incident.count()).toBe(0);
+  });
+  it('clears the suspicion when the nonce is no longer past the order', async () => {
+    const row = await sentOrder();
+    chain.nonce = Number(row.nonce) + 1;
+    await sender.checkUnseen(checkedAt);
+    chain.nonce = Number(row.nonce);
+    await sender.checkUnseen(checkedAt);
+    chain.nonce = Number(row.nonce) + 1;
+    await sender.checkUnseen(checkedAt);
+    expect(
+      await database.db.order.findUniqueOrThrow({ where: { id: row.id } }),
+    ).toMatchObject({ sendState: 'sent' });
   });
   it('rebroadcasts the stored transfer while its nonce is unused', async () => {
     const row = await sentOrder();
