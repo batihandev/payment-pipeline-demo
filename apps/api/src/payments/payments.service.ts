@@ -9,8 +9,12 @@ import { EventsService } from '../events/events.service';
 import { Prisma, PrismaService } from '../../../../libs/db/src';
 import type { PaymentCursor } from '../../../../libs/core/src/payment-cursor';
 import { PAYMENT_LIST_STEP } from '../../../../libs/core/src/payment-list';
+import type { PaymentListItemRecord } from '../../../../libs/core/src/api';
 import { publicPayment } from '../../../../libs/events/src/public-payment';
-import { receiptNoteKinds } from '../../../../libs/core/src/receipt-notes';
+import {
+  isReceiptNoteKind,
+  receiptNoteKinds,
+} from '../../../../libs/core/src/receipt-notes';
 import type { ApiConfig } from '../common/api-config';
 import { InjectNow, type Now } from '../common/clock.module';
 import { ttlCache } from '../common/ttl-cache';
@@ -19,7 +23,10 @@ const CACHE_MS = 5000;
 
 @Injectable()
 export class PaymentsService implements OnModuleInit, OnModuleDestroy {
-  private readonly cached = new Map<number, () => Promise<unknown>>();
+  private readonly cached = new Map<
+    number,
+    () => Promise<PaymentListItemRecord[]>
+  >();
   private subscription?: Subscription;
 
   constructor(
@@ -45,7 +52,10 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
    * 1 to 200, so the cache holds at most 10 keys. Other limits, and pages before a cursor, are
    * read when asked for.
    */
-  list(limit: number, before: PaymentCursor | null = null): Promise<unknown> {
+  list(
+    limit: number,
+    before: PaymentCursor | null = null,
+  ): Promise<PaymentListItemRecord[]> {
     if (before || limit % PAYMENT_LIST_STEP !== 0)
       return this.query(limit, before);
     let read = this.cached.get(limit);
@@ -63,7 +73,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
   private async query(
     limit: number,
     before: PaymentCursor | null = null,
-  ): Promise<unknown> {
+  ): Promise<PaymentListItemRecord[]> {
     const donationMin = this.config.get('DONATION_MIN', { infer: true });
     const explorer = this.config.get('BLOCK_EXPLORER_URL', { infer: true });
     const ids = await this.db.$queryRaw<
@@ -100,7 +110,9 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       )
       .map(({ incidents, ...row }) => ({
         ...publicPayment(row),
-        noteKinds: incidents.map((incident) => incident.kind),
+        noteKinds: incidents
+          .map((incident) => incident.kind)
+          .filter(isReceiptNoteKind),
         explorerUrl: row.transactionHash
           ? `${explorer.replace(/\/$/, '')}/tx/${row.transactionHash}`
           : null,

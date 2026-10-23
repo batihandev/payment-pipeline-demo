@@ -10,7 +10,7 @@ import {
   cardRail,
   cardBrandName,
 } from './view';
-import { payment } from './test-fixtures';
+import { order, payment } from './test-fixtures';
 
 describe('payment views', () => {
   it.each([
@@ -138,12 +138,7 @@ describe('payment views', () => {
       railBadge(
         payment({
           provider: 'stripe',
-          order: {
-            id: 'o1',
-            item: 'Duck',
-            price: '500000',
-            customer: { cardBrand: 'visa', cardLast4: '4242' },
-          },
+          order: order({ customer: { cardBrand: 'visa', cardLast4: '4242' } }),
         }),
       ),
     ).toBe('Test card · Visa ····4242');
@@ -151,12 +146,7 @@ describe('payment views', () => {
       railBadge(
         payment({
           provider: 'stripe',
-          order: {
-            id: 'o1',
-            item: 'Duck',
-            price: '500000',
-            customer: { cardBrand: 'amex', cardLast4: '0005' },
-          },
+          order: order({ customer: { cardBrand: 'amex', cardLast4: '0005' } }),
         }),
       ),
     ).toBe('Test card · American Express ····0005');

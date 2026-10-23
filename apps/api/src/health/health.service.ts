@@ -4,6 +4,7 @@ import type { Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { PrismaService } from '../../../../libs/db/src';
 import { cooldownKey } from '../../../../libs/chain/src/service-limiter';
+import type { HealthRecord } from '../../../../libs/core/src/api';
 import { VISITOR_PAUSED_SINCE } from '../../../../libs/core/src/redis-keys';
 import { InjectRedis } from '../../../../libs/redis/src';
 import { ApiError } from '../common/api-error';
@@ -81,7 +82,7 @@ export class HealthService {
 
   // Only a database failure fails /health. Redis parts are null while Redis is down, and chain
   // parts come from the shared snapshot, so a slow or failing RPC provider never delays it.
-  async read(): Promise<unknown> {
+  async read(): Promise<HealthRecord> {
     const get = <K extends keyof ApiConfig>(key: K): ApiConfig[K] =>
       this.config.get(key, { infer: true });
     const [database, live] = await Promise.allSettled([

@@ -10,3 +10,7 @@ export const receiptNoteKinds = [
 ] as const satisfies readonly IncidentKind[];
 
 export type ReceiptNoteKind = (typeof receiptNoteKinds)[number];
+
+export function isReceiptNoteKind(kind: string): kind is ReceiptNoteKind {
+  return receiptNoteKinds.some((noteKind) => noteKind === kind);
+}

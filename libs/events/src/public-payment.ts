@@ -1,43 +1,72 @@
-import type { Customer, Payment } from '../../db/generated/client';
+import type { Payment } from '../../db/generated/client';
+import type {
+  PublicCard,
+  PublicOrderRecord,
+  PublicPaymentRecord,
+} from '../../core/src/api';
 import { donorName } from '../../core/src/donor-name';
 
-export type PublicCard = Pick<Customer, 'cardBrand' | 'cardLast4'>;
-type OrderWithCustomer = { customer?: PublicCard | null };
-export type PublicOrder<O extends OrderWithCustomer> = Omit<O, 'customer'> & {
-  customer: PublicCard | null;
+/** The order fields a payment read selects, with the customer when it was included. */
+export type OrderRow = Omit<PublicOrderRecord, 'customer'> & {
+  customer?: PublicCard | null;
 };
-export type PublicPayment<O extends OrderWithCustomer = OrderWithCustomer> =
-  Omit<Payment, 'fromAddress' | 'externalKey' | 'reconciledAt'> & {
-    /** Set for chain payments only; a card payment's PaymentIntent id stays private. */
-    externalKey?: string;
-    donorName: string | null;
-    order?: PublicOrder<O> | null;
-  };
 
-function publicOrder<O extends OrderWithCustomer>({
-  customer,
-  ...order
-}: O): PublicOrder<O> {
+function publicOrder(order: OrderRow): PublicOrderRecord {
   return {
-    ...order,
-    customer: customer
-      ? { cardBrand: customer.cardBrand, cardLast4: customer.cardLast4 }
+    id: order.id,
+    item: order.item,
+    price: order.price,
+    expectedAmount: order.expectedAmount,
+    status: order.status,
+    source: order.source,
+    createdAt: order.createdAt,
+    expiresAt: order.expiresAt,
+    customer: order.customer
+      ? {
+          cardBrand: order.customer.cardBrand,
+          cardLast4: order.customer.cardLast4,
+        }
       : null,
   };
 }
 
 /**
  * A payment as the page sees it: no sender address, no PaymentIntent id, no reconciliation
- * time, and of the order's customer only the card brand and last 4.
+ * time, and of the order's customer only the card brand and last 4. Each field is copied by
+ * name, so a new column stays private until it is added here.
  */
-export function publicPayment<O extends OrderWithCustomer>(
-  payment: Payment & { order?: O | null },
-): PublicPayment<O> {
-  const { fromAddress, externalKey, reconciledAt, order, ...rest } = payment;
+export function publicPayment(
+  payment: Payment & { order?: OrderRow | null },
+): PublicPaymentRecord {
+  const { order } = payment;
   return {
-    ...rest,
-    ...(payment.provider !== 'stripe' && { externalKey }),
-    donorName: payment.donation && fromAddress ? donorName(fromAddress) : null,
+    id: payment.id,
+    provider: payment.provider,
+    ...(payment.provider !== 'stripe' && { externalKey: payment.externalKey }),
+    orderId: payment.orderId,
+    amount: payment.amount,
+    stage: payment.stage,
+    confirmations: payment.confirmations,
+    chainId: payment.chainId,
+    blockNumber: payment.blockNumber,
+    blockHash: payment.blockHash,
+    transactionHash: payment.transactionHash,
+    logIndex: payment.logIndex,
+    receiptUrl: payment.receiptUrl,
+    donation: payment.donation,
+    final: payment.final,
+    sentAt: payment.sentAt,
+    receivedAt: payment.receivedAt,
+    confirmingAt: payment.confirmingAt,
+    processingAt: payment.processingAt,
+    settledAt: payment.settledAt,
+    notifiedAt: payment.notifiedAt,
+    finalAt: payment.finalAt,
+    version: payment.version,
+    donorName:
+      payment.donation && payment.fromAddress
+        ? donorName(payment.fromAddress)
+        : null,
     ...(order !== undefined && { order: order && publicOrder(order) }),
   };
 }

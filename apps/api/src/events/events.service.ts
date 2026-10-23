@@ -7,11 +7,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import type { Redis } from 'ioredis';
 import { Observable, Subject, interval, map, merge, takeUntil } from 'rxjs';
-import {
-  orderChannel,
-  type OrderEvent,
-  type QueueEvent,
-} from '../../../../libs/events/src/order-events';
+import type { OrderEvent, QueueEvent } from '../../../../libs/core/src/api';
+import { orderChannel } from '../../../../libs/events/src/order-events';
 import { paymentChannel } from '../../../../libs/events/src/publish-payment';
 import { subscribeEvents } from '../../../../libs/events/src/subscribe-events';
 import { InjectRedis } from '../../../../libs/redis/src';

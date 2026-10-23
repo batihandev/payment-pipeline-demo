@@ -15,6 +15,10 @@ import {
   PurchasesService,
 } from '../../../../libs/orders/src';
 import { orderClosed } from '../../../../libs/events/src/order-events';
+import type {
+  OrderPosition,
+  PurchaseAccepted,
+} from '../../../../libs/core/src/api';
 import { utcDateKey } from '../../../../libs/core/src/time';
 import { InjectRedis } from '../../../../libs/redis/src';
 import { ApiError } from '../common/api-error';
@@ -157,21 +161,10 @@ export class TestPurchasesService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  buy(
-    address: string,
-    rail: PaymentRail,
-  ): Promise<{
-    orderId: string;
-    position: number;
-    item: string;
-    price: string;
-    expiresAt: string;
-  }> {
+  buy(address: string, rail: PaymentRail): Promise<PurchaseAccepted> {
     return this.exclusive(async () => {
       const now = this.now();
-      let created:
-        | { orderId: string; item: string; price: string; expiresAt: string }
-        | undefined;
+      let created: Omit<PurchaseAccepted, 'position'> | undefined;
       try {
         if (rail === 'card') {
           if (!(await this.cardRail.available()))
@@ -209,7 +202,7 @@ export class TestPurchasesService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** The queue position of a waiting order, and whether it closed without a payment being sent. */
-  async positionOf(id: string): Promise<{ position: number; closed: boolean }> {
+  async positionOf(id: string): Promise<OrderPosition> {
     const unknown = { position: 0, closed: false };
     if (!uuid.test(id)) return unknown;
     const order = await this.db.order.findUnique({ where: { id } });
