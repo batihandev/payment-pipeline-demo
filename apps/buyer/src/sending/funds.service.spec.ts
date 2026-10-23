@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { SendState } from '../../../../libs/db/src';
 import { testDatabase } from '../../../../libs/db/testing/database';
 import { FundsService } from './funds.service';
 
@@ -18,7 +19,7 @@ beforeEach(async () => {
 function order(
   expectedAmount: bigint,
   extra: {
-    sendState?: string;
+    sendState?: SendState;
     status?: 'open' | 'expired';
     signedTransaction?: string;
     rail?: 'chain' | 'card';

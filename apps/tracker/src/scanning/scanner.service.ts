@@ -9,7 +9,11 @@ import {
   type TransferLog,
 } from '../../../../libs/chain/src/chain-client';
 import { RpcError } from '../../../../libs/chain/src/rpc-error';
-import { PrismaService, type Prisma } from '../../../../libs/db/src';
+import {
+  PrismaService,
+  type Prisma,
+  recordIncident,
+} from '../../../../libs/db/src';
 import type { TrackerConfig } from '../tracker-config';
 export type TrackerOptions = {
   startBlock?: bigint;
@@ -106,14 +110,12 @@ export class ScannerService {
         0n,
         min(position, head.number) - BigInt(this.options.rescanBlocks),
       );
-      await this.db.incident.create({
-        data: {
-          kind: 'cursor_reorg',
-          fromBlock: position,
-          toBlock: cursor.blockNumber,
-          whatHappened: 'The saved cursor block changed.',
-          howHandled: 'Stepped back and rescanned the overlap.',
-        },
+      await recordIncident(this.db, {
+        kind: 'cursor_reorg',
+        fromBlock: position,
+        toBlock: cursor.blockNumber,
+        whatHappened: 'The saved cursor block changed.',
+        howHandled: 'Stepped back and rescanned the overlap.',
       });
     }
     const from = cursor
@@ -144,15 +146,13 @@ export class ScannerService {
               nextRetryAt: new Date(this.now().getTime() + 60000),
             },
           });
-        await tx.incident.create({
-          data: {
-            kind: 'scan_gap',
-            fromBlock: from,
-            toBlock: to,
-            whatHappened: `Log scan failed: ${failure.kind}.`,
-            howHandled:
-              'Saved a gap for bounded background recovery; continued tracking new blocks.',
-          },
+        await recordIncident(tx, {
+          kind: 'scan_gap',
+          fromBlock: from,
+          toBlock: to,
+          whatHappened: `Log scan failed: ${failure.kind}.`,
+          howHandled:
+            'Saved a gap for bounded background recovery; continued tracking new blocks.',
         });
       } else await this.storeLogs(tx, logs, from, to, cursor?.blockNumber);
       // advancedAt moves only with a higher block, so a rescan of the same blocks or a step
@@ -206,14 +206,12 @@ export class ScannerService {
           error.kind !== 'permanent' &&
           error.kind !== 'range_too_large' &&
           attempt < this.options.rpcAttempts;
-        await this.db.incident.create({
-          data: {
-            kind: 'rpc_failed',
-            whatHappened: `RPC request failed: ${error.kind}.`,
-            howHandled: retry
-              ? 'Retry with bounded exponential backoff and service cooldown.'
-              : 'Stopped immediate retries; log ranges enter the gap path and other work resumes on a later pass.',
-          },
+        await recordIncident(this.db, {
+          kind: 'rpc_failed',
+          whatHappened: `RPC request failed: ${error.kind}.`,
+          howHandled: retry
+            ? 'Retry with bounded exponential backoff and service cooldown.'
+            : 'Stopped immediate retries; log ranges enter the gap path and other work resumes on a later pass.',
         });
         if (!retry) throw error;
         await this.sleep(
@@ -278,13 +276,11 @@ export class ScannerService {
       )
         continue;
       if (exists) {
-        await tx.incident.create({
-          data: {
-            kind: 'duplicate',
-            paymentId: exists.id,
-            whatHappened: 'Transfer log seen again.',
-            howHandled: 'Skipped the duplicate payment.',
-          },
+        await recordIncident(tx, {
+          kind: 'duplicate',
+          paymentId: exists.id,
+          whatHappened: 'Transfer log seen again.',
+          howHandled: 'Skipped the duplicate payment.',
         });
         continue;
       }

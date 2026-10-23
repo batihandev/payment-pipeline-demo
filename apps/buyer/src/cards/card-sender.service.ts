@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { RpcError } from '../../../../libs/chain/src/rpc-error';
-import { PrismaService } from '../../../../libs/db/src';
+import { PrismaService, recordIncident } from '../../../../libs/db/src';
 import {
   BEFORE_PROCESSING,
   BEFORE_SETTLED,
@@ -156,12 +156,10 @@ export class CardSenderService {
         return;
       }
       await closeOrder(tx, order);
-      await tx.incident.create({
-        data: {
-          kind: 'card_failed',
-          whatHappened: DECLINED,
-          howHandled: 'Closed the order; nothing was credited.',
-        },
+      await recordIncident(tx, {
+        kind: 'card_failed',
+        whatHappened: DECLINED,
+        howHandled: 'Closed the order; nothing was credited.',
       });
     });
   }
@@ -187,18 +185,16 @@ export class CardSenderService {
         });
         await saveOrderEvents(tx, [orderId]);
       }
-      await tx.incident.create({
-        data: {
-          kind: 'send_failed',
-          whatHappened: accepted
-            ? `Card payment ${orderId}: charge accepted; recording failed, retrying.`
-            : `Card payment ${orderId} failed (${kind}).`,
-          howHandled: closed
-            ? 'No charge was made; released the reservation and closed the order.'
-            : exhausted
-              ? 'Automatic retries stopped; kept the reservation for manual review.'
-              : 'Kept the reservation; retry with backoff.',
-        },
+      await recordIncident(tx, {
+        kind: 'send_failed',
+        whatHappened: accepted
+          ? `Card payment ${orderId}: charge accepted; recording failed, retrying.`
+          : `Card payment ${orderId} failed (${kind}).`,
+        howHandled: closed
+          ? 'No charge was made; released the reservation and closed the order.'
+          : exhausted
+            ? 'Automatic retries stopped; kept the reservation for manual review.'
+            : 'Kept the reservation; retry with backoff.',
       });
     });
   }

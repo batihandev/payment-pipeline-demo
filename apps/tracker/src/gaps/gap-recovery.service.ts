@@ -1,5 +1,5 @@
 import { Injectable, Optional } from '@nestjs/common';
-import { PrismaService } from '../../../../libs/db/src';
+import { PrismaService, recordIncident } from '../../../../libs/db/src';
 import { ScannerService } from '../scanning/scanner.service';
 @Injectable()
 export class GapRecoveryService {
@@ -37,18 +37,16 @@ export class GapRecoveryService {
           where: { id: gap.id },
           data: { errorCategory: range.failure.kind },
         });
-        await tx.incident.create({
-          data: {
-            kind: 'gap_retry_failed',
-            fromBlock: gap.fromBlock,
-            toBlock: gap.toBlock,
-            whatHappened: `Gap retry failed: ${range.failure.kind}.`,
-            howHandled:
-              gap.attempts + 1 >= this.scanner.options.gapAttempts ||
-              range.failure.kind === 'permanent'
-                ? 'Left the gap open for manual review; stopped automatic retries.'
-                : 'Left the gap open with exponential backoff.',
-          },
+        await recordIncident(tx, {
+          kind: 'gap_retry_failed',
+          fromBlock: gap.fromBlock,
+          toBlock: gap.toBlock,
+          whatHappened: `Gap retry failed: ${range.failure.kind}.`,
+          howHandled:
+            gap.attempts + 1 >= this.scanner.options.gapAttempts ||
+            range.failure.kind === 'permanent'
+              ? 'Left the gap open for manual review; stopped automatic retries.'
+              : 'Left the gap open with exponential backoff.',
         });
         return;
       }
@@ -60,16 +58,14 @@ export class GapRecoveryService {
           ? { resolvedAt: this.now() }
           : { fromBlock: range.to + 1n, attempts: 0, nextRetryAt: this.now() },
       });
-      await tx.incident.create({
-        data: {
-          kind: complete ? 'gap_recovered' : 'gap_progress',
-          fromBlock: gap.fromBlock,
-          toBlock: range.to,
-          whatHappened: 'A previously unscanned range became available.',
-          howHandled: complete
-            ? 'Stored recovered payments and closed the gap in one transaction.'
-            : 'Stored the recovered portion and retained the unscanned remainder.',
-        },
+      await recordIncident(tx, {
+        kind: complete ? 'gap_recovered' : 'gap_progress',
+        fromBlock: gap.fromBlock,
+        toBlock: range.to,
+        whatHappened: 'A previously unscanned range became available.',
+        howHandled: complete
+          ? 'Stored recovered payments and closed the gap in one transaction.'
+          : 'Stored the recovered portion and retained the unscanned remainder.',
       });
     });
   }

@@ -10,7 +10,11 @@ import { UnrecoverableError, type Job } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { RpcError } from '../../../../libs/chain/src/rpc-error';
 import { DAY_MS } from '../../../../libs/core/src/time';
-import { PrismaService, type PaymentRail } from '../../../../libs/db/src';
+import {
+  PrismaService,
+  type PaymentRail,
+  recordIncident,
+} from '../../../../libs/db/src';
 import { publishPayment } from '../../../../libs/events/src/publish-payment';
 import {
   OrderQueueService,
@@ -143,15 +147,13 @@ export class BuyerProcessor
     try {
       await publishPayment(this.redis, payment);
     } catch {
-      await this.db.incident.create({
-        data: {
-          kind: 'event_failed',
-          paymentId: payment.id,
-          whatHappened: 'Could not publish the saved payment event.',
-          howHandled: exhausted
-            ? 'Publication retries exhausted; the saved payment is available for clients to refetch.'
-            : 'Payment remains saved; retry publication with the purchase job.',
-        },
+      await recordIncident(this.db, {
+        kind: 'event_failed',
+        paymentId: payment.id,
+        whatHappened: 'Could not publish the saved payment event.',
+        howHandled: exhausted
+          ? 'Publication retries exhausted; the saved payment is available for clients to refetch.'
+          : 'Payment remains saved; retry publication with the purchase job.',
       });
       throw new RpcError('transient');
     }

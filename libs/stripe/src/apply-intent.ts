@@ -1,6 +1,6 @@
 import type Stripe from 'stripe';
 import type { Order, Payment } from '../../db/generated/client';
-import { BudgetReservation, type Prisma } from '../../db/src';
+import { BudgetReservation, type Prisma, recordIncident } from '../../db/src';
 import { savePaymentEvent } from '../../events/src/save-payment-event';
 import {
   BEFORE_PROCESSING,
@@ -30,12 +30,10 @@ export async function applyIntent(
 ): Promise<IntentOutcome> {
   const locked = await lockPayment(tx, intent, now);
   if (!locked) {
-    await tx.incident.create({
-      data: {
-        kind: 'unmatched',
-        whatHappened: `Card payment ${intent.id} matches no card order.`,
-        howHandled: 'Stored the event and changed nothing.',
-      },
+    await recordIncident(tx, {
+      kind: 'unmatched',
+      whatHappened: `Card payment ${intent.id} matches no card order.`,
+      howHandled: 'Stored the event and changed nothing.',
     });
     return 'unmatched';
   }
@@ -60,13 +58,11 @@ export async function applyIntent(
         receiptUrl: receiptUrlOf(intent) ?? payment.receiptUrl,
       });
       if (order.status === 'expired' || order.expiresAt < now)
-        await tx.incident.create({
-          data: {
-            kind: 'paid_after_expiry',
-            paymentId: payment.id,
-            whatHappened: 'Order paid after expiry.',
-            howHandled: 'Settled the late card payment.',
-          },
+        await recordIncident(tx, {
+          kind: 'paid_after_expiry',
+          paymentId: payment.id,
+          whatHappened: 'Order paid after expiry.',
+          howHandled: 'Settled the late card payment.',
         });
       // Closing a scheduled order gave its budget back; the late payment spends it again.
       if (order.source === 'schedule' && order.sendState === 'failed')

@@ -1,6 +1,6 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../../../../libs/db/src';
+import { PrismaService, recordIncident } from '../../../../libs/db/src';
 import type { TrackerConfig } from '../tracker-config';
 import { noticeRetryOptions } from './notice-retry';
 import { signNotice } from '../../../../libs/core/src/notices';
@@ -48,15 +48,13 @@ export class NoticeSenderService {
         data: { deliveredAt: this.now() },
       });
     } catch {
-      await this.db.incident.create({
-        data: {
-          kind: 'notice_failed',
-          paymentId,
-          whatHappened: 'The shop notice could not be delivered.',
-          howHandled: exhausted
-            ? 'Kept the undelivered notice for manual review after retries were exhausted.'
-            : 'Kept the notice for a bounded queue retry with exponential backoff.',
-        },
+      await recordIncident(this.db, {
+        kind: 'notice_failed',
+        paymentId,
+        whatHappened: 'The shop notice could not be delivered.',
+        howHandled: exhausted
+          ? 'Kept the undelivered notice for manual review after retries were exhausted.'
+          : 'Kept the notice for a bounded queue retry with exponential backoff.',
       });
       throw new Error('Shop notice delivery failed');
     }

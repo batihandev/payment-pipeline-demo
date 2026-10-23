@@ -1,6 +1,7 @@
 import type { Payment } from '../../../../libs/db/generated/client';
 import type { Prisma } from '../../../../libs/db/src';
 import { savePaymentEvent } from '../../../../libs/events/src/save-payment-event';
+import { recordIncident } from '../../../../libs/db/src';
 export async function handlePaymentReorg(
   tx: Prisma.TransactionClient,
   observed: Payment,
@@ -24,17 +25,15 @@ export async function handlePaymentReorg(
       where: { kind, paymentId: payment.id, fromBlock: block },
     }))
   )
-    await tx.incident.create({
-      data: {
-        kind,
-        paymentId: payment.id,
-        fromBlock: block,
-        toBlock: block,
-        whatHappened: 'The payment block is no longer canonical.',
-        howHandled: credited
-          ? 'Kept the ledger credit for manual review; withheld finality.'
-          : 'Dropped the payment back to sent and scheduled a rescan.',
-      },
+    await recordIncident(tx, {
+      kind,
+      paymentId: payment.id,
+      fromBlock: block,
+      toBlock: block,
+      whatHappened: 'The payment block is no longer canonical.',
+      howHandled: credited
+        ? 'Kept the ledger credit for manual review; withheld finality.'
+        : 'Dropped the payment back to sent and scheduled a rescan.',
     });
   if (credited) return true;
   const dropped = await tx.payment.update({

@@ -180,7 +180,7 @@ Failures are quiet. Once the page has data, a failed refresh or health read keep
 
 ## Data model
 
-- `orders`: id, item, price, expected amount (micro-units), status (open, paid, expired), source (schedule, visitor), rail (chain, card), customer id, nonce, signed transaction, transaction hash, send attempts, created and expiry times.
+- `orders`: id, item, price, expected amount (micro-units), status (open, paid, expired), source (schedule, visitor), rail (chain, card), customer id, nonce, signed transaction, transaction hash, send state (pending, sent, failed, review), send attempts, created and expiry times.
 - `daily_budgets`: UTC day, target count and amount, reserved count and amount.
 - `scan_gaps`: block range, error category, attempts, next retry time, resolved time.
 - `customers`: id, name, chain address, Stripe customer id, Stripe payment method id, card brand, last four digits. One demo customer.
@@ -188,7 +188,7 @@ Failures are quiet. Once the page has data, a failed refresh or health read keep
 - `order_events`: order id, created time and published time; one row for each change to an order's status or send state, written in the same transaction and published after it commits.
 - `payments`: id, provider (chain, stripe), external key (unique per provider; the PaymentIntent id for Stripe), order id (null for a donation), sender address (chain payments) and donation flag, amount, stage, confirmations, block number and hash, transaction hash, log index, Stripe receipt URL, final flag, stage timestamps, and a version that a database trigger raises by one on every update.
 - `ledger_entries`: id, payment id (unique), amount, created time.
-- `incidents`: id, kind, what happened, how it was handled, related payment or block range, time.
+- `incidents`: id, kind (text, from the fixed list in `libs/core/src/incidents.ts`), what happened, how it was handled, related payment or block range, time.
 - `cursors`: name, block number, block hash.
 - `notices`: payment id (unique), attempts, delivered time.
 

@@ -2,6 +2,7 @@ import type { Payment } from '../../db/generated/client';
 import type { Prisma } from '../../db/src';
 import { savePaymentEvent } from '../../events/src/save-payment-event';
 import { closeOrder } from './close-order';
+import { recordIncident } from '../../db/src';
 
 /**
  * Moves a card payment to the terminal `failed` stage, closes its order unless it is closed
@@ -29,12 +30,10 @@ export async function failCardPayment(
     where: { kind: 'card_failed', payment: { orderId: order.id } },
   });
   if (!recorded)
-    await tx.incident.create({
-      data: {
-        kind: 'card_failed',
-        paymentId: payment.id,
-        whatHappened,
-        howHandled: 'Closed the order; nothing was credited.',
-      },
+    await recordIncident(tx, {
+      kind: 'card_failed',
+      paymentId: payment.id,
+      whatHappened,
+      howHandled: 'Closed the order; nothing was credited.',
     });
 }

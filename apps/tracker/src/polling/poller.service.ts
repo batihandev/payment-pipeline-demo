@@ -7,7 +7,7 @@ import {
   type OnModuleDestroy,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../../../../libs/db/src';
+import { PrismaService, recordIncident } from '../../../../libs/db/src';
 import { errorFields } from '../../../../libs/logging/src';
 import { ScannerService } from '../scanning/scanner.service';
 import { ProgressService } from '../scanning/progress.service';
@@ -50,13 +50,10 @@ export class PollerService implements OnApplicationBootstrap, OnModuleDestroy {
         delay = await this.pass();
       } catch {
         try {
-          await this.db.incident.create({
-            data: {
-              kind: 'tracker_pass_failed',
-              whatHappened: 'The tracker pass could not finish.',
-              howHandled:
-                'Retained database state and scheduled the next poll.',
-            },
+          await recordIncident(this.db, {
+            kind: 'tracker_pass_failed',
+            whatHappened: 'The tracker pass could not finish.',
+            howHandled: 'Retained database state and scheduled the next poll.',
           });
         } catch (error) {
           logger.error(

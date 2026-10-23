@@ -29,6 +29,13 @@ enum PaymentProvider {
   stripe
 }
 
+enum SendState {
+  pending
+  sent
+  failed
+  review
+}
+
 enum PaymentStage {
   sent
   received
@@ -52,7 +59,7 @@ model Order {
   nonce             BigInt?
   signedTransaction String?      @map("signed_transaction")
   transactionHash   String?      @map("transaction_hash")
-  sendState         String       @default("pending") @map("send_state")
+  sendState         SendState    @default(pending) @map("send_state")
   sendAttempts      Int          @default(0) @map("send_attempts")
   createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   expiresAt         DateTime     @map("expires_at") @db.Timestamptz(3)
@@ -204,14 +211,14 @@ model WalletNonce {
 }
 
 model Sweep {
-  id                String   @id
+  id                String    @id
   amount            BigInt
   nonce             BigInt?
-  signedTransaction String?  @map("signed_transaction")
-  transactionHash   String?  @map("transaction_hash")
-  sendAttempts      Int      @default(0) @map("send_attempts")
-  sendState         String   @default("pending") @map("send_state")
-  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  signedTransaction String?   @map("signed_transaction")
+  transactionHash   String?   @map("transaction_hash")
+  sendAttempts      Int       @default(0) @map("send_attempts")
+  sendState         SendState @default(pending) @map("send_state")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@map("sweeps")
 }

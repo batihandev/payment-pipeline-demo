@@ -12,6 +12,7 @@ import {
   BudgetReservation,
   PrismaService,
   type Prisma,
+  recordIncident,
 } from '../../../../libs/db/src';
 import { saveOrderEvents } from '../../../../libs/events/src/order-events';
 import { closeOrder } from '../../../../libs/orders/src/close-order';
@@ -21,6 +22,7 @@ import {
   BUYER_ADDRESS,
   SHOP_ADDRESS,
 } from '../../../../libs/chain/src/wallet-addresses';
+import type { IncidentKind } from '../../../../libs/core/src/incidents';
 
 class NonceResynced extends RpcError {
   constructor() {
@@ -113,7 +115,7 @@ export class OrderSenderService {
   }
   private async closeUnseen(
     orderId: string,
-    incident: { kind: string; whatHappened: string },
+    incident: { kind: IncidentKind; whatHappened: string },
   ): Promise<void> {
     await this.db.$transaction(async (tx) => {
       await this.lockRow(tx, { kind: 'order', id: orderId });
@@ -125,12 +127,10 @@ export class OrderSenderService {
       // The tracker may have seen the transfer since the check began.
       if (order.sendState !== 'sent' || !payment) return;
       await closeOrder(tx, order);
-      await tx.incident.create({
-        data: {
-          ...incident,
-          paymentId: payment.id,
-          howHandled: 'Closed the order; nothing was credited.',
-        },
+      await recordIncident(tx, {
+        ...incident,
+        paymentId: payment.id,
+        howHandled: 'Closed the order; nothing was credited.',
       });
     });
   }
@@ -296,8 +296,9 @@ export class OrderSenderService {
             });
           } else {
             const refill = row.id.startsWith('refill:');
-            await tx.incident.create({
-              data: refill
+            await recordIncident(
+              tx,
+              refill
                 ? {
                     kind: 'refilled',
                     whatHappened: `Refilled the buyer with ${row.amount} micro-units from the shop.`,
@@ -308,7 +309,7 @@ export class OrderSenderService {
                     whatHappened: `Swept ${row.amount} micro-units from shop to buyer.`,
                     howHandled: `Stored transfer ${hash} for sweep ${row.id}.`,
                   },
-            });
+            );
           }
         });
       });
@@ -366,13 +367,11 @@ export class OrderSenderService {
             signedTransaction: null,
             transactionHash: null,
           });
-          await tx.incident.create({
-            data: {
-              kind: 'nonce_resynced',
-              whatHappened: 'Nonce was behind the chain.',
-              howHandled:
-                'Moved the nonce forward and signed the transfer again.',
-            },
+          await recordIncident(tx, {
+            kind: 'nonce_resynced',
+            whatHappened: 'Nonce was behind the chain.',
+            howHandled:
+              'Moved the nonce forward and signed the transfer again.',
           });
           return true;
         },
@@ -410,16 +409,14 @@ export class OrderSenderService {
         exhausted || (error instanceof RpcError && error.kind === 'permanent');
       if (needsReview && !knownFailure && row.sendState === 'pending')
         await this.update(tx, target, { sendState: 'review' });
-      await tx.incident.create({
-        data: {
-          kind: 'send_failed',
-          whatHappened: `Transfer ${target.id} failed (${error instanceof RpcError ? error.kind : 'transient'}).`,
-          howHandled: knownFailure
-            ? 'No transaction was broadcast; released the reservation and closed the order.'
-            : needsReview
-              ? `Automatic retries stopped; kept the reservation${row.signedTransaction ? ' and the same signed transaction' : ''} for manual review.`
-              : `Kept the reservation; retry with backoff${row.signedTransaction ? ' using the same signed transaction' : ''}.`,
-        },
+      await recordIncident(tx, {
+        kind: 'send_failed',
+        whatHappened: `Transfer ${target.id} failed (${error instanceof RpcError ? error.kind : 'transient'}).`,
+        howHandled: knownFailure
+          ? 'No transaction was broadcast; released the reservation and closed the order.'
+          : needsReview
+            ? `Automatic retries stopped; kept the reservation${row.signedTransaction ? ' and the same signed transaction' : ''} for manual review.`
+            : `Kept the reservation; retry with backoff${row.signedTransaction ? ' using the same signed transaction' : ''}.`,
       });
     });
   }

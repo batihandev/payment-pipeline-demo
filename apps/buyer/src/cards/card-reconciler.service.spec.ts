@@ -2,6 +2,7 @@ import { Redis } from 'ioredis';
 import { RpcError } from '../../../../libs/chain/src/rpc-error';
 import { cooldownKey } from '../../../../libs/chain/src/service-limiter';
 import { testRedisUrl } from '../../../../libs/config/testing/redis';
+import type { SendState } from '../../../../libs/db/src';
 import { testDatabase } from '../../../../libs/db/testing/database';
 import {
   FakeStripe,
@@ -45,7 +46,7 @@ const db = () => database.db;
 
 function order(
   data: {
-    sendState?: string;
+    sendState?: SendState;
     status?: 'open' | 'expired';
     source?: 'visitor' | 'schedule';
   } = {},
