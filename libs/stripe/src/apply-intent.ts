@@ -1,6 +1,6 @@
 import type Stripe from 'stripe';
 import type { Order, Payment } from '../../db/generated/client';
-import type { Prisma } from '../../db/src';
+import { BudgetReservation, type Prisma } from '../../db/src';
 import { savePaymentEvent } from '../../events/src/save-payment-event';
 import {
   BEFORE_PROCESSING,
@@ -68,6 +68,12 @@ export async function applyIntent(
             howHandled: 'Settled the late card payment.',
           },
         });
+      // Closing a scheduled order gave its budget back; the late payment spends it again.
+      if (order.source === 'schedule' && order.sendState === 'failed')
+        await new BudgetReservation(tx).restore(
+          order.createdAt,
+          order.expectedAmount,
+        );
       return 'applied';
     case 'requires_payment_method':
     case 'canceled':
