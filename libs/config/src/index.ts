@@ -15,7 +15,7 @@ const chain = {
   RPC_COOLDOWN_MS: positiveInteger.default(30_000),
 };
 
-const confirmations = { CONFIRMATIONS: positiveInteger.default(10) };
+const confirmations = { CONFIRMATIONS: positiveInteger.default(30) };
 
 const retention = { RETENTION_DAYS: positiveInteger.default(30) };
 

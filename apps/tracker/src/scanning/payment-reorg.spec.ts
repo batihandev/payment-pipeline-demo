@@ -104,17 +104,6 @@ it('continues confirming a payment that becomes final before its confirmation th
   expect((await f.db.payment.findFirstOrThrow()).stage).toBe('settled');
   expect(await f.db.ledgerEntry.count()).toBe(1);
 });
-it('keeps the current confirmation count in events for a settled payment awaiting finality', async () => {
-  await progress.advance(20n, 0n);
-  await progress.advance(21n, 0n);
-  const event = await f.db.paymentEvent.findFirstOrThrow({
-    orderBy: { id: 'desc' },
-  });
-  expect(JSON.parse(event.body)).toMatchObject({
-    stage: 'settled',
-    confirmations: 11,
-  });
-});
 it('keeps the payment identity when a re-mined transfer has a different log index', async () => {
   const original = await f.db.payment.findFirstOrThrow();
   f.chain.hashes.set(10n, hash(999n));

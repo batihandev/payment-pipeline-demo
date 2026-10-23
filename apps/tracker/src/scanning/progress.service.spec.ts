@@ -91,3 +91,17 @@ it('never credits an unmatched transfer even above the confirmation threshold', 
   expect((await f.db.payment.findFirstOrThrow()).stage).toBe('received');
   expect(await f.db.ledgerEntry.count()).toBe(0);
 });
+it('saves no confirmation-only events past the threshold', async () => {
+  await progress.advance(20n);
+  expect(await f.db.payment.findFirstOrThrow()).toMatchObject({
+    stage: 'settled',
+    confirmations: 10,
+  });
+  const events = await f.db.paymentEvent.count();
+  await progress.advance(25n);
+  await progress.advance(40n);
+  expect(await f.db.paymentEvent.count()).toBe(events);
+  expect(await f.db.payment.findFirstOrThrow()).toMatchObject({
+    confirmations: 10,
+  });
+});

@@ -87,10 +87,19 @@ export class ProgressService {
               });
             }
           }
-        } else if (current.confirmations !== confirmations) {
+        } else if (
+          current.confirmations < this.scanner.options.confirmations &&
+          current.confirmations !== confirmations
+        ) {
+          // Counting stops at the threshold; past it, only finality is still news.
           const updated = await tx.payment.update({
             where: { id: current.id },
-            data: { confirmations },
+            data: {
+              confirmations: Math.min(
+                confirmations,
+                this.scanner.options.confirmations,
+              ),
+            },
           });
           await savePaymentEvent(tx, updated);
         }

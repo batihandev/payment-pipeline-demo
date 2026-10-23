@@ -83,7 +83,7 @@ Chain: `sent → received → confirming → settled → notified`, plus a `fina
 
 - **sent:** the buyer broadcast the transfer and stored its hash. This is the buyer's record, not yet seen by the tracker.
 - **received:** the transfer log was seen in a block.
-- **confirming:** waiting for `CONFIRMATIONS` blocks on top (default 10).
+- **confirming:** waiting for `CONFIRMATIONS` blocks on top (default 30; at about five blocks a second on Base Sepolia, roughly six seconds, so the tracker records a few counts on the way). Counting stops at the threshold: after settlement only finality is recorded.
 - **settled:** the confirmation count was reached. The ledger entry is written; this is the credit.
 - **notified:** the shop accepted the signed notice.
 - **final:** the chain's `finalized` block tag has passed the payment's block. Shown as a badge; on Base this comes some minutes after settled.
@@ -149,7 +149,7 @@ One React + Vite page with three parts:
 - **Small widget:** a dark card showing the latest payment as a receipt (item, price, order and block), a confirmation bar filling to the threshold, a PAID stamp when settled, a four-step strip and a footer of counts. It runs without interaction. It can also be shown on its own at `/?view=widget`.
 - **Full panel:** header with a live indicator, test network label, one-line caption; a four-lane pipeline; a receipts feed in which a receipt shows at most one note (a reorg, a transfer that did not go through, a payment after its order expired, or a thank-you on a donation; the widget shows none; `/payments` sends each payment's note kinds, the distinct incident kinds that have a note, never incident text); stats tiles.
 
-Confirmation progress reads "N of 10" until the threshold, then "10+ confirmations". The full panel adds a chart of settled payments per day and per week over the retained period, from `/stats/daily`, with scheduled and visitor purchases stacked and the average time to settle as a line.
+Confirmation progress reads "N of `CONFIRMATIONS`" until the threshold, then "`CONFIRMATIONS`+ confirmations". The full panel adds a chart of settled payments per day and per week over the retained period, from `/stats/daily`, with scheduled and visitor purchases stacked and the average time to settle as a line.
 
 Data comes from the REST routes on load and `/events` afterwards. Explorer links point to the configured block explorer.
 
