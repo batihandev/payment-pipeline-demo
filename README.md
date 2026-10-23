@@ -1,11 +1,15 @@
 # testnet-payments
 
-A payment-tracking demo follows test USDC purchases on Base Sepolia from broadcast through confirmation, settlement and shop notification. Separate buyer, tracker and API services share a PostgreSQL ledger and Redis, with a React dashboard showing payment progress.
+A payment-tracking demo follows test purchases through two payment rails into one ledger. On the chain rail, test USDC moves on Base Sepolia from broadcast through confirmation, settlement and shop notification. On the card rail, a saved Stripe test card is charged and the payment settles from a signed Stripe webhook. Separate buyer, tracker and API services share a PostgreSQL ledger and Redis, with a React dashboard showing payment progress.
+
+Both rails run on test networks only. Stripe runs in test mode: configuration rejects any `sk_live_` key, and any other key that does not start with `sk_test_`. Visitors never enter card details; the demo pays with a test card saved in Stripe for the demo's own customer. No card data is stored beyond Stripe IDs, the card brand and its last four digits.
 
 ```mermaid
 flowchart LR
-  Buyer["Buyer (jobs)"] --> Chain[Base Sepolia]
+  Buyer["Buyer (jobs)"] -- USDC transfer --> Chain[Base Sepolia]
+  Buyer -- card charge --> Stripe[Stripe test mode]
   Chain --> Tracker["Tracker (jobs, poll loop)"]
+  Stripe -- signed webhook --> API
   Buyer --> DB[(PostgreSQL)]
   Tracker --> DB
   Buyer <--> Redis[(Redis)]
@@ -16,16 +20,31 @@ flowchart LR
   API --> Web[React dashboard]
 ```
 
-Only transfers from `BUYER_ADDRESS` are matched to orders. Any other USDC transfer to the shop is a donation: it is stored with its sender and settles with a ledger entry, but has no order, no shop notice and no `unmatched` incident (a reorg or duplicate still records its own incident). The API shows a donation under a stable two-word name derived from the sender and never returns the address. Donations below `DONATION_MIN` are stored but not listed, streamed or counted.
+Every order has a rail. A chain order's expected amount is its price plus a unique offset of 1 to 9,999 micro-units, and the tracker matches transfers to orders by that amount. A card order's expected amount is its price in micro-units with no offset (price in cents times 10,000); the tracker never matches a transfer to a card order, so a chain transfer of the same amount cannot settle it. Item prices run from $0.50 to $2.00, because Stripe's smallest USD charge is $0.50.
+
+On the chain rail, only transfers from `BUYER_ADDRESS` are matched to orders. Any other USDC transfer to the shop is a donation: it is stored with its sender and settles with a ledger entry, but has no order, no shop notice and no `unmatched` incident (a reorg or duplicate still records its own incident). The API shows a donation under a stable two-word name derived from the sender and never returns the address. Donations below `DONATION_MIN` are stored but not listed, streamed or counted.
 
 Chain payments follow `sent → received → confirming → settled → notified` and gain a final flag when the chain finalizes their block. The ledger's unique payment key enforces one credit per payment.
 
+Card payments follow `sent → processing → settled → notified`, with no confirmation count. The buyer creates a Stripe PaymentIntent for the order and records the payment as `processing`. The API's `POST /stripe/webhooks` route is the only writer of card settlement: `payment_intent.succeeded` writes the ledger entry, the shop notice and the order's `paid` status, and sets the final flag at once. The notice then marks the payment `notified`, as on the chain rail. A stage never moves backwards, whatever order the events arrive in.
+
+Webhook handling:
+
+- The route verifies Stripe's signature over the exact request body and answers `400` `invalid_signature` for a missing or bad signature. Without `STRIPE_WEBHOOK_SECRET` it rejects every webhook the same way.
+- Each event id is stored once. An event delivered again changes nothing and is recorded as a `duplicate` incident.
+- A `payment_intent.succeeded` event that arrives before the buyer has written its payment creates the payment from the event, which names the order in its metadata. The buyer's later write neither duplicates it nor moves its stage back.
+- `payment_intent.processing` moves a payment that is still `sent` to `processing`. `payment_intent.payment_failed` closes the order and records a `card_failed` incident, unless the payment already settled.
+- An intent that names no known order is stored and recorded as an `unmatched` incident. Other event types are stored and ignored.
+- Refunds and disputes are not handled.
+
 ## Purchases
 
-Two kinds of purchase share one send path and have separate limits.
+Two kinds of purchase share one queue and have separate limits.
 
-- **Scheduled purchases** make the shop look busy through the day. They share a daily budget per UTC day, by count and total amount (`DAILY_COUNT_CAP`, default 100; `DAILY_AMOUNT_CAP`, default 200 USDC).
-- **Visitor test buys** (`POST /test-purchases`) are sent at once, at the highest queue priority and outside the daily budget, so a visitor never waits behind the schedule. The response carries the order id and its queue position; `GET /test-purchases/:id` returns the position of a purchase that is still waiting and whether its order closed without a payment being sent. The checkout shows "Queued · N ahead" until it is sent, and reopens with a "did not go through" note when the purchase fails.
+- **Scheduled purchases** make the shop look busy through the day. They share a daily budget per UTC day, by count and total amount (`DAILY_COUNT_CAP`, default 100; `DAILY_AMOUNT_CAP`, default 200 USDC). One in three is paid by card: the rail comes from the first byte of the SHA-256 of the order id, so it is repeatable, and only when the demo customer has a saved card. Every other scheduled purchase is paid on chain.
+- **Visitor test buys** (`POST /test-purchases`, body `{"rail": "chain" | "card"}`, default `chain`) are sent at once, at the highest queue priority and outside the daily budget, so a visitor never waits behind the schedule. The response carries the order id and its queue position; `GET /test-purchases/:id` returns `{position, closed}`: the position of a purchase that is still waiting and whether its order closed without a payment being sent. A card buy answers `503` `card_unavailable` while the demo customer has no saved card. The checkout shows "Queued · N ahead" until it is sent, and reopens with a "did not go through" note when the purchase fails.
+
+Both rails share the visitor limits and queue, the daily budget, orders, the ledger (one entry per payment), payment events, the live list, shop notices and retention. Only the chain rail uses the gas floor, funds hold, in-flight cap, nonces, confirmations, reorg handling and amount matching. Only the card rail uses the Stripe request limiter.
 
 Visitor limits, with their defaults:
 
@@ -36,7 +55,7 @@ Visitor limits, with their defaults:
 | Visitor purchases per UTC day | 2,000                      | `409` until 00:00 UTC            |
 | Buyer gas below `GAS_FLOOR`   | n/a                        | `503` until topped up            |
 
-Visitor purchases pause while the buyer's gas balance is below `GAS_FLOOR` and resume when it is topped up.
+Visitor chain purchases pause while the buyer's gas balance is below `GAS_FLOOR` and resume when it is topped up. Card purchases are not paused.
 
 ## Recycling and retention
 
@@ -44,9 +63,9 @@ USDC circulates only between the buyer and shop wallets. A nightly sweep at 03:0
 
 A nightly job deletes orders, payments, ledger entries, notices, events and incidents older than `RETENTION_DAYS` (default 30), and resolved scan gaps of the same age. Open orders and payments that are unsettled or not final are kept until they close. A transfer closed because it can never land is deleted by its send time.
 
-## RPC budget
+## RPC and Stripe budgets
 
-The services run on free RPC tiers, so request volume stays inside their rate limits.
+The services run on free RPC tiers, so request volume stays inside their rate limits. A card send makes no RPC calls.
 
 - Each service has its own request rate (`RPC_REQUESTS_PER_SECOND_TRACKER`, `RPC_REQUESTS_PER_SECOND_BUYER` and `RPC_REQUESTS_PER_SECOND_API`; defaults 2, 2 and 1). Together they stay at or below the provider's rate, and a burst of purchases cannot stall confirmations. A limiter delays a call until its slot instead of refusing it.
 - The buyer makes about one RPC call per send (a send held for funds also reads the balance, a second call cached for 3 seconds): it signs locally with a nonce allocated in the database, a fixed gas limit and a fee cached for a few seconds. It checks for a receipt only when retrying.
@@ -54,6 +73,7 @@ The services run on free RPC tiers, so request volume stays inside their rate li
 - Before an order is sent, the buyer checks that its cached USDC balance, less the amounts in flight, covers the order. If not, the send is delayed 2 seconds and does not count as a failed attempt; the order can still expire and close.
 - Every minute the buyer checks transfers the tracker has not seen two minutes after sending. One that reverted, or whose nonce another transaction used, can never land. A revert, read from its receipt, is closed with an incident at once and leaves the in-flight count; one with no receipt and a used nonce is closed only after two consecutive checks agree, and an order that leaves the unseen list forgets the suspicion. Any other is broadcast again. This check and the refill check run on their own `buyer-upkeep` queue, so held sends never delay them.
 - The tracker reads new payments with one `eth_getLogs` call per pass and takes confirmations from the latest block number.
+- The buyer sends at most `STRIPE_REQUESTS_PER_SECOND` (default 5) requests a second to Stripe, through a limiter of its own. A rate-limit response from Stripe starts a cooldown that delays card sends only, shown under `cooldowns.stripe` in `/health`. Chain sends and the API are unaffected. A card send that fails for a transient reason (rate limit, connection error, server error) is retried with backoff.
 
 ## Rescans and duplicates
 
@@ -61,21 +81,22 @@ Each tracker pass re-reads the last `RESCAN_BLOCKS` blocks. A log re-read inside
 
 ## API routes
 
-| Route                     | Purpose                                                                                                             |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `GET /payments?limit=`    | Recent payments with order, stage, confirmations, block, explorer URL and note kinds                                |
-| `GET /stats`              | Today only: settled count, average time to settle, duplicates skipped, failures recovered                           |
-| `GET /stats/daily`        | Per UTC day for the retained period: settled count, average time to settle, scheduled and visitor purchases         |
-| `GET /incidents?limit=`   | Recent incidents                                                                                                    |
-| `GET /health`             | Head, cursor, lag, open gaps, queue depth, cooldown state, balances, low-balance flags and the `monitoring` signals |
-| `GET /events`             | Server-sent events relayed from Redis pub/sub                                                                       |
-| `POST /test-purchases`    | Visitor test buy                                                                                                    |
-| `GET /test-purchases/:id` | Queue position of a waiting visitor purchase, and whether it closed without a payment being sent                    |
-| `POST /shop/notices`      | Receives the signed notice, verifies its signature and timestamp, then marks the payment notified                   |
+| Route                     | Purpose                                                                                                                              |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /payments?limit=`    | Recent payments with order, stage, confirmations, block, explorer URL and note kinds                                                 |
+| `GET /stats`              | Today only: settled count, average time to settle, duplicates skipped, failures recovered                                            |
+| `GET /stats/daily`        | Per UTC day for the retained period: settled count, average time to settle, scheduled and visitor purchases                          |
+| `GET /incidents?limit=`   | Recent incidents                                                                                                                     |
+| `GET /health`             | Head, cursor, lag, open gaps, queue depth, cooldown state, balances, low-balance flags, `cardAvailable` and the `monitoring` signals |
+| `GET /events`             | Server-sent events relayed from Redis pub/sub                                                                                        |
+| `POST /test-purchases`    | Visitor test buy                                                                                                                     |
+| `GET /test-purchases/:id` | Queue position of a waiting visitor purchase, and whether it closed without a payment being sent                                     |
+| `POST /stripe/webhooks`   | Receives Stripe events, verifies their signature, then moves the card payment they name                                              |
+| `POST /shop/notices`      | Receives the signed notice, verifies its signature and timestamp, then marks the payment notified                                    |
 
 Each 4xx answers with a fixed body. Errors that reach the error filter get a fixed code for their status, such as `bad_request` or `rate_limited`, and routes send their own fixed codes, such as `busy` or `daily_limit`; bodies never echo messages.
 
-The API allows each client address `API_REQUESTS_PER_MINUTE` requests a minute across all routes (signed shop notices excepted) and answers over-limit requests with `429` and `Retry-After`. `/events` holds at most `STREAMS_PER_IP` open connections per address and `STREAMS_TOTAL` in all, and `/payments` is cached for 5 seconds.
+The API allows each client address `API_REQUESTS_PER_MINUTE` requests a minute across all routes (signed shop notices and Stripe webhooks excepted) and answers over-limit requests with `429` and `Retry-After`. `/events` holds at most `STREAMS_PER_IP` open connections per address and `STREAMS_TOTAL` in all, and `/payments` is cached for 5 seconds.
 
 Set `TRUST_PROXY=true` when the API runs behind exactly one reverse proxy or tunnel. Client addresses then come from the proxy's forwarding header, so per-visitor limits apply to visitors rather than to the proxy. Leave it `false` when clients connect directly.
 
@@ -98,7 +119,7 @@ Head and balances come from one chain reading that the API refreshes at most eve
 
 ## Web views
 
-The dashboard at `/` has a checkout card, a small widget and a full panel. Each receipt shows at most one note. The full panel charts settled payments per day and per week from `/stats/daily`. The widget can also be shown alone at `/?view=widget`.
+The dashboard at `/` has a checkout card, a small widget and a full panel. The checkout is labelled "Test purchase · no real money · paid from the demo's own test account" and asks for nothing. It offers two buttons: "Pay on the test network" and "Pay with a test card". The card button appears only when `/health` reports `cardAvailable`. A test-card purchase shows a card terminal with the saved card's brand and last four digits, then the stages Sent, Processing and Settled. A chain purchase shows blocks stacking to the confirmation threshold. A card receipt carries a "Test card" badge and a link to Stripe's receipt, and has no confirmation bar. The panel's pipeline has a lane for Processing beside the chain lanes. Each receipt shows at most one note. The full panel charts settled payments per day and per week from `/stats/daily`. The widget can also be shown alone at `/?view=widget`.
 
 ## Run locally
 
@@ -113,7 +134,7 @@ pnpm db:migrate --name init
 pnpm build
 ```
 
-Run `pnpm wallets:new` to generate buyer and shop keys with private file permissions. It preserves existing keys and prints public addresses. Fill the remaining blank configuration values in `.env` before starting the services. Use test-network keys and set `USDC_ADDRESS` to the contract address verified against Circle's documentation for the configured chain.
+Run `pnpm wallets:new` to generate buyer and shop keys with private file permissions. It preserves existing keys and prints public addresses. Fill the remaining blank configuration values in `.env` before starting the services. Use test-network keys and set `USDC_ADDRESS` to the contract address verified against Circle's documentation for the configured chain. The chain rail works without any Stripe setting; see [Card payments](#card-payments) to add the card rail.
 
 Run each service in a separate terminal:
 
@@ -124,19 +145,23 @@ pnpm start:api
 pnpm dev:web
 ```
 
-Buyer and tracker run as Nest application contexts. All three stop cleanly on `SIGTERM` and `SIGINT`: the buyer waits for its active job, the tracker finishes its current pass, and workers, queues and Redis close. The API serves HTTP on port 3000 by default. Vite serves the web app at `http://localhost:5173`. Each backend validates its configuration at startup. `pnpm dev:buyer`, `pnpm dev:tracker` and `pnpm dev:api` rebuild on changes.
+Buyer and tracker run as Nest application contexts. All three stop cleanly on `SIGTERM` and `SIGINT`: the buyer waits for its active job, the tracker finishes its current pass, and workers, queues and Redis close. The API serves HTTP on `API_PORT` (3000 by default). Vite serves the web app at `http://localhost:5173`. Each backend validates its configuration at startup. `pnpm dev:buyer`, `pnpm dev:tracker` and `pnpm dev:api` rebuild on changes.
 
 PostgreSQL binds to `127.0.0.1:55432` and Redis to `127.0.0.1:56379`. `pnpm db:migrate` waits for healthy services before running Prisma migrations. Compose volumes persist their data. `docker compose down` stops the services.
 
 ## Card payments
 
-The card rail uses Stripe test mode and is off until a test secret key is set. Keys with any other prefix are refused at startup. Cards are charged off-session with an idempotency key per order, so a retried send never charges twice.
+The card rail uses Stripe test mode only. It is off until a test secret key is set and the demo customer exists. `STRIPE_SECRET_KEY` must start with `sk_test_`; the buyer refuses to start with any other prefix, `sk_live_` included. The demo charges a card saved on the demo customer, off-session, so no visitor enters card details. Each charge carries the idempotency key `order-<order id>`, so a retried send returns the same PaymentIntent and never charges twice.
 
-1. Put a test secret key (`sk_test_…`) in `STRIPE_SECRET_KEY`.
-2. Run `pnpm stripe:setup`. It creates the demo customer in Stripe, attaches a test card (`STRIPE_PAYMENT_METHOD`, `pm_card_visa` by default) as the customer's own payment method, and stores the Stripe IDs, the card brand and the last four digits. It sets the customer's chain address from `BUYER_PRIVATE_KEY`. It prints only those IDs and the card label, and a second run changes nothing.
-3. Set `STRIPE_WEBHOOK_SECRET` (`whsec_…`) from the webhook endpoint you register in the Stripe dashboard.
+Set it up in this order. Run the services from the repository root with a filled `.env`:
 
-No card data is stored beyond Stripe IDs, the brand and the last four digits.
+1. Put a test secret key (`sk_test_…`) in `STRIPE_SECRET_KEY`, then run `pnpm stripe:setup`. It needs `DATABASE_URL` and `BUYER_PRIVATE_KEY` too, and the database must be migrated. It creates the demo customer in the database and in Stripe, attaches a test card (`STRIPE_PAYMENT_METHOD`, `pm_card_visa` by default) as the customer's payment method, and stores the Stripe IDs, the card brand and the last four digits. It records the chain address of `BUYER_PRIVATE_KEY` on the customer. It prints only the two IDs and the card label, and a second run changes nothing.
+2. Start the Stripe CLI and forward webhooks to the API: `stripe listen --forward-to localhost:<API_PORT>/stripe/webhooks` (3000 by default). It prints a signing secret that starts with `whsec_`. Put it in `STRIPE_WEBHOOK_SECRET`.
+3. Restart the API so it reads the secret, and start the buyer after step 1 so it reads the key.
+
+Until step 2 is done the API answers every webhook with `400`, so a card payment stays in `processing`. Once the saved card exists, `/health` reports `cardAvailable: true` and the checkout shows the card button.
+
+Card orders cost their price in cents, in USD. A declined card closes the order with a `card_failed` incident and credits nothing. A Stripe error that retries cannot fix, such as a missing key or no saved card, closes the order with a `send_failed` incident; a transient error is retried with backoff and, once retries run out, the order goes to `review` with its reservation kept.
 
 ## Configuration
 
@@ -151,40 +176,40 @@ No card data is stored beyond Stripe IDs, the brand and the last four digits.
 
 Optional settings and their defaults:
 
-| Setting                                      | Default                        | Meaning                                                                                                |
-| -------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------ |
-| `API_PORT`                                   | 3000                           | API HTTP port                                                                                          |
-| `API_REQUESTS_PER_MINUTE`                    | 300                            | Requests one client address may make per minute, except signed shop notices                            |
-| `BLOCK_EXPLORER_URL`                         | `https://sepolia.basescan.org` | Base URL for explorer links                                                                            |
-| `CONFIRMATIONS`                              | 10                             | Blocks on top of a payment's block before it settles                                                   |
-| `START_BLOCK`                                | `RESCAN_BLOCKS` below the head | First block the tracker scans when it has no cursor                                                    |
-| `RESCAN_BLOCKS`                              | 5                              | Blocks re-read on each tracker pass                                                                    |
-| `MAX_RANGE`, `MIN_RANGE`                     | 500, 10                        | Largest and smallest block range per log query; a rejected range is halved down to the minimum         |
-| `ACTIVE_POLL_MS`, `IDLE_POLL_MS`             | 2000, 30000                    | Tracker poll interval while payments are open, and otherwise                                           |
-| `RPC_COOLDOWN_MS`                            | 30000                          | Pause for a service after a rate-limit response                                                        |
-| `RPC_MAX_ATTEMPTS`, `GAP_MAX_ATTEMPTS`       | 3, 5                           | Attempts per RPC call, and attempts per stored scan gap                                                |
-| `ORDER_TTL_MINUTES`                          | 30                             | Minutes before an unpaid order expires                                                                 |
-| `QUIET_START_HOUR_UTC`, `QUIET_END_HOUR_UTC` | 0, 7                           | UTC hours in which scheduled purchases are less likely                                                 |
-| `LOW_NATIVE_BALANCE`, `LOW_USDC_BALANCE`     | 1000000000000000, 10000000     | Balances (wei, micro-units) below which `/health` flags `lowNative` / `lowUsdc`                        |
-| `RPC_REQUESTS_PER_SECOND_TRACKER`            | 2                              | Tracker's RPC request rate                                                                             |
-| `RPC_REQUESTS_PER_SECOND_BUYER`              | 2                              | Buyer's RPC request rate                                                                               |
-| `RPC_REQUESTS_PER_SECOND_API`                | 1                              | API's RPC request rate; the three together stay within the provider's rate                             |
-| `DAILY_COUNT_CAP`, `DAILY_AMOUNT_CAP`        | 100, 200000000                 | Scheduled purchases per UTC day and their total in micro-units (200 USDC)                              |
-| `VISITOR_PER_MINUTE`, `VISITOR_PER_DAY`      | 10, 100                        | Visitor purchase limits per client                                                                     |
-| `VISITOR_QUEUE_LIMIT`                        | 30                             | Visitor purchases waiting at once                                                                      |
-| `VISITOR_DAILY_LIMIT`                        | 2000                           | Visitor purchases per UTC day across all clients                                                       |
-| `DONATION_MIN`                               | 10000                          | Smallest donation in micro-units (0.01 USDC) the API lists, streams and counts                         |
-| `GAS_FLOOR`                                  | 200000000000000                | Native balance floor in wei (0.0002 ETH)                                                               |
-| `REFILL_BELOW`, `REFILL_COOLDOWN_SECONDS`    | 5000000, 20                    | Buyer USDC balance in micro-units (5 USDC) that triggers a refill, and the wait between refills        |
-| `MAX_IN_FLIGHT`                              | 10                             | Buyer purchases in flight at once                                                                      |
-| `RETENTION_DAYS`                             | 30                             | Days that records are kept                                                                             |
-| `STREAMS_PER_IP`                             | 5                              | Open live-stream connections allowed per client address                                                |
-| `STREAMS_TOTAL`                              | 500                            | Open live-stream connections allowed in all                                                            |
-| `STRIPE_SECRET_KEY`                          | unset                          | Stripe test-mode secret key (`sk_test_…`); the card rail is off without it; other prefixes are refused |
-| `STRIPE_WEBHOOK_SECRET`                      | unset                          | Stripe webhook signing secret (`whsec_…`); the API rejects every webhook with 400 without it           |
-| `STRIPE_PAYMENT_METHOD`                      | `pm_card_visa`                 | Test payment method the setup script attaches to the demo customer                                     |
-| `STRIPE_REQUESTS_PER_SECOND`                 | 5                              | Buyer's Stripe request rate                                                                            |
-| `TRUST_PROXY`                                | `false`                        | Set `true` to read the client address from proxy headers                                               |
+| Setting                                      | Default                        | Meaning                                                                                                                                                         |
+| -------------------------------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `API_PORT`                                   | 3000                           | API HTTP port                                                                                                                                                   |
+| `API_REQUESTS_PER_MINUTE`                    | 300                            | Requests one client address may make per minute, except signed shop notices                                                                                     |
+| `BLOCK_EXPLORER_URL`                         | `https://sepolia.basescan.org` | Base URL for explorer links                                                                                                                                     |
+| `CONFIRMATIONS`                              | 10                             | Blocks on top of a payment's block before it settles                                                                                                            |
+| `START_BLOCK`                                | `RESCAN_BLOCKS` below the head | First block the tracker scans when it has no cursor                                                                                                             |
+| `RESCAN_BLOCKS`                              | 5                              | Blocks re-read on each tracker pass                                                                                                                             |
+| `MAX_RANGE`, `MIN_RANGE`                     | 500, 10                        | Largest and smallest block range per log query; a rejected range is halved down to the minimum                                                                  |
+| `ACTIVE_POLL_MS`, `IDLE_POLL_MS`             | 2000, 30000                    | Tracker poll interval while payments are open, and otherwise                                                                                                    |
+| `RPC_COOLDOWN_MS`                            | 30000                          | Pause for a service (RPC or Stripe) after a rate-limit response                                                                                                 |
+| `RPC_MAX_ATTEMPTS`, `GAP_MAX_ATTEMPTS`       | 3, 5                           | Attempts per RPC call, and attempts per stored scan gap                                                                                                         |
+| `ORDER_TTL_MINUTES`                          | 30                             | Minutes before an unpaid order expires                                                                                                                          |
+| `QUIET_START_HOUR_UTC`, `QUIET_END_HOUR_UTC` | 0, 7                           | UTC hours in which scheduled purchases are less likely                                                                                                          |
+| `LOW_NATIVE_BALANCE`, `LOW_USDC_BALANCE`     | 1000000000000000, 10000000     | Balances (wei, micro-units) below which `/health` flags `lowNative` / `lowUsdc`                                                                                 |
+| `RPC_REQUESTS_PER_SECOND_TRACKER`            | 2                              | Tracker's RPC request rate                                                                                                                                      |
+| `RPC_REQUESTS_PER_SECOND_BUYER`              | 2                              | Buyer's RPC request rate                                                                                                                                        |
+| `RPC_REQUESTS_PER_SECOND_API`                | 1                              | API's RPC request rate; the three together stay within the provider's rate                                                                                      |
+| `DAILY_COUNT_CAP`, `DAILY_AMOUNT_CAP`        | 100, 200000000                 | Scheduled purchases per UTC day and their total in micro-units (200 USDC)                                                                                       |
+| `VISITOR_PER_MINUTE`, `VISITOR_PER_DAY`      | 10, 100                        | Visitor purchase limits per client                                                                                                                              |
+| `VISITOR_QUEUE_LIMIT`                        | 30                             | Visitor purchases waiting at once                                                                                                                               |
+| `VISITOR_DAILY_LIMIT`                        | 2000                           | Visitor purchases per UTC day across all clients                                                                                                                |
+| `DONATION_MIN`                               | 10000                          | Smallest donation in micro-units (0.01 USDC) the API lists, streams and counts                                                                                  |
+| `GAS_FLOOR`                                  | 200000000000000                | Native balance floor in wei (0.0002 ETH)                                                                                                                        |
+| `REFILL_BELOW`, `REFILL_COOLDOWN_SECONDS`    | 5000000, 20                    | Buyer USDC balance in micro-units (5 USDC) that triggers a refill, and the wait between refills                                                                 |
+| `MAX_IN_FLIGHT`                              | 10                             | Buyer purchases in flight at once                                                                                                                               |
+| `RETENTION_DAYS`                             | 30                             | Days that records are kept                                                                                                                                      |
+| `STREAMS_PER_IP`                             | 5                              | Open live-stream connections allowed per client address                                                                                                         |
+| `STREAMS_TOTAL`                              | 500                            | Open live-stream connections allowed in all                                                                                                                     |
+| `STRIPE_SECRET_KEY`                          | unset                          | Stripe test-mode secret key (`sk_test_…`) for the buyer and `pnpm stripe:setup`; other prefixes, `sk_live_` included, are refused; card charges fail without it |
+| `STRIPE_WEBHOOK_SECRET`                      | unset                          | API only: Stripe webhook signing secret (`whsec_…`); the API rejects every webhook with 400 without it                                                          |
+| `STRIPE_PAYMENT_METHOD`                      | `pm_card_visa`                 | Test payment method (`pm_…`) the setup script attaches to the demo customer; read by the setup script only                                                      |
+| `STRIPE_REQUESTS_PER_SECOND`                 | 5                              | Buyer's Stripe request rate                                                                                                                                     |
+| `TRUST_PROXY`                                | `false`                        | Set `true` to read the client address from proxy headers                                                                                                        |
 
 `NOTICE_SECRET` must contain at least 32 characters. Missing or invalid variables are reported together by name without printing their values. `TEST_DATABASE_URL` points database tests at the local PostgreSQL instance; tests needing isolation create and reset their own schema. `TEST_REDIS_URL` points Redis and queue tests at a Redis database separate from `REDIS_URL`, because they clear their queues. `pnpm test:local` starts the `docker-compose.yml` PostgreSQL and Redis, applies the migrations and runs the suite against them. `VITE_API_URL` supplies the web app's API origin and `VITE_REPO_URL` the repository link in the "How this works" text.
 
@@ -198,7 +223,7 @@ pnpm test
 pnpm build
 ```
 
-Jest tests prove that each app's startup validation reports every missing required variable without exposing environment values. API route tests send HTTP requests with `supertest` to an application built with `@nestjs/testing`, covering the request limit, the stream cap, the payments cache, validation and signed notices. Vitest runs the web test suite, including the page's behaviour when the API or live stream fails. The initial migration creates the payment tables, foreign keys and unique constraints; Prisma generates the client during the build.
+Jest tests never call Stripe. Card specs inject a fake Stripe client, and webhook specs sign their bodies with `stripe.webhooks.generateTestHeaderString`, so they exercise the real signature check. They cover a settlement written once, a `succeeded` event that arrives before the buyer's own write, a repeated event counted as a duplicate, a late `processing` event that cannot move a settled payment back, bad and missing signatures, a payload over 4 KB, a failed payment closing its order, an event naming an unknown order, a retry after a timeout that never charges twice, a declined card, Stripe rate limiting that leaves chain sends running, and a card order never matched to a chain transfer. Jest tests also prove that each app's startup validation reports every missing required variable without exposing environment values. API route tests send HTTP requests with `supertest` to an application built with `@nestjs/testing`, covering the request limit, the stream cap, the payments cache, validation and signed notices. Vitest runs the web test suite, including the page's behaviour when the API or live stream fails. The initial migration creates the payment tables, foreign keys and unique constraints; Prisma generates the client during the build.
 
 ## Buyer jobs
 
