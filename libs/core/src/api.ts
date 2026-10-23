@@ -13,17 +13,22 @@ export type Json<T> = T extends bigint | Date
       ? { [K in keyof T]: Json<T[K]> }
       : T;
 
-export type PaymentProvider = 'chain' | 'stripe';
-export type PaymentStage =
-  | 'sent'
-  | 'received'
-  | 'confirming'
-  | 'processing'
-  | 'settled'
-  | 'notified'
-  | 'failed';
-export type OrderStatus = 'open' | 'paid' | 'expired';
-export type OrderSource = 'schedule' | 'visitor';
+export const paymentProviders = ['chain', 'stripe'] as const;
+export type PaymentProvider = (typeof paymentProviders)[number];
+export const paymentStages = [
+  'sent',
+  'received',
+  'confirming',
+  'processing',
+  'settled',
+  'notified',
+  'failed',
+] as const;
+export type PaymentStage = (typeof paymentStages)[number];
+export const orderStatuses = ['open', 'paid', 'expired'] as const;
+export type OrderStatus = (typeof orderStatuses)[number];
+export const orderSources = ['schedule', 'visitor'] as const;
+export type OrderSource = (typeof orderSources)[number];
 
 /** Of a card payment's customer, only the card brand and last 4 are public. */
 export type PublicCard = { cardBrand: string | null; cardLast4: string | null };

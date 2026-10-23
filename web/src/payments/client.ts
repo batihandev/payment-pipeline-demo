@@ -2,6 +2,19 @@ import {
   PAYMENT_LIST_MAX,
   PAYMENT_LIST_STEP,
 } from '../../../libs/core/src/payment-list';
+import type { z } from 'zod';
+import type { OrderEvent, QueueEvent } from '../../../libs/core/src/api';
+import {
+  dailyStats,
+  health,
+  orderUpdate,
+  paymentEvent,
+  paymentList,
+  purchaseBody,
+  todayStats,
+  type PaymentEvent,
+  type PurchaseBody,
+} from './schemas';
 import type { DailyStat, Health, Payment, Snapshot, Stats } from './types';
 
 export type Rail = 'chain' | 'card';
@@ -9,15 +22,7 @@ export type PurchaseAnswer = {
   ok: boolean;
   status: number;
   retryAfter: string | null;
-  body: {
-    orderId?: string;
-    position?: number;
-    item?: string;
-    price?: string;
-    /** When the order expires, as an ISO timestamp. */
-    expiresAt?: string;
-    error?: string;
-  };
+  body: PurchaseBody;
 };
 
 export const HEALTH_EVERY_MS = 15000;
@@ -45,10 +50,7 @@ function newestFirst(a: Payment, b: Payment): number {
 export const STREAM_REOPEN_MS = 30000;
 
 /** A change to a visitor order, or the stream opening, which may mean updates were missed. */
-export type OrderUpdate =
-  | { type: 'order'; id: string; closed: boolean }
-  | { type: 'queue'; waiting: string[] }
-  | { type: 'opened' };
+export type OrderUpdate = OrderEvent | QueueEvent | { type: 'opened' };
 
 export type EventStream = Pick<
   EventSource,
@@ -60,38 +62,27 @@ export type EventStream = Pick<
   ): void;
 };
 
-function readOrderUpdate(data: string): OrderUpdate | undefined {
+/** Parses an event body; anything unreadable or off-schema is undefined. */
+function readEvent<T>(schema: z.ZodType<T>, data: string): T | undefined {
   try {
-    const update = JSON.parse(data) as Record<string, unknown>;
-    if (
-      update.type === 'order' &&
-      typeof update.id === 'string' &&
-      typeof update.closed === 'boolean'
-    )
-      return { type: 'order', id: update.id, closed: update.closed };
-    if (
-      update.type === 'queue' &&
-      Array.isArray(update.waiting) &&
-      update.waiting.every((id) => typeof id === 'string')
-    )
-      return { type: 'queue', waiting: update.waiting };
+    const parsed = schema.safeParse(JSON.parse(data));
+    return parsed.success ? parsed.data : undefined;
   } catch {
-    // an unreadable update is skipped
+    return undefined;
   }
-  return undefined;
 }
-function isPaymentEvent(value: unknown): value is Payment {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'id' in value &&
-    typeof value.id === 'string' &&
-    'stage' in value &&
-    typeof value.stage === 'string'
-  );
+/** Reads a response body through `schema`; a body that does not match throws. */
+async function readBody<T>(
+  schema: z.ZodType<T>,
+  response: Response,
+): Promise<T> {
+  return schema.parse(await response.json());
 }
 /** Whether `a` is a later copy of the row than `b`. A copy without a version is older than any versioned copy. */
-function isNewer(a: Pick<Payment, 'version'>, b: Pick<Payment, 'version'>) {
+function isNewer(
+  a: Pick<PaymentEvent, 'version'>,
+  b: Pick<PaymentEvent, 'version'>,
+) {
   return (a.version ?? -1) > (b.version ?? -1);
 }
 
@@ -121,7 +112,7 @@ export class PaymentsClient {
    * The newest event for each payment since the last completed read; they are applied again
    * over its rows. It holds at most `PAYMENT_LIST_MAX` payments.
    */
-  private buffered = new Map<string, Payment>();
+  private buffered = new Map<string, PaymentEvent>();
   private retry?: ReturnType<typeof setTimeout>;
   private reopen?: ReturnType<typeof setTimeout>;
   private health: Health | null = null;
@@ -203,7 +194,7 @@ export class PaymentsClient {
     };
     for (const type of ['order', 'queue'] as const)
       this.stream.addEventListener(type, (event) => {
-        const update = readOrderUpdate(event.data);
+        const update = readEvent(orderUpdate, event.data);
         if (update) this.sendOrderUpdate(update);
       });
     this.stream.onerror = () => {
@@ -216,22 +207,20 @@ export class PaymentsClient {
       }, STREAM_REOPEN_MS);
     };
     this.stream.onmessage = (event: MessageEvent<string>) => {
-      try {
-        const payment: unknown = JSON.parse(event.data);
-        if (!isPaymentEvent(payment)) throw new Error('Invalid payment event');
+      // An unreadable event is skipped; the refresh below reads the current rows.
+      const payment = readEvent(paymentEvent, event.data);
+      if (payment) {
         this.buffer(payment);
         if (this.feed) {
           this.applyEvents([payment]);
           this.status = 'live';
           this.publish();
         }
-      } catch {
-        // An unreadable event is skipped; the refresh below reads the current rows.
       }
       if (!this.failing) void this.refresh();
     };
   }
-  private buffer(payment: Payment) {
+  private buffer(payment: PaymentEvent) {
     const held = this.buffered.get(payment.id);
     if (held && isNewer(held, payment)) return;
     this.buffered.delete(payment.id);
@@ -262,14 +251,14 @@ export class PaymentsClient {
     try {
       const response = await request(`${this.baseUrl}/health`);
       if (!response.ok) return;
-      this.health = (await response.json()) as Health;
+      this.health = await readBody(health, response);
     } catch {
       return;
     }
     if (this.listeners.size && this.feed) this.publish();
   }
   /** Merges live events into the rows; a row with a higher version is newer and stays. */
-  private applyEvents(events: Iterable<Payment>) {
+  private applyEvents(events: Iterable<PaymentEvent>) {
     if (!this.feed) return;
     const rows = new Map(this.feed.rows.map((p) => [p.id, p]));
     for (const event of events) {
@@ -283,10 +272,9 @@ export class PaymentsClient {
           (previous?.orderId === event.orderId ? previous.order : null),
         noteKinds: previous?.noteKinds ?? [],
         explorerUrl:
-          event.explorerUrl ??
-          (previous?.transactionHash === event.transactionHash
+          previous?.transactionHash === event.transactionHash
             ? previous.explorerUrl
-            : null),
+            : null,
       });
     }
     this.feed = {
@@ -307,7 +295,7 @@ export class PaymentsClient {
       ok: response.ok,
       status: response.status,
       retryAfter: response.headers.get('retry-after'),
-      body: (await response.json()) as PurchaseAnswer['body'],
+      body: await readBody(purchaseBody, response),
     };
   }
   /** Reads the window again at its size, unless a read is already in flight. */
@@ -330,19 +318,20 @@ export class PaymentsClient {
     if (more && this.feed) this.publish();
     const limit = readLimit(size);
     try {
-      const paths = [`/payments?limit=${limit}`, '/stats', '/stats/daily'];
-      const [payments, stats, daily] = await Promise.all(
-        paths.map(async (path) => {
-          const request = this.request;
-          const response = await request(`${this.baseUrl}${path}`, {
-            signal: abort.signal,
-          });
-          if (!response.ok) throw new Error('Demo offline');
-          return response.json() as Promise<unknown>;
-        }),
-      );
+      const get = async <T>(path: string, schema: z.ZodType<T>) => {
+        const request = this.request;
+        const response = await request(`${this.baseUrl}${path}`, {
+          signal: abort.signal,
+        });
+        if (!response.ok) throw new Error('Demo offline');
+        return readBody(schema, response);
+      };
+      const [rows, stats, daily] = await Promise.all([
+        get(`/payments?limit=${limit}`, paymentList),
+        get('/stats', todayStats),
+        get('/stats/daily', dailyStats),
+      ]);
       if (epoch !== this.epoch) return;
-      const rows = payments as Payment[];
       const held = new Map(this.feed?.rows.map((p) => [p.id, p]));
       this.windowSize = size;
       this.full = rows.length >= limit;
@@ -355,8 +344,8 @@ export class PaymentsClient {
             ? { ...known, noteKinds: p.noteKinds }
             : p;
         }),
-        stats: stats as Stats,
-        daily: daily as DailyStat[],
+        stats,
+        daily,
       };
       this.applyEvents(this.buffered.values());
       this.buffered.clear();

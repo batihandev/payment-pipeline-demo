@@ -5,6 +5,8 @@ import {
   STREAM_REOPEN_MS,
   type EventStream,
 } from './client';
+import { health, order, payment } from './test-fixtures';
+import type { Payment, Stats } from './types';
 
 class FakeEventSource implements EventStream {
   onopen: (() => void) | null = null;
@@ -28,21 +30,29 @@ class FakeEventSource implements EventStream {
     this.onmessage?.({ data: JSON.stringify(value) });
   }
 }
-const row = (id: string, stage = 'received') => ({
-  id,
-  orderId: `order-${id}`,
-  stage,
-  amount: '14000731',
-  confirmations: 0,
-  provider: 'chain',
-  blockNumber: '91',
-  final: false,
-  sentAt: '2026-10-20T12:00:00Z',
-  receivedAt: null,
-  order: { id: `order-${id}`, item: 'Gold rubber duck', price: '14000000' },
-  explorerUrl: 'https://example.com/tx/123',
-  noteKinds: ['payment_reorg'],
-  version: 0,
+const row = (id: string, stage: Payment['stage'] = 'received') =>
+  payment({
+    id,
+    orderId: `order-${id}`,
+    stage,
+    amount: '14000731',
+    confirmations: 0,
+    blockNumber: '91',
+    sentAt: '2026-10-20T12:00:00Z',
+    receivedAt: null,
+    order: order({
+      id: `order-${id}`,
+      item: 'Gold rubber duck',
+      price: '14000000',
+    }),
+    explorerUrl: 'https://example.com/tx/123',
+    noteKinds: ['payment_reorg'],
+  });
+const todayStats = (settledCount = 0): Stats => ({
+  settledCount,
+  averageTimeToSettleMs: null,
+  duplicatesSkipped: 0,
+  failuresRecovered: 0,
 });
 /** The URL a fetch was called with, whatever form it took. */
 const href = (input: RequestInfo | URL) =>
@@ -57,6 +67,7 @@ function server() {
   let settledCount = 0;
   let available = true;
   let healthAvailable = true;
+  const replies = new Map<string, unknown>();
   const requested: string[] = [];
   let hold: Promise<void> = Promise.resolve();
   const stream = new FakeEventSource();
@@ -67,23 +78,15 @@ function server() {
       if (this !== undefined) throw new TypeError('Illegal invocation');
       const snapshot = structuredClone({
         '/payments?limit=100': payments,
-        '/stats': {
-          settledCount,
-          averageTimeToSettleMs: null,
-          duplicatesSkipped: 0,
-          failuresRecovered: 0,
-        },
+        '/stats': todayStats(settledCount),
         '/stats/daily': [],
-        '/health': {
+        '/health': health({
           confirmations: 7,
-          head: '100',
           cursor: '99',
           lag: '1',
-          openGaps: 0,
           queueDepth: {},
           cooldowns: {},
-          balances: {},
-        },
+        }),
       });
       const path = new URL(href(url)).pathname;
       requested.push(path);
@@ -91,12 +94,12 @@ function server() {
       if (!available) throw new Error('offline');
       if (path === '/health' && !healthAvailable)
         return new Response('{}', { status: 503 });
+      const key = new URL(href(url)).pathname + new URL(href(url)).search;
       return new Response(
         JSON.stringify(
-          snapshot[
-            (new URL(href(url)).pathname +
-              new URL(href(url)).search) as keyof typeof snapshot
-          ],
+          replies.has(key)
+            ? replies.get(key)
+            : snapshot[key as keyof typeof snapshot],
         ),
       );
     },
@@ -112,6 +115,10 @@ function server() {
     streamsOpened: () => streamsOpened,
     healthOffline: () => {
       healthAvailable = false;
+    },
+    /** Answers `path` with `body` from now on. */
+    reply: (path: string, body: unknown) => {
+      replies.set(path, body);
     },
     replace: () => {
       payments = [row('new', 'settled')];
@@ -239,6 +246,40 @@ describe('live payments', () => {
     expect(health()).toBe(1);
     await vi.advanceTimersByTimeAsync(HEALTH_EVERY_MS);
     expect(health()).toBe(2);
+    stop();
+  });
+  it('treats a malformed response as offline', async () => {
+    const s = server();
+    s.reply('/stats', { settledCount: 'many' });
+    const stop = s.client.subscribe(() => {});
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('offline');
+    });
+    expect(s.client.getSnapshot().data).toBeNull();
+    stop();
+  });
+  it('keeps the last health when /health answers a malformed body', async () => {
+    vi.useFakeTimers();
+    const s = server();
+    const stop = s.client.subscribe(() => {});
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().data?.health?.head).toBe('100');
+    });
+    s.reply('/health', { head: 7 });
+    const reads = s.requested.filter((p) => p === '/health').length;
+    await vi.advanceTimersByTimeAsync(HEALTH_EVERY_MS);
+    expect(s.requested.filter((p) => p === '/health')).toHaveLength(reads + 1);
+    expect(s.client.getSnapshot().data?.health?.head).toBe('100');
+    stop();
+  });
+  it('skips a malformed payment event', async () => {
+    const s = server();
+    const stop = s.client.subscribe(() => {});
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
+    s.stream.send({ ...row('old', 'settled'), stage: 'lost', version: 9 });
+    expect(s.client.getSnapshot().data?.payments[0]?.stage).toBe('received');
     stop();
   });
   it('stays live with checkout data when /health fails', async () => {
@@ -413,7 +454,8 @@ describe('receipt window', () => {
           );
         }
         if (pathname === '/stats/daily') return Response.json([]);
-        return Response.json({});
+        if (pathname === '/stats') return Response.json(todayStats());
+        return Response.json(health());
       },
       () => stream,
     );
