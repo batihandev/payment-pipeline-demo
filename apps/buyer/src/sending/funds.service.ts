@@ -1,10 +1,10 @@
 import type {
   Address,
   ChainClient,
-} from '../../../libs/chain/src/chain-client';
-import type { PrismaClient } from '../../../libs/db/src';
+} from '../../../../libs/chain/src/chain-client';
+import type { PrismaClient } from '../../../../libs/db/src';
 
-export class BuyerFunds {
+export class FundsService {
   private cached?: { usdc: bigint; at: number };
   constructor(
     private readonly db: PrismaClient,

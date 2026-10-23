@@ -6,7 +6,11 @@ import type { Redis } from 'ioredis';
 import { ChainModule } from '../../../../libs/chain/src/chain.module';
 import { ChainClient } from '../../../../libs/chain/src/chain-client';
 import type { Address } from '../../../../libs/chain/src/chain-client';
-import { QUEUES, logQueueErrors } from '../../../../libs/queues/src';
+import {
+  QUEUES,
+  QUEUE_ERROR_MESSAGE,
+  logQueueErrors,
+} from '../../../../libs/queues/src';
 import { REDIS } from '../../../../libs/redis/src';
 import type { ApiConfig } from '../common/api-config';
 import { NOW, type Now } from '../common/clock.module';
@@ -27,8 +31,12 @@ import { HealthController } from './health.controller';
     HealthService,
     {
       provide: HEALTH_QUEUES,
-      inject: Object.values(QUEUES).map(getQueueToken),
-      useFactory: (...queues: Queue[]) => logQueueErrors(queues),
+      inject: [
+        QUEUE_ERROR_MESSAGE,
+        ...Object.values(QUEUES).map(getQueueToken),
+      ],
+      useFactory: (message: string, ...queues: Queue[]) =>
+        logQueueErrors(queues, message),
     },
     {
       provide: ChainSnapshotService,

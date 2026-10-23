@@ -1,17 +1,17 @@
-import { RpcError } from '../../../libs/chain/src/rpc-error';
+import { RpcError } from '../../../../libs/chain/src/rpc-error';
 import type {
   Address,
   ChainClient,
-} from '../../../libs/chain/src/chain-client';
-import type { PrismaClient } from '../../../libs/db/src';
-import { OrderSender } from './send-order';
-import { utcDateKey } from '../../../libs/core/src/time';
+} from '../../../../libs/chain/src/chain-client';
+import type { PrismaClient } from '../../../../libs/db/src';
+import { OrderSenderService } from '../sending/order-sender.service';
+import { utcDateKey } from '../../../../libs/core/src/time';
 
-export class NightlySweep {
+export class SweepService {
   constructor(
     private readonly db: PrismaClient,
     private readonly chain: ChainClient,
-    private readonly sender: OrderSender,
+    private readonly sender: OrderSenderService,
     private readonly shop: Address,
   ) {}
   async run(day: Date, exhausted = false): Promise<void> {

@@ -1,19 +1,19 @@
 import { Redis } from 'ioredis';
-import { testDatabase } from '../../../libs/db/testing/database';
-import { ScriptedChain } from '../../../libs/chain/testing/scripted-chain';
-import { testRedisUrl } from '../../../libs/config/testing/redis';
-import { RedisLock } from './redis-lock';
-import { OrderSender } from './send-order';
-import { Refill } from './refill';
-import { NightlySweep } from './sweep';
+import { testDatabase } from '../../../../libs/db/testing/database';
+import { ScriptedChain } from '../../../../libs/chain/testing/scripted-chain';
+import { testRedisUrl } from '../../../../libs/config/testing/redis';
+import { RedisLock } from '../sending/redis-lock';
+import { OrderSenderService } from '../sending/order-sender.service';
+import { RefillService } from './refill.service';
+import { SweepService } from '../sweep/sweep.service';
 const buyer = `0x${'11'.repeat(20)}` as const;
 const shop = `0x${'22'.repeat(20)}` as const;
 let database: Awaited<ReturnType<typeof testDatabase>>;
 let redis: Redis;
 let chain: ScriptedChain;
-let sender: OrderSender;
+let sender: OrderSenderService;
 let clock: Date;
-let refill: Refill;
+let refill: RefillService;
 let usdc: Record<string, bigint>;
 beforeAll(async () => {
   database = await testDatabase();
@@ -33,7 +33,7 @@ beforeEach(async () => {
     native: 1n,
     usdc: usdc[address] ?? 0n,
   });
-  sender = new OrderSender(
+  sender = new OrderSenderService(
     database.db,
     chain,
     chain,
@@ -41,7 +41,7 @@ beforeEach(async () => {
     { buyer, shop, chainId: 84532 },
   );
   clock = new Date('2026-10-22T10:00:00.000Z');
-  refill = new Refill(database.db, chain, sender, buyer, shop, {
+  refill = new RefillService(database.db, chain, sender, buyer, shop, {
     below: 5_000_000n,
     cooldownMs: 20_000,
     now: () => clock,
@@ -120,7 +120,7 @@ it('resumes an unsent refill instead of waiting out the cooldown', async () => {
   expect(await database.db.sweep.count()).toBe(1);
 });
 it('signs refill and nightly sweep with distinct shop nonces', async () => {
-  const nightly = new NightlySweep(database.db, chain, sender, shop);
+  const nightly = new SweepService(database.db, chain, sender, shop);
   await refill.run();
   await nightly.run(new Date('2026-10-22'));
   expect(chain.signedNonces).toHaveLength(2);

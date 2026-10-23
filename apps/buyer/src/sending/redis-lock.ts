@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Redis } from 'ioredis';
-import { RpcError } from '../../../libs/chain/src/rpc-error';
+import { RpcError } from '../../../../libs/chain/src/rpc-error';
 
 export class RedisLock {
   constructor(

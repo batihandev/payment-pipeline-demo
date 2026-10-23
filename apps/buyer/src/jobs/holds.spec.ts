@@ -1,17 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { Queue, Worker, type Job } from 'bullmq';
-import { testDatabase } from '../../../libs/db/testing/database';
-import { OrderQueueService, PurchasesService } from '../../../libs/orders/src';
-import type { BuyerJobData } from '../../../libs/queues/src';
-import { expireOrders } from './expiry';
-import { BuyerJobs, holdWhenFull, holdWhenShort } from './jobs';
-import { OrderSender } from './send-order';
-import { testRedisUrl } from '../../../libs/config/testing/redis';
+import { testDatabase } from '../../../../libs/db/testing/database';
+import { PurchasesService } from '../../../../libs/orders/src';
+import type { BuyerJobData } from '../../../../libs/queues/src';
+import { ExpiryService } from '../expiry/expiry.service';
+import { holdWhenFull, holdWhenShort } from './holds';
+import { OrderSenderService } from '../sending/order-sender.service';
+import { testRedisUrl } from '../../../../libs/config/testing/redis';
 
 let database: Awaited<ReturnType<typeof testDatabase>>;
 let queue: Queue<BuyerJobData>;
 let purchases: PurchasesService;
-let jobs: BuyerJobs;
 const now = new Date('2026-10-20T12:00:00Z');
 beforeAll(async () => {
   database = await testDatabase();
@@ -36,33 +35,11 @@ beforeEach(async () => {
     },
     () => 0,
   );
-  jobs = new BuyerJobs(
-    purchases,
-    new OrderQueueService(database.db, queue),
-    () => 0.25,
-  );
 });
 afterEach(async () => {
   await queue.obliterate({ force: true });
   await queue.close();
 });
-it('queues a paced order for a random point inside its minute', async () => {
-  const order = await jobs.pace(now);
-  expect(order).not.toBeNull();
-  const queued = await queue.getJob(`send-${order?.id}`);
-  expect(queued?.delay).toBe(15000);
-  expect(queued?.data.orderId).toBe(order?.id);
-  expect(queued?.opts.backoff).toEqual({
-    type: 'exponential',
-    delay: 1000,
-    jitter: 0.5,
-  });
-});
-it('keeps a scheduled send inside the current minute when the pacing job starts late', async () => {
-  const row = await jobs.pace(new Date('2026-10-20T12:00:50Z'));
-  expect((await queue.getJob(`send-${row?.id}`))?.delay).toBe(2500);
-});
-
 it('delays a send while 10 are in flight without using an attempt', async () => {
   const ids: string[] = [];
   for (let i = 0; i < 10; i++) {
@@ -87,7 +64,7 @@ it('delays a send while 10 are in flight without using an attempt', async () => 
     });
     ids.push(row.id);
   }
-  const sender = new OrderSender(
+  const sender = new OrderSenderService(
     database.db,
     {} as never,
     {} as never,
@@ -250,7 +227,7 @@ it('expires orders on the upkeep queue while visitor sends are held', async () =
   const expiry = new Worker(
     upkeep.name,
     async () => {
-      await expireOrders(database.db, now);
+      await new ExpiryService(database.db).expireOrders(now);
       expired = true;
     },
     { connection, concurrency: 1, autorun: false },

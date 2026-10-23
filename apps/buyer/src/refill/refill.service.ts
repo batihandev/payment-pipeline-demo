@@ -1,9 +1,9 @@
 import type {
   Address,
   ChainClient,
-} from '../../../libs/chain/src/chain-client';
-import type { PrismaClient } from '../../../libs/db/src';
-import { OrderSender } from './send-order';
+} from '../../../../libs/chain/src/chain-client';
+import type { PrismaClient } from '../../../../libs/db/src';
+import { OrderSenderService } from '../sending/order-sender.service';
 
 // The scheduler fires every cooldown and job starts jitter, so allow a short margin.
 const COOLDOWN_TOLERANCE_MS = 1000;
@@ -16,11 +16,11 @@ export type RefillOptions = {
   now?: () => Date;
 };
 
-export class Refill {
+export class RefillService {
   constructor(
     private readonly db: PrismaClient,
     private readonly chain: ChainClient,
-    private readonly sender: OrderSender,
+    private readonly sender: OrderSenderService,
     private readonly buyer: Address,
     private readonly shop: Address,
     private readonly options: RefillOptions,

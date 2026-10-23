@@ -1,10 +1,6 @@
 import { DelayedError, type Job } from 'bullmq';
-import type { BuyerJobData } from '../../../libs/queues/src';
-import type {
-  OrderQueueService,
-  PurchasesService,
-} from '../../../libs/orders/src';
-import type { BuyerFunds } from './funds';
+import type { BuyerJobData } from '../../../../libs/queues/src';
+import type { FundsService } from '../sending/funds.service';
 export const IN_FLIGHT_DELAY_MS = 500;
 /** Puts a send back in the queue, without using an attempt, while the wallet is at its cap. */
 export async function holdWhenFull(
@@ -22,30 +18,10 @@ export const SHORT_FUNDS_DELAY_MS = 2000;
 export async function holdWhenShort(
   job: Job<BuyerJobData>,
   token: string | undefined,
-  funds: Pick<BuyerFunds, 'covers'>,
+  funds: Pick<FundsService, 'covers'>,
   orderId: string,
 ): Promise<void> {
   if (await funds.covers(orderId)) return;
   await job.moveToDelayed(Date.now() + SHORT_FUNDS_DELAY_MS, token);
   throw new DelayedError();
-}
-export class BuyerJobs {
-  constructor(
-    private readonly purchases: PurchasesService,
-    private readonly orderQueue: OrderQueueService,
-    private readonly rng = Math.random,
-  ) {}
-  async pace(now: Date) {
-    const order = await this.purchases.pace(now);
-    if (order)
-      await this.orderQueue.queueSend(
-        order.id,
-        'schedule',
-        Math.floor(
-          this.rng() *
-            (60000 - now.getUTCSeconds() * 1000 - now.getUTCMilliseconds()),
-        ),
-      );
-    return order;
-  }
 }

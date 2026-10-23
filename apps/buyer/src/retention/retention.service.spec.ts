@@ -1,5 +1,5 @@
-import { testDatabase } from '../../../libs/db/testing/database';
-import { pruneOlderThan } from './retention';
+import { testDatabase } from '../../../../libs/db/testing/database';
+import { RetentionService } from './retention.service';
 let database: Awaited<ReturnType<typeof testDatabase>>;
 const now = new Date('2026-10-22T12:00:00Z');
 const cutoff = new Date('2026-09-22T12:00:00Z');
@@ -110,7 +110,7 @@ it('deletes month-old settled history', async () => {
       receivedAt: old,
     },
   });
-  const counts = await pruneOlderThan(db, cutoff);
+  const counts = await new RetentionService(db).pruneOlderThan(cutoff);
   expect(counts).toEqual({
     events: 1,
     notices: 1,
@@ -161,7 +161,7 @@ it('keeps open orders and unsettled payments however old', async () => {
       nextRetryAt: old,
     },
   });
-  await pruneOlderThan(db, cutoff);
+  await new RetentionService(db).pruneOlderThan(cutoff);
   expect(await db.order.count()).toBe(2);
   expect(await db.payment.count()).toBe(2);
   expect(await db.payment.findUnique({ where: { id: pending.id } })).not.toBe(
@@ -184,7 +184,9 @@ it('keeps the last 30 days', async () => {
       createdAt: recent,
     },
   });
-  const counts = await pruneOlderThan(db, new Date(now.getTime() - 30 * 864e5));
+  const counts = await new RetentionService(db).pruneOlderThan(
+    new Date(now.getTime() - 30 * 864e5),
+  );
   expect(Object.values(counts).every((n) => n === 0)).toBe(true);
   expect(await db.payment.count()).toBe(1);
   expect(await db.order.count()).toBe(1);
@@ -194,7 +196,9 @@ it("removes a payment's events before the payment", async () => {
   const { db } = database;
   const p = await settled(null, old);
   await db.paymentEvent.create({ data: { paymentId: p.id, body: '{"n":2}' } });
-  await expect(pruneOlderThan(db, cutoff)).resolves.toMatchObject({
+  await expect(
+    new RetentionService(db).pruneOlderThan(cutoff),
+  ).resolves.toMatchObject({
     events: 2,
     payments: 1,
   });
@@ -212,7 +216,7 @@ it('keeps a payment that a newer incident still references', async () => {
       createdAt: recent,
     },
   });
-  await pruneOlderThan(db, cutoff);
+  await new RetentionService(db).pruneOlderThan(cutoff);
   expect(await db.payment.count()).toBe(1);
   expect(await db.incident.count()).toBe(1);
 });
@@ -227,14 +231,14 @@ it('keeps an old unmatched payment that is not final', async () => {
       receivedAt: new Date(now.getTime() - 40 * 864e5),
     },
   });
-  await pruneOlderThan(db, cutoff);
+  await new RetentionService(db).pruneOlderThan(cutoff);
   expect(await db.payment.count()).toBe(1);
 });
 it('keeps an old notified payment and its order until the payment is final', async () => {
   const { db } = database;
   const o = await order('paid', old);
   const p = await settled(o.id, old, { final: false });
-  const counts = await pruneOlderThan(db, cutoff);
+  const counts = await new RetentionService(db).pruneOlderThan(cutoff);
   expect(counts).toMatchObject({
     payments: 0,
     ledgerEntries: 0,
@@ -245,7 +249,9 @@ it('keeps an old notified payment and its order until the payment is final', asy
   expect(await db.payment.findUnique({ where: { id: p.id } })).not.toBeNull();
   expect(await db.order.count()).toBe(1);
   await db.payment.update({ where: { id: p.id }, data: { final: true } });
-  await expect(pruneOlderThan(db, cutoff)).resolves.toMatchObject({
+  await expect(
+    new RetentionService(db).pruneOlderThan(cutoff),
+  ).resolves.toMatchObject({
     payments: 1,
     orders: 1,
   });
@@ -274,7 +280,9 @@ it('deletes an old transfer that was closed because it can never land', async ()
       sentAt: old,
     },
   });
-  await expect(pruneOlderThan(db, cutoff)).resolves.toMatchObject({
+  await expect(
+    new RetentionService(db).pruneOlderThan(cutoff),
+  ).resolves.toMatchObject({
     payments: 1,
     orders: 1,
   });
@@ -303,6 +311,6 @@ it('keeps an old transfer that is still in flight', async () => {
       sentAt: old,
     },
   });
-  await pruneOlderThan(db, cutoff);
+  await new RetentionService(db).pruneOlderThan(cutoff);
   expect(await db.payment.count()).toBe(1);
 });

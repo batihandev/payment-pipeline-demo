@@ -1,5 +1,5 @@
-import { testDatabase } from '../../../libs/db/testing/database';
-import { expireOrders } from './expiry';
+import { testDatabase } from '../../../../libs/db/testing/database';
+import { ExpiryService } from './expiry.service';
 let database: Awaited<ReturnType<typeof testDatabase>>;
 beforeAll(async () => {
   database = await testDatabase();
@@ -24,7 +24,7 @@ it('expires open orders one minute past expiry and preserves unexpired and paid 
         source: 'schedule',
       },
     });
-  expect(await expireOrders(database.db, now)).toBe(1);
+  expect(await new ExpiryService(database.db).expireOrders(now)).toBe(1);
   expect(
     (await database.db.order.findMany({ orderBy: { item: 'asc' } })).map(
       ({ item, status }) => [item, status],
@@ -34,5 +34,5 @@ it('expires open orders one minute past expiry and preserves unexpired and paid 
     ['Open', 'open'],
     ['Paid', 'paid'],
   ]);
-  expect(await expireOrders(database.db, now)).toBe(0);
+  expect(await new ExpiryService(database.db).expireOrders(now)).toBe(0);
 });

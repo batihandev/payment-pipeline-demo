@@ -1,8 +1,8 @@
 import { Redis } from 'ioredis';
 import type { Hex } from '../../../libs/chain/src/chain-client';
 import { ScriptedChain } from '../../../libs/chain/testing/scripted-chain';
-import { OrderSender } from '../../buyer/src/send-order';
-import { RedisLock } from '../../buyer/src/redis-lock';
+import { OrderSenderService } from '../../buyer/src/sending/order-sender.service';
+import { RedisLock } from '../../buyer/src/sending/redis-lock';
 import {
   fixture,
   clear,
@@ -32,7 +32,7 @@ beforeEach(async () => {
 it('keeps one payment when the tracker observes a broadcast before the buyer recovers its receipt', async () => {
   const row = await order(f.db);
   const chain = new ScriptedChain();
-  const sender = new OrderSender(
+  const sender = new OrderSenderService(
     f.db,
     chain,
     chain,

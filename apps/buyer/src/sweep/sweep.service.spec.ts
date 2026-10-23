@@ -1,18 +1,18 @@
-import { RpcError } from '../../../libs/chain/src/rpc-error';
+import { RpcError } from '../../../../libs/chain/src/rpc-error';
 import { Redis } from 'ioredis';
-import { testDatabase } from '../../../libs/db/testing/database';
-import { ScriptedChain } from '../../../libs/chain/testing/scripted-chain';
-import { RedisLock } from './redis-lock';
-import { OrderSender } from './send-order';
-import { NightlySweep } from './sweep';
-import { testRedisUrl } from '../../../libs/config/testing/redis';
+import { testDatabase } from '../../../../libs/db/testing/database';
+import { ScriptedChain } from '../../../../libs/chain/testing/scripted-chain';
+import { RedisLock } from '../sending/redis-lock';
+import { OrderSenderService } from '../sending/order-sender.service';
+import { SweepService } from './sweep.service';
+import { testRedisUrl } from '../../../../libs/config/testing/redis';
 const buyer = `0x${'11'.repeat(20)}` as const;
 const shop = `0x${'22'.repeat(20)}` as const;
 const day = new Date('2026-10-20');
 let database: Awaited<ReturnType<typeof testDatabase>>;
 let redis: Redis;
 let chain: ScriptedChain;
-let sweep: NightlySweep;
+let sweep: SweepService;
 beforeAll(async () => {
   database = await testDatabase();
   redis = new Redis(testRedisUrl());
@@ -26,14 +26,14 @@ beforeEach(async () => {
   await database.db.sweep.deleteMany();
   await database.db.walletNonce.deleteMany();
   chain = new ScriptedChain();
-  const sender = new OrderSender(
+  const sender = new OrderSenderService(
     database.db,
     chain,
     chain,
     new RedisLock(redis, 'sweep-test'),
     { buyer, shop, chainId: 84532 },
   );
-  sweep = new NightlySweep(database.db, chain, sender, shop);
+  sweep = new SweepService(database.db, chain, sender, shop);
 });
 it('sweeps the shop balance once per UTC night through the durable send path and records the result', async () => {
   await sweep.run(day);
@@ -98,7 +98,7 @@ it('records a concurrent rebroadcast of one sweep as one completed sweep', async
     await prepared;
     return broadcast(raw);
   };
-  const other = new OrderSender(
+  const other = new OrderSenderService(
     database.db,
     chain,
     chain,

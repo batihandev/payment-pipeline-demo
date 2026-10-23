@@ -4,13 +4,13 @@ import type {
   ChainClient,
   Hex,
   TransferSigner,
-} from '../../../libs/chain/src/chain-client';
-import { RpcError } from '../../../libs/chain/src/rpc-error';
+} from '../../../../libs/chain/src/chain-client';
+import { RpcError } from '../../../../libs/chain/src/rpc-error';
 import {
   BudgetReservation,
   type Prisma,
   type PrismaClient,
-} from '../../../libs/db/src';
+} from '../../../../libs/db/src';
 import { RedisLock } from './redis-lock';
 
 class NonceResynced extends RpcError {
@@ -21,7 +21,7 @@ class NonceResynced extends RpcError {
 type Target = { kind: 'order' | 'sweep'; id: string };
 const UNSEEN_AFTER_MS = 2 * 60 * 1000;
 type SenderOptions = { buyer: Address; shop: Address; chainId: number };
-export class OrderSender {
+export class OrderSenderService {
   constructor(
     private readonly db: PrismaClient,
     private readonly chain: ChainClient,

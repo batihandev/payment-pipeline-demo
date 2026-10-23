@@ -1,11 +1,11 @@
-import { ScriptedChain } from '../../../libs/chain/testing/scripted-chain';
+import { ScriptedChain } from '../../../../libs/chain/testing/scripted-chain';
 import { Redis } from 'ioredis';
 import { keccak256, type Hex } from 'viem';
-import { RpcError } from '../../../libs/chain/src/rpc-error';
-import { testDatabase } from '../../../libs/db/testing/database';
-import { OrderSender } from './send-order';
+import { RpcError } from '../../../../libs/chain/src/rpc-error';
+import { testDatabase } from '../../../../libs/db/testing/database';
+import { OrderSenderService } from './order-sender.service';
 import { RedisLock } from './redis-lock';
-import { testRedisUrl } from '../../../libs/config/testing/redis';
+import { testRedisUrl } from '../../../../libs/config/testing/redis';
 
 const buyer = `0x${'11'.repeat(20)}` as const;
 const shop = `0x${'22'.repeat(20)}` as const;
@@ -13,7 +13,7 @@ const day = new Date('2026-10-20');
 let database: Awaited<ReturnType<typeof testDatabase>>;
 let redis: Redis;
 let chain: ScriptedChain;
-let sender: OrderSender;
+let sender: OrderSenderService;
 beforeAll(async () => {
   database = await testDatabase();
   redis = new Redis(testRedisUrl(), { maxRetriesPerRequest: 1 });
@@ -39,7 +39,7 @@ beforeEach(async () => {
     },
   });
   chain = new ScriptedChain();
-  sender = new OrderSender(
+  sender = new OrderSenderService(
     db,
     chain,
     chain,
@@ -72,7 +72,7 @@ it('rebroadcasts the stored transaction after a crash before broadcast without s
     keccak256(stored.signedTransaction as Hex),
   );
   chain.fail = null;
-  sender = new OrderSender(
+  sender = new OrderSenderService(
     database.db,
     chain,
     chain,
@@ -97,7 +97,7 @@ it('finds the landed transaction after a crash following broadcast without signi
     kind: 'timeout',
   });
   chain.fail = null;
-  sender = new OrderSender(
+  sender = new OrderSenderService(
     database.db,
     chain,
     chain,
@@ -222,7 +222,7 @@ it('retains a signed transfer for manual review when the provider permanently re
   );
 });
 it('fences simultaneous nonce allocators even when they hold separate Redis leases', async () => {
-  const secondSender = new OrderSender(
+  const secondSender = new OrderSenderService(
     database.db,
     chain,
     chain,
@@ -405,7 +405,7 @@ it('counts broadcast transfers the tracker has not seen', async () => {
 });
 it('counts in-flight transfers from the database after a restart', async () => {
   await sendThree();
-  const restarted = new OrderSender(
+  const restarted = new OrderSenderService(
     database.db,
     chain,
     chain,

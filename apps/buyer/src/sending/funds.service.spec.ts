@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { testDatabase } from '../../../libs/db/testing/database';
-import { BuyerFunds } from './funds';
+import { testDatabase } from '../../../../libs/db/testing/database';
+import { FundsService } from './funds.service';
 
 let database: Awaited<ReturnType<typeof testDatabase>>;
 const buyer = `0x${'11'.repeat(20)}` as const;
@@ -52,7 +52,7 @@ function chainWith(usdc: bigint) {
 
 it('covers an order the balance can pay', async () => {
   const row = await order(1_000_000n);
-  const funds = new BuyerFunds(database.db, chainWith(1_000_000n), buyer);
+  const funds = new FundsService(database.db, chainWith(1_000_000n), buyer);
   expect(await funds.covers(row.id)).toBe(true);
 });
 
@@ -60,14 +60,14 @@ it('subtracts transfers still in flight', async () => {
   await order(1_500_000n, { sendState: 'sent' }, 'sent');
   await order(1_500_000n, { sendState: 'sent' }, 'received');
   const row = await order(1_000_000n);
-  const funds = new BuyerFunds(database.db, chainWith(2_000_000n), buyer);
+  const funds = new FundsService(database.db, chainWith(2_000_000n), buyer);
   expect(await funds.covers(row.id)).toBe(false);
 });
 
 it('lets an expired order through to be closed', async () => {
   const row = await order(1_000_000n, { status: 'expired' });
   const chain = chainWith(0n);
-  const funds = new BuyerFunds(database.db, chain, buyer);
+  const funds = new FundsService(database.db, chain, buyer);
   expect(await funds.covers(row.id)).toBe(true);
   expect(chain.getBalances).not.toHaveBeenCalled();
 });
@@ -75,7 +75,7 @@ it('lets an expired order through to be closed', async () => {
 it('lets an already-signed order through without reading the balance', async () => {
   const row = await order(1_000_000n, { signedTransaction: '0x01' });
   const chain = chainWith(0n);
-  const funds = new BuyerFunds(database.db, chain, buyer);
+  const funds = new FundsService(database.db, chain, buyer);
   expect(await funds.covers(row.id)).toBe(true);
   expect(chain.getBalances).not.toHaveBeenCalled();
 });
@@ -87,7 +87,7 @@ it('holds the order when the balance read fails', async () => {
       throw new Error('rpc down');
     }),
   };
-  const funds = new BuyerFunds(database.db, chain, buyer);
+  const funds = new FundsService(database.db, chain, buyer);
   expect(await funds.covers(row.id)).toBe(false);
 });
 
@@ -95,7 +95,7 @@ it('reads the balance once per ttl', async () => {
   const row = await order(1_000_000n);
   const chain = chainWith(5_000_000n);
   let clock = 0;
-  const funds = new BuyerFunds(database.db, chain, buyer, 3000, () => clock);
+  const funds = new FundsService(database.db, chain, buyer, 3000, () => clock);
   await funds.covers(row.id);
   clock = 2999;
   await funds.covers(row.id);

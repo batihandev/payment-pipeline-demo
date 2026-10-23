@@ -6,6 +6,7 @@ import { ConfigService } from '@nestjs/config';
 import { appConfig } from '../../../libs/config/src/config.module';
 import { apiSchema } from '../../../libs/config/src';
 import { DatabaseModule } from '../../../libs/db/src';
+import { QueueErrorsModule } from '../../../libs/queues/src';
 import { RedisModule } from '../../../libs/redis/src';
 import type { ApiConfig } from './common/api-config';
 import { ClockModule } from './common/clock.module';
@@ -30,6 +31,7 @@ export class AppModule {
         appConfig(apiSchema),
         DatabaseModule,
         RedisModule.forRoot({ service: 'API' }),
+        QueueErrorsModule.forRoot({ message: 'API queue connection failed.' }),
         ClockModule,
         BullModule.forRootAsync({
           inject: [ConfigService],
