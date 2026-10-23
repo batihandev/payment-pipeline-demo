@@ -16,7 +16,10 @@ export class PaymentProgress {
         chainId: this.scanner.options.chainId,
         OR: [
           { final: false },
-          { stage: { in: ['received', 'confirming'] }, orderId: { not: null } },
+          {
+            stage: { in: ['received', 'confirming'] },
+            OR: [{ orderId: { not: null } }, { donation: true }],
+          },
         ],
         blockNumber: { not: null },
       },
@@ -46,7 +49,7 @@ export class PaymentProgress {
         }
         const confirmations = Number(head > block ? head - block : 0n);
         if (
-          current.orderId &&
+          (current.orderId || current.donation) &&
           ['received', 'confirming'].includes(current.stage)
         ) {
           const changed =
@@ -70,15 +73,17 @@ export class PaymentProgress {
               data: { stage: 'settled', settledAt: this.now() },
             });
             await savePaymentEvent(tx, current);
-            await tx.notice.upsert({
-              where: { paymentId: current.id },
-              create: { paymentId: current.id },
-              update: {},
-            });
-            await tx.order.update({
-              where: { id: current.orderId ?? '' },
-              data: { status: 'paid' },
-            });
+            if (current.orderId) {
+              await tx.notice.upsert({
+                where: { paymentId: current.id },
+                create: { paymentId: current.id },
+                update: {},
+              });
+              await tx.order.update({
+                where: { id: current.orderId },
+                data: { status: 'paid' },
+              });
+            }
           }
         } else if (current.confirmations !== confirmations) {
           const updated = await tx.payment.update({

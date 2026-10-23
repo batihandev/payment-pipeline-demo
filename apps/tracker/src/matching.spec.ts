@@ -2,6 +2,7 @@ import {
   fixture,
   clear,
   TrackerChain,
+  buyer,
   log,
   now,
   options,
@@ -94,4 +95,59 @@ it('uses normal amount matching when the buyer did not record the transaction', 
     orderId: row.id,
     stage: 'received',
   });
+});
+const donor = `0x${'aa'.repeat(20)}` as const;
+it('stores a transfer from another sender as a donation', async () => {
+  const row = await order(f.db);
+  f.chain.logs = [
+    { ...log(), from: donor.toUpperCase().replace('0X', '0x') as typeof donor },
+  ];
+  await scanner.scanOnce();
+  expect(await f.db.payment.findFirstOrThrow()).toMatchObject({
+    donation: true,
+    orderId: null,
+    fromAddress: donor,
+    stage: 'received',
+  });
+  expect(await f.db.incident.count()).toBe(0);
+  expect(
+    (await f.db.order.findUniqueOrThrow({ where: { id: row.id } })).status,
+  ).toBe('open');
+});
+it('does not credit a paid order from a copied amount', async () => {
+  const row = await order(f.db, { status: 'paid' });
+  f.chain.logs = [{ ...log(), from: donor }];
+  await scanner.scanOnce();
+  expect(await f.db.payment.findFirstOrThrow()).toMatchObject({
+    donation: true,
+    orderId: null,
+  });
+  expect(
+    (await f.db.order.findUniqueOrThrow({ where: { id: row.id } })).status,
+  ).toBe('paid');
+});
+it('matches buyer transfers whatever the address case', async () => {
+  const row = await order(f.db);
+  const checksummed = `0x${'1A'.repeat(20)}`;
+  f.chain.logs = [{ ...log(), from: `0x${'1a'.repeat(20)}` }];
+  scanner = new Scanner(
+    f.db,
+    f.chain,
+    { ...options, buyer: checksummed },
+    () => now,
+  );
+  await scanner.scanOnce();
+  expect(await f.db.payment.findFirstOrThrow()).toMatchObject({
+    orderId: row.id,
+    donation: false,
+  });
+});
+it('keeps an unmatched buyer transfer as an unmatched incident', async () => {
+  f.chain.logs = [{ ...log(), from: buyer }];
+  await scanner.scanOnce();
+  expect(await f.db.payment.findFirstOrThrow()).toMatchObject({
+    orderId: null,
+    donation: false,
+  });
+  expect(await f.db.incident.count({ where: { kind: 'unmatched' } })).toBe(1);
 });

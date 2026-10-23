@@ -158,3 +158,33 @@ it('preserves a credit when reorg processing loaded the payment before settlemen
     1,
   );
 });
+it('re-reads a reorged donation as a donation', async () => {
+  await clear(f.db);
+  const donor = `0x${'aa'.repeat(20)}` as const;
+  f.chain.logs = [{ ...log(), from: donor }];
+  await scanner.scanOnce();
+  const original = await f.db.payment.findFirstOrThrow();
+  f.chain.hashes.set(10n, hash(999n));
+  await progress.advance(20n, 0n);
+  f.chain.logs = [
+    {
+      ...log(),
+      blockNumber: 21n,
+      blockHash: hash(21n),
+      logIndex: 3,
+      from: donor,
+    },
+  ];
+  f.chain.head = 21n;
+  await scanner.scanOnce();
+  expect(await f.db.payment.count()).toBe(1);
+  expect(await f.db.payment.findFirstOrThrow()).toMatchObject({
+    id: original.id,
+    donation: true,
+    orderId: null,
+    fromAddress: donor,
+    stage: 'received',
+    blockNumber: 21n,
+  });
+  expect(await f.db.incident.count({ where: { kind: 'unmatched' } })).toBe(0);
+});

@@ -12,6 +12,7 @@ export type TrackerOptions = {
   startBlock?: bigint;
   chainId: number;
   shop: string;
+  buyer: string;
   maxRange: number;
   minRange: number;
   rescanBlocks: number;
@@ -262,6 +263,7 @@ export class Scanner {
         this.options.chainId,
         externalKey,
         this.now(),
+        this.options.buyer,
       );
     }
   }

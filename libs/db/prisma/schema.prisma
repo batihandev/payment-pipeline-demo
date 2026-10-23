@@ -90,6 +90,8 @@ model Payment {
   blockHash       String?         @map("block_hash")
   transactionHash String?         @map("transaction_hash")
   logIndex        Int?            @map("log_index")
+  fromAddress     String?         @map("from_address")
+  donation        Boolean         @default(false)
   final           Boolean         @default(false)
   sentAt          DateTime?       @map("sent_at") @db.Timestamptz(3)
   receivedAt      DateTime?       @map("received_at") @db.Timestamptz(3)

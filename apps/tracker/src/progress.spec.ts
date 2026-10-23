@@ -29,6 +29,24 @@ beforeEach(async () => {
     () => now,
   );
 });
+it('settles a donation without an order or notice', async () => {
+  await clear(f.db);
+  f.chain.logs = [{ ...log(), from: `0x${'aa'.repeat(20)}` }];
+  const scanner = new Scanner(f.db, f.chain, options, () => now);
+  await scanner.scanOnce();
+  await new PaymentProgress(f.db, scanner, () => now).advance(15n);
+  expect(await f.db.payment.findFirstOrThrow()).toMatchObject({
+    stage: 'confirming',
+    donation: true,
+  });
+  await new PaymentProgress(f.db, scanner, () => now).advance(20n);
+  expect(await f.db.payment.findFirstOrThrow()).toMatchObject({
+    stage: 'settled',
+    settledAt: now,
+  });
+  expect(await f.db.ledgerEntry.findMany()).toMatchObject([{ amount: 100n }]);
+  expect(await f.db.notice.count()).toBe(0);
+});
 it('computes confirmations from the pass head and waits for blocks on top', async () => {
   await progress.advance(19n);
   expect(await f.db.payment.findFirstOrThrow()).toMatchObject({

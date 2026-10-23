@@ -7,11 +7,13 @@ import { RpcLimiter } from '../../../libs/chain/src/rpc-limiter';
 import { testDatabase } from '../../../libs/db/testing/database';
 
 export const shop = `0x${'22'.repeat(20)}` as const;
+export const buyer = `0x${'11'.repeat(20)}` as const;
 export const now = new Date('2026-10-20T12:00:00Z');
 export const options = {
   startBlock: 0n,
   chainId: 84532,
   shop,
+  buyer,
   maxRange: 500,
   minRange: 10,
   rescanBlocks: 5,
@@ -25,7 +27,7 @@ export const log = (block = 10n, index = 0): TransferLog => ({
   logIndex: index,
   blockNumber: block,
   blockHash: hash(block),
-  from: `0x${'11'.repeat(20)}`,
+  from: buyer,
   to: shop,
   amount: 100n,
 });

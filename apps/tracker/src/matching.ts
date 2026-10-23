@@ -7,7 +7,46 @@ export async function receiveTransfer(
   chainId: number,
   externalKey: string,
   now: Date,
+  buyer: string,
 ) {
+  const fromAddress = log.from.toLowerCase();
+  if (fromAddress !== buyer.toLowerCase()) {
+    const dropped = await tx.payment.findFirst({
+      where: {
+        provider: 'chain',
+        chainId,
+        transactionHash: { equals: log.txHash, mode: 'insensitive' },
+        amount: log.amount,
+        stage: 'sent',
+        logIndex: null,
+        donation: true,
+      },
+    });
+    const donationData = {
+      externalKey,
+      chainId,
+      transactionHash: log.txHash.toLowerCase(),
+      logIndex: log.logIndex,
+      amount: log.amount,
+      blockNumber: log.blockNumber,
+      blockHash: log.blockHash,
+      stage: 'received' as const,
+      receivedAt: now,
+      orderId: null,
+      fromAddress,
+      donation: true,
+    };
+    const donation = dropped
+      ? await tx.payment.update({
+          where: { id: dropped.id },
+          data: donationData,
+        })
+      : await tx.payment.create({
+          data: { ...donationData, provider: 'chain' },
+        });
+    await savePaymentEvent(tx, donation);
+    return donation;
+  }
   let sent = await tx.payment.findFirst({
     where: {
       provider: 'chain',
@@ -16,6 +55,7 @@ export async function receiveTransfer(
       amount: log.amount,
       stage: 'sent',
       logIndex: null,
+      donation: false,
     },
   });
   const order = sent?.orderId
@@ -37,6 +77,7 @@ export async function receiveTransfer(
         amount: log.amount,
         stage: 'sent',
         logIndex: null,
+        donation: false,
       },
     });
   }
@@ -51,6 +92,7 @@ export async function receiveTransfer(
     stage: 'received' as const,
     receivedAt: now,
     orderId: order?.id ?? null,
+    fromAddress,
   };
   const payment = sent
     ? await tx.payment.update({ where: { id: sent.id }, data })

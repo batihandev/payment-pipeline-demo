@@ -12,7 +12,14 @@ describe.each([
   [
     'tracker',
     trackerSchema,
-    [...shared, ...chain, 'SHOP_ADDRESS', 'NOTICE_SECRET', 'SHOP_NOTICE_URL'],
+    [
+      ...shared,
+      ...chain,
+      'BUYER_ADDRESS',
+      'SHOP_ADDRESS',
+      'NOTICE_SECRET',
+      'SHOP_NOTICE_URL',
+    ],
   ],
   [
     'api',

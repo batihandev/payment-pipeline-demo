@@ -43,6 +43,7 @@ export const buyerSchema = z.object({
 export const trackerSchema = z.object({
   ...connection,
   ...chain,
+  BUYER_ADDRESS: address,
   SHOP_ADDRESS: address,
   NOTICE_SECRET: z.string().min(32),
   SHOP_NOTICE_URL: z.url({ protocol: /^https?$/ }),

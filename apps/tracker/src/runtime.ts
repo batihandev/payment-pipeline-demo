@@ -50,6 +50,7 @@ export class TrackerRuntime implements OnModuleInit, OnModuleDestroy {
       startBlock: config.START_BLOCK,
       chainId: config.CHAIN_ID,
       shop: config.SHOP_ADDRESS,
+      buyer: config.BUYER_ADDRESS,
       maxRange: config.MAX_RANGE,
       minRange: config.MIN_RANGE,
       rescanBlocks: config.RESCAN_BLOCKS,
