@@ -3,6 +3,7 @@
 !pnpm-lock.yaml
 !pnpm-workspace.yaml
 !web/package.json
+!tools/migrate/package.json
 !apps
 !libs
 !scripts
@@ -13,3 +14,4 @@
 **/testing
 **/node_modules
 libs/db/generated
+**/.env*

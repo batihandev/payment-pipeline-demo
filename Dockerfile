@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-ARG NODE_IMAGE=node:24.11-alpine3.22
+ARG NODE_IMAGE=node:24.11-alpine3.22@sha256:2867d550cf9d8bb50059a0fff528741f11a84d985c732e60e19e8e75c7239c43
 
 FROM ${NODE_IMAGE} AS base
 ENV CI=true
@@ -10,13 +10,13 @@ WORKDIR /app
 
 FROM base AS deps
 COPY pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm fetch && rm -rf node_modules
+RUN pnpm fetch && rm -rf node_modules
 
 FROM deps AS build
 COPY package.json ./
 COPY web/package.json web/
-RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+COPY tools/migrate/package.json tools/migrate/
+RUN --network=none \
     pnpm install --offline --frozen-lockfile --filter .
 COPY apps apps
 COPY libs libs
@@ -30,7 +30,8 @@ RUN pnpm prisma generate \
 FROM deps AS prod-deps
 COPY package.json ./
 COPY web/package.json web/
-RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+COPY tools/migrate/package.json tools/migrate/
+RUN --network=none \
     pnpm install --offline --frozen-lockfile --prod --no-optional --filter .
 # The generated client imports only the PostgreSQL query compiler, so the
 # other databases' copies are dead weight. Declarations, maps and docs are
@@ -41,23 +42,14 @@ RUN find node_modules/.pnpm \( -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.c
         -regex '.*\(mysql\|sqlite\|sqlserver\|cockroachdb\|mongodb\).*' -delete
 
 FROM deps AS migrate-deps
-COPY package.json /tmp/package.json
-WORKDIR /migrate
-COPY pnpm-workspace.yaml ./
-RUN node -e "const v=require('/tmp/package.json').devDependencies.prisma; \
-      require('fs').writeFileSync('package.json', JSON.stringify({private:true,dependencies:{prisma:v}}))"
-RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm install --prod
+COPY package.json ./
+COPY web/package.json web/
+COPY tools/migrate/package.json tools/migrate/
+RUN --network=none \
+    pnpm --filter migrate --prod --offline deploy /migrate
 
-FROM base AS node-binary
-RUN apk add --no-cache binutils \
-    && strip --strip-unneeded /usr/local/bin/node
-
-FROM alpine:3.22.2 AS runtime
-RUN apk add --no-cache libstdc++ tini \
-    && addgroup -g 1000 -S node \
-    && adduser -u 1000 -S -G node node
-COPY --from=node-binary /usr/local/bin/node /usr/local/bin/node
+FROM ${NODE_IMAGE} AS runtime
+RUN apk add --no-cache tini
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=prod-deps --chown=node:node /app/node_modules node_modules
