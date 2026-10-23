@@ -1,0 +1,46 @@
+import { Inject, Injectable } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import type { Queue } from 'bullmq';
+import { PrismaService, type PrismaClient } from '../../db/src';
+import {
+  JOBS,
+  QUEUES,
+  retryOptions,
+  type BuyerJobData,
+} from '../../queues/src';
+
+@Injectable()
+export class OrderQueueService {
+  constructor(
+    @Inject(PrismaService) private readonly db: PrismaClient,
+    @InjectQueue(QUEUES.buyer) private readonly queue: Queue<BuyerJobData>,
+  ) {}
+
+  async queueSend(
+    orderId: string,
+    source: 'schedule' | 'visitor',
+    delay = 0,
+  ): Promise<void> {
+    const visitor = source === 'visitor';
+    await this.queue.add(
+      visitor ? JOBS.buyer.visitorPurchase : JOBS.buyer.sendOrder,
+      { orderId },
+      {
+        ...retryOptions,
+        jobId: `${visitor ? 'visitor' : 'send'}-${orderId}`,
+        priority: visitor ? 1 : 10,
+        delay: visitor ? 0 : delay,
+      },
+    );
+  }
+
+  async recoverPending(): Promise<void> {
+    const orders = await this.db.order.findMany({
+      where: {
+        sendState: 'pending',
+        OR: [{ status: 'open' }, { signedTransaction: { not: null } }],
+      },
+    });
+    for (const order of orders) await this.queueSend(order.id, order.source);
+  }
+}

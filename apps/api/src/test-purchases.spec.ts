@@ -3,8 +3,8 @@ import { FastifyAdapter } from '@nestjs/platform-fastify';
 import { Redis } from 'ioredis';
 import { Queue } from 'bullmq';
 import { testDatabase } from '../../../libs/db/testing/database';
-import { Purchases } from '../../buyer/src/purchases';
-import { BuyerJobs, type BuyerJobData } from '../../buyer/src/jobs';
+import { OrderQueueService, PurchasesService } from '../../../libs/orders/src';
+import type { BuyerJobData } from '../../../libs/queues/src';
 import {
   recordGasPause,
   registerTestPurchases,
@@ -20,7 +20,7 @@ let redis: Redis;
 let queue: Queue<BuyerJobData>;
 let adapter: FastifyAdapter;
 let prefix: string;
-let purchases: Purchases;
+let purchases: PurchasesService;
 let limits: VisitorLimits;
 let gas: GasReading;
 let tick: number;
@@ -34,7 +34,7 @@ function build(
     redis,
     database.db,
     purchases,
-    new BuyerJobs(database.db, purchases, queue),
+    new OrderQueueService(database.db, queue),
     {
       prefix,
       limits,
@@ -64,7 +64,7 @@ beforeEach(async () => {
   );
   await queue.drain(true);
   prefix = `api-limit-test:${randomUUID()}`;
-  purchases = new Purchases(
+  purchases = new PurchasesService(
     database.db,
     {
       cap: { count: 20, amount: 1000000000n },

@@ -10,8 +10,12 @@ import { registerEvents } from './events';
 import { registerNotices } from './notices';
 import { recordGasPause, registerTestPurchases } from './test-purchases';
 import { ChainSnapshot, buyerGas } from './chain-snapshot';
-import { Purchases, purchaseOptions } from '../../buyer/src/purchases';
-import { BuyerJobs, type BuyerJobData } from '../../buyer/src/jobs';
+import {
+  OrderQueueService,
+  PurchasesService,
+  purchaseOptions,
+} from '../../../libs/orders/src';
+import { QUEUES, type BuyerJobData } from '../../../libs/queues/src';
 export class ApiRuntime implements OnModuleDestroy {
   readonly redis: Redis;
   readonly queues: Record<string, Queue>;
@@ -22,7 +26,7 @@ export class ApiRuntime implements OnModuleDestroy {
     this.redis = new Redis(config.REDIS_URL, { maxRetriesPerRequest: 1 });
     this.redis.on('error', () => console.error('API Redis connection failed.'));
     this.queues = Object.fromEntries(
-      ['buyer', 'buyer-upkeep', 'tracker', 'shop-notices'].map((name) => {
+      Object.values(QUEUES).map((name) => {
         const queue = new Queue(name, {
           connection: { url: config.REDIS_URL },
         });
@@ -48,8 +52,8 @@ export class ApiRuntime implements OnModuleDestroy {
     );
     await registerEvents(app, this.redis, config.DONATION_MIN);
     registerNotices(app, this.db, config.NOTICE_SECRET);
-    const purchases = new Purchases(this.db, purchaseOptions(config));
-    const queue = this.queues.buyer as Queue<BuyerJobData>;
+    const purchases = new PurchasesService(this.db, purchaseOptions(config));
+    const queue = this.queues[QUEUES.buyer] as Queue<BuyerJobData>;
     const snapshot = new ChainSnapshot(
       chain,
       {
@@ -63,7 +67,7 @@ export class ApiRuntime implements OnModuleDestroy {
       this.redis,
       this.db,
       purchases,
-      new BuyerJobs(this.db, purchases, queue),
+      new OrderQueueService(this.db, queue),
       {
         latestBuyerGas: buyerGas(snapshot),
         limits: {

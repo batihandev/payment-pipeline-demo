@@ -1,6 +1,7 @@
 import type { Redis } from 'ioredis';
 import type { Queue } from 'bullmq';
 import type { PrismaClient } from '../../../libs/db/src';
+import { JOBS } from '../../../libs/queues/src';
 import { paymentChannel } from '../../../libs/events/src/publish-payment';
 export const noticeRetryOptions = {
   attempts: 5,
@@ -49,7 +50,7 @@ export class PaymentDelivery {
     });
     for (const notice of notices)
       await this.queue.add(
-        'shop-notice',
+        JOBS.shopNotices.shopNotice,
         { paymentId: notice.paymentId },
         {
           ...noticeRetryOptions,

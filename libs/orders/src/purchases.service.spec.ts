@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { dailyTarget } from '../../../libs/core/src/pacing';
-import { testDatabase } from '../../../libs/db/testing/database';
-import { Purchases } from './purchases';
+import { dailyTarget } from '../../core/src/pacing';
+import { testDatabase } from '../../db/testing/database';
+import { PurchasesService } from './purchases.service';
 
 const now = new Date('2026-10-20T12:00:00Z');
 const day = new Date('2026-10-20');
@@ -13,7 +13,7 @@ const options = {
   quietEnd: 7,
 };
 let database: Awaited<ReturnType<typeof testDatabase>>;
-let purchases: Purchases;
+let purchases: PurchasesService;
 beforeAll(async () => {
   database = await testDatabase();
 });
@@ -23,7 +23,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await database.db.order.deleteMany();
   await database.db.dailyBudget.deleteMany();
-  purchases = new Purchases(database.db, options, () => 0);
+  purchases = new PurchasesService(database.db, options, () => 0);
 });
 it('creates today’s stable target on first use without replacing a saved target after restart', async () => {
   await purchases.ensureBudget(now);
@@ -31,7 +31,7 @@ it('creates today’s stable target on first use without replacing a saved targe
   expect(
     await database.db.dailyBudget.findUniqueOrThrow({ where: { day } }),
   ).toMatchObject({ targetCount: target.count, targetAmount: target.amount });
-  const restarted = new Purchases(
+  const restarted = new PurchasesService(
     database.db,
     { ...options, cap: { count: 100, amount: 999999999n } },
     () => 0,
@@ -51,7 +51,9 @@ it('creates no order when the daily count budget is spent', async () => {
 it('reuses the same scheduled order after a restart before enqueueing', async () => {
   const first = await purchases.pace(now);
   expect(first).not.toBeNull();
-  const retry = await new Purchases(database.db, options, () => 0).pace(now);
+  const retry = await new PurchasesService(database.db, options, () => 0).pace(
+    now,
+  );
   expect(retry?.id).toBe(first?.id);
   expect(await database.db.order.count()).toBe(1);
   expect(
@@ -59,7 +61,7 @@ it('reuses the same scheduled order after a restart before enqueueing', async ()
   ).toMatchObject({ reservedCount: 1, reservedAmount: first?.expectedAmount });
 });
 it('applies quiet-window pacing while visitor purchases skip the pacing draw', async () => {
-  purchases = new Purchases(database.db, options, () => 0.5);
+  purchases = new PurchasesService(database.db, options, () => 0.5);
   expect(await purchases.pace(new Date('2026-10-20T01:00:00Z'))).toBeNull();
   const visitor = await purchases.visitor(randomUUID(), now);
   expect(visitor).toMatchObject({ source: 'visitor', status: 'open' });

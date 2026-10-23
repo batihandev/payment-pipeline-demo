@@ -1,3 +1,4 @@
+import { DAY_MS } from '../../../libs/core/src/time';
 import { savePaymentEvent } from '../../../libs/events/src/save-payment-event';
 import type { TransferLog } from '../../../libs/chain/src/chain-client';
 import type { Prisma } from '../../../libs/db/src';
@@ -63,7 +64,7 @@ export async function receiveTransfer(
     : await tx.order.findFirst({
         where: {
           expectedAmount: log.amount,
-          createdAt: { gte: new Date(now.getTime() - 86400000), lte: now },
+          createdAt: { gte: new Date(now.getTime() - DAY_MS), lte: now },
         },
         orderBy: { createdAt: 'desc' },
       });

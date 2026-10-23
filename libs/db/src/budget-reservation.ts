@@ -1,3 +1,4 @@
+import { utcDateKey } from '../../core/src/time';
 import type { Prisma } from '../generated/client';
 
 export class BudgetReservation {
@@ -12,7 +13,7 @@ export class BudgetReservation {
       UPDATE daily_budgets
       SET reserved_count = reserved_count + 1,
           reserved_amount = reserved_amount + ${amount}
-      WHERE day = ${day.toISOString().slice(0, 10)}::date
+      WHERE day = ${utcDateKey(day)}::date
         AND reserved_count < target_count
         AND reserved_amount + ${amount} <= target_amount
       RETURNING day
@@ -26,7 +27,7 @@ export class BudgetReservation {
       UPDATE daily_budgets
       SET reserved_count = reserved_count - 1,
           reserved_amount = reserved_amount - ${amount}
-      WHERE day = ${day.toISOString().slice(0, 10)}::date
+      WHERE day = ${utcDateKey(day)}::date
         AND reserved_count > 0
         AND reserved_amount >= ${amount}
       RETURNING day

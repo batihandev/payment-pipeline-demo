@@ -10,6 +10,7 @@ import { ViemChainClient } from '../../../libs/chain/src/viem-client';
 import type { Address } from '../../../libs/chain/src/chain-client';
 import type { trackerSchema } from '../../../libs/config/src';
 import type { PrismaClient } from '../../../libs/db/src';
+import { JOBS, QUEUES, schedulerJobOptions } from '../../../libs/queues/src';
 import { Scanner } from './scanner';
 import { PaymentProgress } from './progress';
 import { GapRecovery } from './gaps';
@@ -66,9 +67,9 @@ export class TrackerRuntime implements OnModuleInit, OnModuleDestroy {
     );
     const gaps = new GapRecovery(db, scanner);
     const connection = { url: config.REDIS_URL };
-    this.queue = new Queue('tracker', { connection });
+    this.queue = new Queue(QUEUES.tracker, { connection });
 
-    this.noticeQueue = new Queue('shop-notices', { connection });
+    this.noticeQueue = new Queue(QUEUES.shopNotices, { connection });
     this.noticeQueue.on('error', () =>
       console.error('Shop notice queue connection failed.'),
     );
@@ -77,7 +78,7 @@ export class TrackerRuntime implements OnModuleInit, OnModuleDestroy {
       secret: config.NOTICE_SECRET,
     });
     this.noticeWorker = new Worker<{ paymentId: string }>(
-      'shop-notices',
+      QUEUES.shopNotices,
       (job) =>
         sender.send(
           job.data.paymentId,
@@ -90,13 +91,13 @@ export class TrackerRuntime implements OnModuleInit, OnModuleDestroy {
     );
     const delivery = new PaymentDelivery(db, this.redis, this.noticeQueue);
     this.worker = new Worker(
-      'tracker',
+      QUEUES.tracker,
       async (job) => {
-        if (job.name === 'deliver-payments') {
+        if (job.name === JOBS.tracker.deliverPayments) {
           await delivery.flush();
           return;
         }
-        if (job.name !== 'retry-gap')
+        if (job.name !== JOBS.tracker.retryGap)
           throw new UnrecoverableError('Unknown tracker job');
         await gaps.retryOnce();
       },
@@ -114,9 +115,9 @@ export class TrackerRuntime implements OnModuleInit, OnModuleDestroy {
       'tracker-gaps',
       { every: 10000 },
       {
-        name: 'retry-gap',
+        name: JOBS.tracker.retryGap,
         data: {},
-        opts: { removeOnComplete: 100, removeOnFail: 100 },
+        opts: schedulerJobOptions(undefined, false),
       },
     );
     void this.worker
@@ -126,9 +127,9 @@ export class TrackerRuntime implements OnModuleInit, OnModuleDestroy {
       'tracker-delivery',
       { every: 2000 },
       {
-        name: 'deliver-payments',
+        name: JOBS.tracker.deliverPayments,
         data: {},
-        opts: { removeOnComplete: 100, removeOnFail: 100 },
+        opts: schedulerJobOptions(undefined, false),
       },
     );
     void this.noticeWorker

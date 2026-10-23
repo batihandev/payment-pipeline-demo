@@ -1,8 +1,12 @@
 import { randomUUID, createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import type { Redis } from 'ioredis';
-import type { Purchases } from '../../buyer/src/purchases';
-import type { BuyerJobs } from '../../buyer/src/jobs';
+import type {
+  OrderQueueService,
+  PurchasesService,
+} from '../../../libs/orders/src';
+import { VISITOR_PAUSED_SINCE } from '../../../libs/core/src/redis-keys';
+import { utcDateKey } from '../../../libs/core/src/time';
 import type { PrismaClient } from '../../../libs/db/src';
 
 export type GasReading = { native: bigint; at: number } | null;
@@ -15,7 +19,6 @@ export type VisitorLimits = {
 };
 
 const staleReadingMs = 5 * 60 * 1000;
-const pausedSince = 'visitor-paused-since';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Returns {0} when admitted, {1, ms} when the minute limit is hit, {2} for the day limit.
 const admit = `
@@ -31,7 +34,7 @@ return {0, 0}
 `;
 
 /**
- * Keeps `visitor-paused-since` in step with each chain reading: set when the buyer's gas
+ * Keeps the visitor pause marker in step with each chain reading: set when the buyer's gas
  * falls below the floor, cleared once it is topped up.
  */
 export function recordGasPause(
@@ -41,8 +44,8 @@ export function recordGasPause(
 ): (reading: { balances: { buyer: { native: bigint } } }) => Promise<void> {
   return async (reading) => {
     if (reading.balances.buyer.native < gasFloor)
-      await redis.set(pausedSince, now(), 'NX');
-    else await redis.del(pausedSince);
+      await redis.set(VISITOR_PAUSED_SINCE, now(), 'NX');
+    else await redis.del(VISITOR_PAUSED_SINCE);
   };
 }
 
@@ -50,8 +53,8 @@ export function registerTestPurchases(
   app: FastifyInstance,
   redis: Redis,
   db: PrismaClient,
-  purchases: Purchases,
-  jobs: BuyerJobs,
+  purchases: PurchasesService,
+  orderQueue: OrderQueueService,
   options: {
     limits: VisitorLimits;
     latestBuyerGas: () => Promise<GasReading>;
@@ -109,7 +112,7 @@ export function registerTestPurchases(
             .header('retry-after', 2)
             .send({ error: 'busy' });
         const ip = createHash('sha256').update(request.ip).digest('hex');
-        const day = now.toISOString().slice(0, 10);
+        const day = utcDateKey(now);
         const [verdict, wait] = (await redis.eval(
           admit,
           2,
@@ -140,7 +143,7 @@ export function registerTestPurchases(
         );
         if (!order) return reply.code(409).send({ error: 'daily_limit' });
         orderId = order.id;
-        await jobs.queueSend(order.id, 'visitor');
+        await orderQueue.queueSend(order.id, 'visitor');
         return reply
           .code(202)
           .send({ orderId: order.id, position: await position(order) });

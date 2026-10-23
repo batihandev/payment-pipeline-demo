@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { utcDateKey } from './time';
 
 export type Budget = { count: number; amount: bigint };
 
@@ -9,7 +10,7 @@ export function dailyTarget(cap: Budget, day: Date, seed: string): Budget {
     throw new RangeError('Daily caps must be nonnegative integers');
   }
   const hash = createHash('sha256')
-    .update(JSON.stringify([day.toISOString().slice(0, 10), seed]))
+    .update(JSON.stringify([utcDateKey(day), seed]))
     .digest();
   const countFactor = BigInt(5000 + (hash.readUInt32BE(0) % 5001));
   const amountFactor = BigInt(5000 + (hash.readUInt32BE(4) % 5001));

@@ -5,7 +5,7 @@ import type {
 } from '../../../libs/chain/src/chain-client';
 import type { PrismaClient } from '../../../libs/db/src';
 import { OrderSender } from './send-order';
-import { utcDay } from './purchases';
+import { utcDateKey } from '../../../libs/core/src/time';
 
 export class NightlySweep {
   constructor(
@@ -15,7 +15,7 @@ export class NightlySweep {
     private readonly shop: Address,
   ) {}
   async run(day: Date, exhausted = false): Promise<void> {
-    const id = utcDay(day).toISOString().slice(0, 10);
+    const id = utcDateKey(day);
     const existing = await this.db.sweep.findUnique({ where: { id } });
     if (!existing) {
       let usdc: bigint;

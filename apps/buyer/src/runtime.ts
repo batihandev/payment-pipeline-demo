@@ -10,14 +10,19 @@ import { ViemChainClient } from '../../../libs/chain/src/viem-client';
 import { RpcError } from '../../../libs/chain/src/rpc-error';
 import type { buyerSchema } from '../../../libs/config/src';
 import type { PrismaClient } from '../../../libs/db/src';
-import { Purchases, purchaseOptions } from './purchases';
 import {
-  BuyerJobs,
-  holdWhenFull,
-  holdWhenShort,
-  retryOptions,
+  OrderQueueService,
+  PurchasesService,
+  purchaseOptions,
+} from '../../../libs/orders/src';
+import {
+  JOBS,
+  QUEUES,
+  schedulerJobOptions,
   type BuyerJobData,
-} from './jobs';
+} from '../../../libs/queues/src';
+import { DAY_MS } from '../../../libs/core/src/time';
+import { BuyerJobs, holdWhenFull, holdWhenShort } from './jobs';
 import { RedisLock } from './redis-lock';
 import { OrderSender } from './send-order';
 import { NightlySweep } from './sweep';
@@ -34,7 +39,8 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
   private readonly upkeepQueue: Queue<BuyerJobData>;
   private readonly upkeepWorker: Worker<BuyerJobData>;
   private readonly funds: BuyerFunds;
-  private readonly purchases: Purchases;
+  private readonly purchases: PurchasesService;
+  private readonly orderQueue: OrderQueueService;
   private readonly jobs: BuyerJobs;
   private readonly sender: OrderSender;
   private readonly sweep: NightlySweep;
@@ -71,18 +77,21 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
       limiter,
     );
     this.maxInFlight = config.MAX_IN_FLIGHT;
-    this.retentionMs = config.RETENTION_DAYS * 86_400_000;
-    this.purchases = new Purchases(db, purchaseOptions(config));
+    this.retentionMs = config.RETENTION_DAYS * DAY_MS;
+    this.purchases = new PurchasesService(db, purchaseOptions(config));
     const connection = { url: config.REDIS_URL };
-    this.queue = new Queue<BuyerJobData>('buyer', { connection });
+    this.queue = new Queue<BuyerJobData>(QUEUES.buyer, { connection });
     this.queue.on('error', () =>
       console.error('Buyer queue connection failed.'),
     );
-    this.upkeepQueue = new Queue<BuyerJobData>('buyer-upkeep', { connection });
+    this.upkeepQueue = new Queue<BuyerJobData>(QUEUES.buyerUpkeep, {
+      connection,
+    });
     this.upkeepQueue.on('error', () =>
       console.error('Buyer upkeep queue connection failed.'),
     );
-    this.jobs = new BuyerJobs(db, this.purchases, this.queue);
+    this.orderQueue = new OrderQueueService(db, this.queue);
+    this.jobs = new BuyerJobs(this.purchases, this.orderQueue);
     this.sender = new OrderSender(db, chain, chain, new RedisLock(this.redis), {
       buyer,
       shop,
@@ -96,7 +105,7 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
       cooldownMs: this.refillEveryMs,
     });
     this.worker = new Worker<BuyerJobData>(
-      'buyer',
+      QUEUES.buyer,
       (job, token) => this.process(job, token),
       { connection, concurrency: 1, autorun: false },
     );
@@ -104,7 +113,7 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
       console.error('Buyer worker connection failed.'),
     );
     this.upkeepWorker = new Worker<BuyerJobData>(
-      'buyer-upkeep',
+      QUEUES.buyerUpkeep,
       (job) => this.processUpkeep(job),
       { connection, concurrency: 1, autorun: false },
     );
@@ -117,28 +126,18 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
       'buyer-minute',
       { pattern: '* * * * *', tz: 'UTC' },
       {
-        name: 'pace-minute',
+        name: JOBS.buyer.paceMinute,
         data: {},
-        opts: {
-          ...retryOptions,
-          priority: 5,
-          removeOnComplete: 100,
-          removeOnFail: 100,
-        },
+        opts: schedulerJobOptions(5),
       },
     );
     await this.queue.upsertJobScheduler(
       'buyer-retention',
       { pattern: '30 3 * * *', tz: 'UTC' },
       {
-        name: 'retention',
+        name: JOBS.buyer.retention,
         data: {},
-        opts: {
-          ...retryOptions,
-          priority: 10,
-          removeOnComplete: 100,
-          removeOnFail: 100,
-        },
+        opts: schedulerJobOptions(10),
       },
     );
     await this.queue.removeJobScheduler('buyer-refill');
@@ -149,66 +148,49 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
       'buyer-refill',
       { every: this.refillEveryMs },
       {
-        name: 'refill-check',
+        name: JOBS.buyerUpkeep.refillCheck,
         data: {},
-        opts: {
-          ...retryOptions,
-          priority: 3,
-          removeOnComplete: 100,
-          removeOnFail: 100,
-        },
+        opts: schedulerJobOptions(3),
       },
     );
     await this.upkeepQueue.upsertJobScheduler(
       'buyer-unseen',
       { every: 60_000 },
       {
-        name: 'check-unseen',
+        name: JOBS.buyerUpkeep.checkUnseen,
         data: {},
-        opts: {
-          ...retryOptions,
-          priority: 4,
-          removeOnComplete: 100,
-          removeOnFail: 100,
-        },
+        opts: schedulerJobOptions(4),
       },
     );
     await this.upkeepQueue.upsertJobScheduler(
       'buyer-expiry',
       { pattern: '* * * * *', tz: 'UTC' },
       {
-        name: 'expire-orders',
+        name: JOBS.buyerUpkeep.expireOrders,
         data: {},
-        opts: {
-          ...retryOptions,
-          priority: 5,
-          removeOnComplete: 100,
-          removeOnFail: 100,
-        },
+        opts: schedulerJobOptions(5),
       },
     );
     await this.upkeepQueue.upsertJobScheduler(
       'buyer-sweep',
       { pattern: '0 3 * * *', tz: 'UTC' },
       {
-        name: 'nightly-sweep',
+        name: JOBS.buyerUpkeep.nightlySweep,
         data: {},
-        opts: {
-          ...retryOptions,
-          priority: 10,
-          removeOnComplete: 100,
-          removeOnFail: 100,
-        },
+        opts: schedulerJobOptions(10),
       },
     );
-    await this.jobs.recoverPending();
+    await this.orderQueue.recoverPending();
     void this.worker.run().catch(() => console.error('Buyer worker stopped.'));
     void this.upkeepWorker
       .run()
       .catch(() => console.error('Buyer upkeep worker stopped.'));
   }
   private async process(job: Job<BuyerJobData>, token?: string): Promise<void> {
-    if (job.name === 'send-order' || job.name === 'visitor-purchase') {
+    if (
+      job.name === JOBS.buyer.sendOrder ||
+      job.name === JOBS.buyer.visitorPurchase
+    ) {
       await holdWhenFull(job, token, this.sender, this.maxInFlight);
       if (job.data.orderId)
         await holdWhenShort(job, token, this.funds, job.data.orderId);
@@ -217,11 +199,11 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
     const exhausted = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
     try {
       switch (job.name) {
-        case 'pace-minute':
-          await this.jobs.recoverPending();
+        case JOBS.buyer.paceMinute:
+          await this.orderQueue.recoverPending();
           await this.jobs.pace(now);
           return;
-        case 'retention': {
+        case JOBS.buyer.retention: {
           const counts = await pruneOlderThan(
             this.db,
             new Date(now.getTime() - this.retentionMs),
@@ -229,7 +211,7 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
           console.log(`Retention removed ${JSON.stringify(counts)}`);
           return;
         }
-        case 'visitor-purchase': {
+        case JOBS.buyer.visitorPurchase: {
           if (!job.data.orderId)
             throw new UnrecoverableError('Missing purchase order id');
           const order = await this.purchases.visitor(job.data.orderId, now);
@@ -237,7 +219,7 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
           await this.sendPurchase(order.id, exhausted);
           return;
         }
-        case 'send-order':
+        case JOBS.buyer.sendOrder:
           if (!job.data.orderId)
             throw new UnrecoverableError('Missing purchase order id');
           await this.sendPurchase(job.data.orderId, exhausted);
@@ -256,19 +238,19 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
     const exhausted = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
     try {
       switch (job.name) {
-        case 'expire-orders':
+        case JOBS.buyerUpkeep.expireOrders:
           await expireOrders(this.db, new Date());
           return;
-        case 'nightly-sweep':
+        case JOBS.buyerUpkeep.nightlySweep:
           await this.sweep.run(
             new Date(job.opts.prevMillis ?? job.timestamp),
             exhausted,
           );
           return;
-        case 'check-unseen':
+        case JOBS.buyerUpkeep.checkUnseen:
           await this.sender.checkUnseen(new Date());
           return;
-        case 'refill-check':
+        case JOBS.buyerUpkeep.refillCheck:
           await this.refill.run(exhausted);
           return;
         default:

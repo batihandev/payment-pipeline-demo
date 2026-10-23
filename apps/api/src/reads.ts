@@ -6,6 +6,9 @@ import type { apiSchema } from '../../../libs/config/src';
 import type { PrismaClient } from '../../../libs/db/src';
 import { publicPayment } from '../../../libs/events/src/public-payment';
 import { receiptNoteKinds } from '../../../libs/core/src/receipt-notes';
+import { bigintReplacer } from '../../../libs/core/src/json';
+import { VISITOR_PAUSED_SINCE } from '../../../libs/core/src/redis-keys';
+import { DAY_MS, utcDateKey } from '../../../libs/core/src/time';
 import { cooldownKey } from '../../../libs/chain/src/service-limiter';
 import type {
   Balance,
@@ -20,11 +23,7 @@ export type ReadState = {
   now?: () => number;
 };
 export function json(value: unknown): unknown {
-  return JSON.parse(
-    JSON.stringify(value, (_key, item: unknown) =>
-      typeof item === 'bigint' ? item.toString() : item,
-    ),
-  );
+  return JSON.parse(JSON.stringify(value, bigintReplacer));
 }
 const limitQuery = {
   type: 'object',
@@ -115,16 +114,15 @@ export function registerReads(
       }
     };
   };
-  const dayMs = 86400000;
   const utcDayStart = () => {
     const at = (state.now ?? Date.now)();
-    return new Date(at - (at % dayMs));
+    return new Date(at - (at % DAY_MS));
   };
   app.get(
     '/stats',
     cached(5000, async () => {
       const from = utcDayStart();
-      const to = new Date(from.getTime() + dayMs);
+      const to = new Date(from.getTime() + DAY_MS);
       const [rows, duplicatesSkipped, failuresRecovered] = await Promise.all([
         db.$queryRaw<
           { settledCount: bigint; averageTimeToSettleMs: number | null }[]
@@ -147,8 +145,8 @@ export function registerReads(
   app.get(
     '/stats/daily',
     cached(60000, async () => {
-      const to = new Date(utcDayStart().getTime() + dayMs);
-      const from = new Date(to.getTime() - config.RETENTION_DAYS * dayMs);
+      const to = new Date(utcDayStart().getTime() + DAY_MS);
+      const from = new Date(to.getTime() - config.RETENTION_DAYS * DAY_MS);
       const rows = await db.$queryRaw<
         {
           day: string;
@@ -160,9 +158,7 @@ export function registerReads(
       >`SELECT to_char(p.settled_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day, COUNT(*)::bigint AS settled, COUNT(*) FILTER (WHERE o.source = 'schedule')::bigint AS scheduled, COUNT(*) FILTER (WHERE o.source = 'visitor')::bigint AS visitor, AVG(EXTRACT(EPOCH FROM (p.settled_at - COALESCE(p.sent_at, p.received_at))) * 1000)::float8 AS "averageTimeToSettleMs" FROM ledger_entries l JOIN payments p ON p.id = l.payment_id LEFT JOIN orders o ON o.id = p.order_id WHERE p.settled_at >= ${from} AND p.settled_at < ${to} AND NOT (p.donation AND p.amount < ${config.DONATION_MIN}) GROUP BY 1`;
       const byDay = new Map(rows.map((row) => [row.day, row]));
       return Array.from({ length: config.RETENTION_DAYS }, (_, index) => {
-        const day = new Date(from.getTime() + index * dayMs)
-          .toISOString()
-          .slice(0, 10);
+        const day = utcDateKey(new Date(from.getTime() + index * DAY_MS));
         const row = byDay.get(day);
         return {
           day,
@@ -220,7 +216,7 @@ export function registerReads(
             ] as const,
         ),
       ),
-      state.redis.get('visitor-paused-since'),
+      state.redis.get(VISITOR_PAUSED_SINCE),
     ]);
   // Only a database failure fails /health. Redis parts are null while Redis is down, and chain
   // parts come from the shared snapshot, so a slow or failing RPC provider never delays it.
