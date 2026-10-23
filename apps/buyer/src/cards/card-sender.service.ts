@@ -94,7 +94,11 @@ export class CardSenderService {
           processingAt: now,
           receiptUrl: payment.receiptUrl,
         },
-        update: { orderId, sentAt: now, receiptUrl: payment.receiptUrl },
+        update: { orderId, receiptUrl: payment.receiptUrl ?? undefined },
+      });
+      await tx.payment.updateMany({
+        where: { ...where.provider_externalKey, sentAt: null },
+        data: { sentAt: now },
       });
       // The webhook may already have settled the payment; a stage never moves backwards.
       await tx.payment.updateMany({

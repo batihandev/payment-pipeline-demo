@@ -5,6 +5,7 @@ import {
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { UnrecoverableError, type Job } from 'bullmq';
 import { JOBS, QUEUES, type BuyerJobData } from '../../../../libs/queues/src';
+import { CardReconcilerService } from '../cards/card-reconciler.service';
 import { ExpiryService } from '../expiry/expiry.service';
 import { RefillService } from '../refill/refill.service';
 import { OrderSenderService } from '../sending/order-sender.service';
@@ -21,6 +22,7 @@ export class UpkeepProcessor
     private readonly sweep: SweepService,
     private readonly sender: OrderSenderService,
     private readonly refill: RefillService,
+    private readonly cards: CardReconcilerService,
   ) {
     super();
   }
@@ -58,6 +60,9 @@ export class UpkeepProcessor
           return;
         case JOBS.buyerUpkeep.refillCheck:
           await this.refill.run(exhausted);
+          return;
+        case JOBS.buyerUpkeep.reconcileCards:
+          await this.cards.run(new Date());
           return;
         default:
           throw new UnrecoverableError('Unknown buyer job');

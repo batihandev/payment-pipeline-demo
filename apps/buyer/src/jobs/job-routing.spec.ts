@@ -43,6 +43,7 @@ function processors() {
     { run: done() } as never,
     sender as never,
     { run: done() } as never,
+    { run: done() } as never,
   );
   return { buyer, upkeep };
 }

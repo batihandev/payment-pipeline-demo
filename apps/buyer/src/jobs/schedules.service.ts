@@ -17,6 +17,7 @@ const UPKEEP_SCHEDULERS = {
   unseen: 'buyer-unseen',
   expiry: 'buyer-expiry',
   sweep: 'buyer-sweep',
+  cards: 'buyer-card-reconcile',
 } as const;
 
 @Injectable()
@@ -80,6 +81,15 @@ export class SchedulesService implements OnModuleInit {
         name: JOBS.buyerUpkeep.expireOrders,
         data: {},
         opts: schedulerJobOptions({ priority: 5 }),
+      },
+    );
+    await this.upkeepQueue.upsertJobScheduler(
+      UPKEEP_SCHEDULERS.cards,
+      { every: 60_000 },
+      {
+        name: JOBS.buyerUpkeep.reconcileCards,
+        data: {},
+        opts: schedulerJobOptions({ priority: 4 }),
       },
     );
     await this.upkeepQueue.upsertJobScheduler(

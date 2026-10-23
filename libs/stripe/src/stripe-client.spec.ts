@@ -176,3 +176,54 @@ it('treats a 409 status as transient', async () => {
     new RpcError('transient'),
   );
 });
+
+it('retrieves a PaymentIntent with its charge', async () => {
+  const retrieve = jest.fn(async () => intent);
+  const client = new SdkStripeClient(
+    { paymentIntents: { retrieve } } as unknown as Stripe,
+    limiterWith().limiter,
+  );
+  await expect(client.retrieve('pi_1')).resolves.toBe(intent);
+  expect(retrieve).toHaveBeenCalledWith('pi_1', {
+    expand: ['latest_charge'],
+  });
+});
+
+it('searches the PaymentIntents of an order', async () => {
+  const search = jest.fn(async () => ({ data: [intent] }));
+  const client = new SdkStripeClient(
+    { paymentIntents: { search } } as unknown as Stripe,
+    limiterWith().limiter,
+  );
+  await expect(client.search('order-1')).resolves.toEqual([intent]);
+  expect(search).toHaveBeenCalledWith({
+    query: "metadata['orderId']:'order-1'",
+    expand: ['data.latest_charge'],
+  });
+});
+
+it('maps lookup errors like charge errors', async () => {
+  const failure = jest.fn(async () => {
+    throw new Stripe.errors.StripeRateLimitError({
+      type: 'invalid_request_error',
+      message: 'Too many requests',
+    });
+  });
+  const { limiter, reportCooldown } = limiterWith();
+  const client = new SdkStripeClient(
+    {
+      paymentIntents: { retrieve: failure, search: failure },
+    } as unknown as Stripe,
+    limiter,
+  );
+  await expect(client.retrieve('pi_1')).rejects.toEqual(
+    new RpcError('transient'),
+  );
+  await expect(client.search('order-1')).rejects.toEqual(
+    new RpcError('transient'),
+  );
+  expect(reportCooldown).toHaveBeenCalledTimes(2);
+  await expect(
+    new SdkStripeClient(undefined, limiter).retrieve('pi_1'),
+  ).rejects.toMatchObject({ kind: 'permanent' });
+});

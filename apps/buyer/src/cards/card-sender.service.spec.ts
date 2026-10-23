@@ -5,12 +5,8 @@ import { testRedisUrl } from '../../../../libs/config/testing/redis';
 import { fakeConfig } from '../../../../libs/config/testing/config';
 import { testDatabase } from '../../../../libs/db/testing/database';
 import { CustomersService } from '../../../../libs/orders/src';
-import {
-  CardDeclinedError,
-  type CardPayment,
-  type CardPaymentInput,
-  type StripeClient,
-} from '../../../../libs/stripe/src';
+import { CardDeclinedError } from '../../../../libs/stripe/src';
+import { FakeStripe } from '../../../../libs/stripe/testing/fake-stripe';
 import { OrderSenderService } from '../sending/order-sender.service';
 import { RedisLock } from '../sending/redis-lock';
 import type { BuyerConfig } from '../buyer-config';
@@ -19,27 +15,6 @@ import { CardSenderService } from './card-sender.service';
 const buyer = `0x${'11'.repeat(20)}` as const;
 const shop = `0x${'22'.repeat(20)}` as const;
 const day = new Date('2026-10-20');
-
-class FakeStripe implements StripeClient {
-  readonly intents = new Map<string, CardPayment>();
-  readonly requests: CardPaymentInput[] = [];
-  failure: Error | null = null;
-  failAfterAccepting = false;
-
-  async createPayment(input: CardPaymentInput): Promise<CardPayment> {
-    this.requests.push(input);
-    if (this.failure && !this.failAfterAccepting) throw this.failure;
-    const key = `order-${input.orderId}`;
-    const intent = this.intents.get(key) ?? {
-      id: `pi_${this.intents.size + 1}`,
-      status: 'processing',
-      receiptUrl: 'https://pay.stripe.com/receipts/test',
-    };
-    this.intents.set(key, intent);
-    if (this.failure) throw this.failure;
-    return intent;
-  }
-}
 
 let database: Awaited<ReturnType<typeof testDatabase>>;
 let redis: Redis;

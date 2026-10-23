@@ -1,3 +1,4 @@
+export { applyIntent, type IntentOutcome } from './apply-intent';
 export {
   CardDeclinedError,
   SdkStripeClient,

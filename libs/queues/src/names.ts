@@ -17,6 +17,7 @@ export const JOBS = {
     checkUnseen: 'check-unseen',
     expireOrders: 'expire-orders',
     nightlySweep: 'nightly-sweep',
+    reconcileCards: 'reconcile-cards',
   },
   tracker: {
     retryGap: 'retry-gap',

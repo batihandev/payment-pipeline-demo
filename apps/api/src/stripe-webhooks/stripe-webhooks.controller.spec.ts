@@ -57,6 +57,12 @@ const order = (
     },
   });
 
+const STATUS_OF: Record<string, string> = {
+  'payment_intent.processing': 'processing',
+  'payment_intent.succeeded': 'succeeded',
+  'payment_intent.payment_failed': 'requires_payment_method',
+};
+
 function intentEvent(
   type: string,
   orderId: string,
@@ -76,16 +82,14 @@ function intentEvent(
       object: {
         id: options.intent ?? 'pi_1',
         object: 'payment_intent',
+        status: STATUS_OF[type] ?? 'processing',
         amount: options.amount ?? 50,
         currency: options.currency ?? 'usd',
         metadata: {
           orderId,
           ...(options.padding ? { note: 'x'.repeat(options.padding) } : {}),
         },
-        latest_charge: {
-          id: 'ch_1',
-          receipt_url: 'https://pay.stripe.com/receipts/test',
-        },
+        latest_charge: 'ch_1',
       },
     },
   };
@@ -107,6 +111,22 @@ function post(event: object, signingSecret = secret) {
 }
 
 const db = () => database.db;
+
+/** The buyer's card sender, charging the demo customer through `stripe`. */
+async function cardSender(stripe: Pick<StripeClient, 'createPayment'>) {
+  await db().customer.create({
+    data: {
+      name: 'Demo customer',
+      stripeCustomerId: 'cus_demo',
+      stripePaymentMethodId: 'pm_demo',
+    },
+  });
+  return new CardSenderService(
+    db(),
+    stripe as StripeClient,
+    new CustomersService(db()),
+  );
+}
 const payments = () => db().payment.findMany();
 
 it('settles a card payment once', async () => {
@@ -121,7 +141,6 @@ it('settles a card payment once', async () => {
     amount: 50n * CENTS,
     stage: 'settled',
     final: true,
-    receiptUrl: 'https://pay.stripe.com/receipts/test',
   });
   expect(payment?.settledAt).toBeInstanceOf(Date);
   expect(payment?.finalAt).toBeInstanceOf(Date);
@@ -138,33 +157,55 @@ it('settles a card payment once', async () => {
 
 it('creates the payment when the webhook arrives first', async () => {
   const { id } = await order();
+  await db().order.update({ where: { id }, data: { sendState: 'pending' } });
   await post(intentEvent('payment_intent.succeeded', id));
   const [created] = await payments();
-  await db().$transaction(async (tx) => {
-    await tx.payment.upsert({
-      where: {
-        provider_externalKey: { provider: 'stripe', externalKey: 'pi_1' },
-      },
-      create: {
-        provider: 'stripe',
-        externalKey: 'pi_1',
-        orderId: id,
-        amount: 50n * CENTS,
-        stage: 'processing',
-      },
-      update: { orderId: id },
-    });
-    await tx.payment.updateMany({
-      where: {
-        externalKey: 'pi_1',
-        stage: { in: ['sent', 'received', 'confirming'] },
-      },
-      data: { stage: 'processing' },
-    });
-  });
+  await (
+    await cardSender({
+      createPayment: async () => ({
+        id: 'pi_1',
+        status: 'succeeded',
+        receiptUrl: 'https://pay.stripe.com/receipts/test',
+      }),
+    })
+  ).charge(id, false);
   const all = await payments();
   expect(all).toHaveLength(1);
-  expect(all[0]).toMatchObject({ id: created?.id, stage: 'settled' });
+  expect(all[0]).toMatchObject({
+    id: created?.id,
+    stage: 'settled',
+    sentAt: created?.sentAt,
+    receiptUrl: 'https://pay.stripe.com/receipts/test',
+  });
+  expect(await db().ledgerEntry.count()).toBe(1);
+});
+
+it('keeps the stored receipt URL when the event has a charge id', async () => {
+  const { id } = await order();
+  await db().payment.create({
+    data: {
+      provider: 'stripe',
+      externalKey: 'pi_1',
+      orderId: id,
+      amount: 50n * CENTS,
+      stage: 'processing',
+      receiptUrl: 'https://pay.stripe.com/receipts/stored',
+    },
+  });
+  await post(intentEvent('payment_intent.succeeded', id));
+  expect((await payments())[0]).toMatchObject({
+    stage: 'settled',
+    receiptUrl: 'https://pay.stripe.com/receipts/stored',
+  });
+});
+
+it('settles without a receipt URL when none is known', async () => {
+  const { id } = await order();
+  await post(intentEvent('payment_intent.succeeded', id));
+  expect((await payments())[0]).toMatchObject({
+    stage: 'settled',
+    receiptUrl: null,
+  });
 });
 
 it('moves a payment the buyer wrote forward to settled', async () => {
@@ -345,22 +386,13 @@ it('marks the payment failed and final on payment_failed', async () => {
 it('records card_failed once for a declined card', async () => {
   const { id } = await order();
   await db().order.update({ where: { id }, data: { sendState: 'pending' } });
-  await db().customer.create({
-    data: {
-      name: 'Demo customer',
-      stripeCustomerId: 'cus_demo',
-      stripePaymentMethodId: 'pm_demo',
-    },
-  });
-  const stripe = {
-    createPayment: async () => {
-      throw new CardDeclinedError('card_declined', 'pi_1');
-    },
-  } as unknown as StripeClient;
-  await new CardSenderService(db(), stripe, new CustomersService(db())).charge(
-    id,
-    false,
-  );
+  await (
+    await cardSender({
+      createPayment: async () => {
+        throw new CardDeclinedError('card_declined', 'pi_1');
+      },
+    })
+  ).charge(id, false);
   await post(intentEvent('payment_intent.payment_failed', id));
   const all = await payments();
   expect(all).toHaveLength(1);

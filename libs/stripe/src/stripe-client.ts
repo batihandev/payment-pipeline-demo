@@ -26,6 +26,10 @@ export class CardDeclinedError extends Error {
 
 export abstract class StripeClient {
   abstract createPayment(input: CardPaymentInput): Promise<CardPayment>;
+  /** The PaymentIntent with its latest charge expanded. */
+  abstract retrieve(intentId: string): Promise<Stripe.PaymentIntent>;
+  /** The PaymentIntents whose metadata names the order. */
+  abstract search(orderId: string): Promise<Stripe.PaymentIntent[]>;
 }
 
 function classifyStripeError(error: unknown): RpcError | CardDeclinedError {
@@ -55,9 +59,7 @@ export class SdkStripeClient implements StripeClient {
   ) {}
 
   async createPayment(input: CardPaymentInput): Promise<CardPayment> {
-    const stripe = this.stripe;
-    if (!stripe)
-      throw new RpcError('permanent', 'STRIPE_SECRET_KEY is not set');
+    const stripe = this.sdk();
     const intent = await this.call(() =>
       stripe.paymentIntents.create(
         {
@@ -80,6 +82,30 @@ export class SdkStripeClient implements StripeClient {
       receiptUrl:
         typeof charge === 'object' && charge ? charge.receipt_url : null,
     };
+  }
+
+  async retrieve(intentId: string): Promise<Stripe.PaymentIntent> {
+    const stripe = this.sdk();
+    return this.call(() =>
+      stripe.paymentIntents.retrieve(intentId, { expand: ['latest_charge'] }),
+    );
+  }
+
+  async search(orderId: string): Promise<Stripe.PaymentIntent[]> {
+    const stripe = this.sdk();
+    const result = await this.call(() =>
+      stripe.paymentIntents.search({
+        query: `metadata['orderId']:'${orderId}'`,
+        expand: ['data.latest_charge'],
+      }),
+    );
+    return result.data;
+  }
+
+  private sdk(): Stripe {
+    if (!this.stripe)
+      throw new RpcError('permanent', 'STRIPE_SECRET_KEY is not set');
+    return this.stripe;
   }
 
   private async call<T>(operation: () => Promise<T>): Promise<T> {
