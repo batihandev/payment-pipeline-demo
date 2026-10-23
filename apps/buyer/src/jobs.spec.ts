@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { Queue, Worker, type Job } from 'bullmq';
 import { testDatabase } from '../../../libs/db/testing/database';
 import { Purchases } from './purchases';
-import { BuyerJobs, holdWhenFull, type BuyerJobData } from './jobs';
+import {
+  BuyerJobs,
+  holdWhenFull,
+  holdWhenShort,
+  type BuyerJobData,
+} from './jobs';
 import { OrderSender } from './send-order';
 import { testRedisUrl } from '../../../libs/config/testing/redis';
 
@@ -180,5 +185,90 @@ it('delays a send while 10 are in flight without using an attempt', async () => 
     expect((await queue.getJobs(['completed']))[0]?.attemptsMade).toBe(1);
   } finally {
     await worker.close();
+  }
+});
+
+it('delays a short send without using an attempt', async () => {
+  const row = await purchases.visitor(randomUUID(), now);
+  if (!row) throw new Error('Expected order');
+  await queue.add('send-order', { orderId: row.id }, { attempts: 1 });
+  const covers = jest.fn(async () => false);
+  let delays = 0;
+  let sent = false;
+  const worker = new Worker(
+    queue.name,
+    async (job: Job<BuyerJobData>, token?: string) => {
+      try {
+        await holdWhenShort(job, token, { covers }, row.id);
+      } catch (error) {
+        delays += 1;
+        throw error;
+      }
+      sent = true;
+    },
+    { connection: { url: testRedisUrl() }, autorun: false },
+  );
+  try {
+    const running = worker.run();
+    const deadline = Date.now() + 5000;
+    while (delays === 0 && Date.now() < deadline)
+      await new Promise((r) => setTimeout(r, 50));
+    await worker.close();
+    await running;
+    expect(delays).toBe(1);
+    expect(sent).toBe(false);
+    expect(covers).toHaveBeenCalledWith(row.id);
+    const [held] = await queue.getJobs(['delayed']);
+    expect(held?.attemptsMade).toBe(0);
+  } finally {
+    await worker.close();
+  }
+});
+
+it('runs the refill while visitor sends are held', async () => {
+  const upkeep = new Queue<BuyerJobData>(`buyer-upkeep-test-${randomUUID()}`, {
+    connection: { url: testRedisUrl() },
+  });
+  const connection = { url: testRedisUrl() };
+  let holds = 0;
+  const visitors = new Worker(
+    queue.name,
+    async (job: Job<BuyerJobData>, token?: string) => {
+      try {
+        await holdWhenShort(job, token, { covers: async () => false }, 'x');
+      } catch (error) {
+        holds += 1;
+        throw error;
+      }
+    },
+    { connection, concurrency: 1, autorun: false },
+  );
+  let refilled = false;
+  const refills = new Worker(
+    upkeep.name,
+    async () => {
+      refilled = true;
+    },
+    { connection, concurrency: 1, autorun: false },
+  );
+  try {
+    await queue.add('visitor-purchase', { orderId: 'x' }, { priority: 1 });
+    const runningVisitors = visitors.run();
+    const deadline = Date.now() + 5000;
+    while (holds === 0 && Date.now() < deadline)
+      await new Promise((r) => setTimeout(r, 25));
+    await upkeep.add('refill-check', {}, { priority: 3 });
+    const runningRefills = refills.run();
+    while (!refilled && Date.now() < deadline)
+      await new Promise((r) => setTimeout(r, 25));
+    await Promise.all([visitors.close(), refills.close()]);
+    await Promise.all([runningVisitors, runningRefills]);
+    expect(holds).toBeGreaterThan(0);
+    expect(refilled).toBe(true);
+    expect(await queue.getJobCounts('completed')).toEqual({ completed: 0 });
+  } finally {
+    await Promise.all([visitors.close(), refills.close()]);
+    await upkeep.obliterate({ force: true });
+    await upkeep.close();
   }
 });

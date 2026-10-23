@@ -22,7 +22,7 @@ export class ApiRuntime implements OnModuleDestroy {
     this.redis = new Redis(config.REDIS_URL, { maxRetriesPerRequest: 1 });
     this.redis.on('error', () => console.error('API Redis connection failed.'));
     this.queues = Object.fromEntries(
-      ['buyer', 'tracker', 'shop-notices'].map((name) => {
+      ['buyer', 'buyer-upkeep', 'tracker', 'shop-notices'].map((name) => {
         const queue = new Queue(name, {
           connection: { url: config.REDIS_URL },
         });

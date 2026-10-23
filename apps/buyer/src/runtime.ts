@@ -14,6 +14,7 @@ import { Purchases, purchaseOptions } from './purchases';
 import {
   BuyerJobs,
   holdWhenFull,
+  holdWhenShort,
   retryOptions,
   type BuyerJobData,
 } from './jobs';
@@ -21,6 +22,7 @@ import { RedisLock } from './redis-lock';
 import { OrderSender } from './send-order';
 import { NightlySweep } from './sweep';
 import { Refill } from './refill';
+import { BuyerFunds } from './funds';
 import { expireOrders } from './expiry';
 import { pruneOlderThan } from './retention';
 
@@ -29,6 +31,9 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
   private readonly redis: Redis;
   private readonly queue: Queue<BuyerJobData>;
   private readonly worker: Worker<BuyerJobData>;
+  private readonly upkeepQueue: Queue<BuyerJobData>;
+  private readonly upkeepWorker: Worker<BuyerJobData>;
+  private readonly funds: BuyerFunds;
   private readonly purchases: Purchases;
   private readonly jobs: BuyerJobs;
   private readonly sender: OrderSender;
@@ -73,12 +78,17 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
     this.queue.on('error', () =>
       console.error('Buyer queue connection failed.'),
     );
+    this.upkeepQueue = new Queue<BuyerJobData>('buyer-upkeep', { connection });
+    this.upkeepQueue.on('error', () =>
+      console.error('Buyer upkeep queue connection failed.'),
+    );
     this.jobs = new BuyerJobs(db, this.purchases, this.queue);
     this.sender = new OrderSender(db, chain, chain, new RedisLock(this.redis), {
       buyer,
       shop,
       chainId: config.CHAIN_ID,
     });
+    this.funds = new BuyerFunds(db, chain, buyer);
     this.sweep = new NightlySweep(db, chain, this.sender, shop);
     this.refillEveryMs = config.REFILL_COOLDOWN_SECONDS * 1000;
     this.refill = new Refill(db, chain, this.sender, buyer, shop, {
@@ -92,6 +102,14 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
     );
     this.worker.on('error', () =>
       console.error('Buyer worker connection failed.'),
+    );
+    this.upkeepWorker = new Worker<BuyerJobData>(
+      'buyer-upkeep',
+      (job) => this.processUpkeep(job),
+      { connection, concurrency: 1, autorun: false },
+    );
+    this.upkeepWorker.on('error', () =>
+      console.error('Buyer upkeep worker connection failed.'),
     );
   }
   async onModuleInit(): Promise<void> {
@@ -151,7 +169,9 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
         },
       },
     );
-    await this.queue.upsertJobScheduler(
+    await this.queue.removeJobScheduler('buyer-refill');
+    await this.queue.removeJobScheduler('buyer-unseen');
+    await this.upkeepQueue.upsertJobScheduler(
       'buyer-refill',
       { every: this.refillEveryMs },
       {
@@ -165,7 +185,7 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
         },
       },
     );
-    await this.queue.upsertJobScheduler(
+    await this.upkeepQueue.upsertJobScheduler(
       'buyer-unseen',
       { every: 60_000 },
       {
@@ -181,10 +201,16 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
     );
     await this.jobs.recoverPending();
     void this.worker.run().catch(() => console.error('Buyer worker stopped.'));
+    void this.upkeepWorker
+      .run()
+      .catch(() => console.error('Buyer upkeep worker stopped.'));
   }
   private async process(job: Job<BuyerJobData>, token?: string): Promise<void> {
-    if (job.name === 'send-order' || job.name === 'visitor-purchase')
+    if (job.name === 'send-order' || job.name === 'visitor-purchase') {
       await holdWhenFull(job, token, this.sender, this.maxInFlight);
+      if (job.data.orderId)
+        await holdWhenShort(job, token, this.funds, job.data.orderId);
+    }
     const now = new Date();
     const exhausted = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
     try {
@@ -210,12 +236,6 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
           console.log(`Retention removed ${JSON.stringify(counts)}`);
           return;
         }
-        case 'check-unseen':
-          await this.sender.checkUnseen(now);
-          return;
-        case 'refill-check':
-          await this.refill.run(exhausted);
-          return;
         case 'visitor-purchase': {
           if (!job.data.orderId)
             throw new UnrecoverableError('Missing purchase order id');
@@ -228,6 +248,26 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
           if (!job.data.orderId)
             throw new UnrecoverableError('Missing purchase order id');
           await this.sendPurchase(job.data.orderId, exhausted);
+          return;
+        default:
+          throw new UnrecoverableError('Unknown buyer job');
+      }
+    } catch (error) {
+      if (error instanceof RpcError && error.kind === 'permanent')
+        throw new UnrecoverableError(error.message);
+      if (error instanceof UnrecoverableError) throw error;
+      throw new RpcError('transient');
+    }
+  }
+  private async processUpkeep(job: Job<BuyerJobData>): Promise<void> {
+    const exhausted = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
+    try {
+      switch (job.name) {
+        case 'check-unseen':
+          await this.sender.checkUnseen(new Date());
+          return;
+        case 'refill-check':
+          await this.refill.run(exhausted);
           return;
         default:
           throw new UnrecoverableError('Unknown buyer job');
@@ -264,7 +304,9 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
   }
   async onModuleDestroy(): Promise<void> {
     await this.worker.close();
+    await this.upkeepWorker.close();
     await this.queue.close();
+    await this.upkeepQueue.close();
     await this.redis.quit();
   }
 }
