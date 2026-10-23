@@ -128,34 +128,6 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
       },
     );
     await this.queue.upsertJobScheduler(
-      'buyer-expiry',
-      { pattern: '* * * * *', tz: 'UTC' },
-      {
-        name: 'expire-orders',
-        data: {},
-        opts: {
-          ...retryOptions,
-          priority: 5,
-          removeOnComplete: 100,
-          removeOnFail: 100,
-        },
-      },
-    );
-    await this.queue.upsertJobScheduler(
-      'buyer-sweep',
-      { pattern: '0 3 * * *', tz: 'UTC' },
-      {
-        name: 'nightly-sweep',
-        data: {},
-        opts: {
-          ...retryOptions,
-          priority: 10,
-          removeOnComplete: 100,
-          removeOnFail: 100,
-        },
-      },
-    );
-    await this.queue.upsertJobScheduler(
       'buyer-retention',
       { pattern: '30 3 * * *', tz: 'UTC' },
       {
@@ -171,6 +143,8 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
     );
     await this.queue.removeJobScheduler('buyer-refill');
     await this.queue.removeJobScheduler('buyer-unseen');
+    await this.queue.removeJobScheduler('buyer-expiry');
+    await this.queue.removeJobScheduler('buyer-sweep');
     await this.upkeepQueue.upsertJobScheduler(
       'buyer-refill',
       { every: this.refillEveryMs },
@@ -199,6 +173,34 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
         },
       },
     );
+    await this.upkeepQueue.upsertJobScheduler(
+      'buyer-expiry',
+      { pattern: '* * * * *', tz: 'UTC' },
+      {
+        name: 'expire-orders',
+        data: {},
+        opts: {
+          ...retryOptions,
+          priority: 5,
+          removeOnComplete: 100,
+          removeOnFail: 100,
+        },
+      },
+    );
+    await this.upkeepQueue.upsertJobScheduler(
+      'buyer-sweep',
+      { pattern: '0 3 * * *', tz: 'UTC' },
+      {
+        name: 'nightly-sweep',
+        data: {},
+        opts: {
+          ...retryOptions,
+          priority: 10,
+          removeOnComplete: 100,
+          removeOnFail: 100,
+        },
+      },
+    );
     await this.jobs.recoverPending();
     void this.worker.run().catch(() => console.error('Buyer worker stopped.'));
     void this.upkeepWorker
@@ -218,15 +220,6 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
         case 'pace-minute':
           await this.jobs.recoverPending();
           await this.jobs.pace(now);
-          return;
-        case 'expire-orders':
-          await expireOrders(this.db, now);
-          return;
-        case 'nightly-sweep':
-          await this.sweep.run(
-            new Date(job.opts.prevMillis ?? job.timestamp),
-            exhausted,
-          );
           return;
         case 'retention': {
           const counts = await pruneOlderThan(
@@ -263,6 +256,15 @@ export class BuyerRuntime implements OnModuleInit, OnModuleDestroy {
     const exhausted = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
     try {
       switch (job.name) {
+        case 'expire-orders':
+          await expireOrders(this.db, new Date());
+          return;
+        case 'nightly-sweep':
+          await this.sweep.run(
+            new Date(job.opts.prevMillis ?? job.timestamp),
+            exhausted,
+          );
+          return;
         case 'check-unseen':
           await this.sender.checkUnseen(new Date());
           return;

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Queue, Worker, type Job } from 'bullmq';
 import { testDatabase } from '../../../libs/db/testing/database';
 import { Purchases } from './purchases';
+import { expireOrders } from './expiry';
 import {
   BuyerJobs,
   holdWhenFull,
@@ -268,6 +269,68 @@ it('runs the refill while visitor sends are held', async () => {
     expect(await queue.getJobCounts('completed')).toEqual({ completed: 0 });
   } finally {
     await Promise.all([visitors.close(), refills.close()]);
+    await upkeep.obliterate({ force: true });
+    await upkeep.close();
+  }
+});
+
+it('expires orders on the upkeep queue while visitor sends are held', async () => {
+  const upkeep = new Queue<BuyerJobData>(`buyer-upkeep-test-${randomUUID()}`, {
+    connection: { url: testRedisUrl() },
+  });
+  const connection = { url: testRedisUrl() };
+  const stale = await database.db.order.create({
+    data: {
+      item: 'Duck',
+      price: 99n,
+      expectedAmount: 100n,
+      source: 'schedule',
+      createdAt: new Date(now.getTime() - 3600000),
+      expiresAt: new Date(now.getTime() - 1800000),
+    },
+  });
+  let holds = 0;
+  const visitors = new Worker(
+    queue.name,
+    async (job: Job<BuyerJobData>, token?: string) => {
+      try {
+        await holdWhenShort(job, token, { covers: async () => false }, 'x');
+      } catch (error) {
+        holds += 1;
+        throw error;
+      }
+    },
+    { connection, concurrency: 1, autorun: false },
+  );
+  let expired = false;
+  const expiry = new Worker(
+    upkeep.name,
+    async () => {
+      await expireOrders(database.db, now);
+      expired = true;
+    },
+    { connection, concurrency: 1, autorun: false },
+  );
+  try {
+    await queue.add('visitor-purchase', { orderId: 'x' }, { priority: 1 });
+    const runningVisitors = visitors.run();
+    const deadline = Date.now() + 5000;
+    while (holds === 0 && Date.now() < deadline)
+      await new Promise((r) => setTimeout(r, 25));
+    await upkeep.add('expire-orders', {}, { priority: 5 });
+    const runningExpiry = expiry.run();
+    while (!expired && Date.now() < deadline)
+      await new Promise((r) => setTimeout(r, 25));
+    await Promise.all([visitors.close(), expiry.close()]);
+    await Promise.all([runningVisitors, runningExpiry]);
+    expect(holds).toBeGreaterThan(0);
+    expect(expired).toBe(true);
+    expect(
+      (await database.db.order.findUniqueOrThrow({ where: { id: stale.id } }))
+        .status,
+    ).toBe('expired');
+  } finally {
+    await Promise.all([visitors.close(), expiry.close()]);
     await upkeep.obliterate({ force: true });
     await upkeep.close();
   }
