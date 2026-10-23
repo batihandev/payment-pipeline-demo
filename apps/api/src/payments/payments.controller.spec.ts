@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { payment as createPayment } from '../../testing/read-api';
 import { useReadApi } from '../../testing/read-api';
+import { publishPayment } from '../../../../libs/events/src/publish-payment';
 
 const state = useReadApi();
 const get = (url: string) => request(state.app.getHttpServer()).get(url);
@@ -138,6 +139,19 @@ it('ignores unknown query parameters', async () => {
   expect(response.statusCode).toBe(200);
 });
 
+it('serves the change from a payment event on the next read, within the cache window', async () => {
+  await payment();
+  expect((await get('/payments')).body).toHaveLength(1);
+  const added = await payment({ receivedAt: new Date('2026-10-20T13:00:00Z') });
+  await publishPayment(state.redis, added);
+  const deadline = Date.now() + 2000;
+  let length = 1;
+  while (length === 1 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    length = (await get('/payments')).body.length;
+  }
+  expect(length).toBe(2);
+});
 it('serves /payments from cache for 5 s per limit', async () => {
   await payment();
   expect((await get('/payments')).body).toHaveLength(1);

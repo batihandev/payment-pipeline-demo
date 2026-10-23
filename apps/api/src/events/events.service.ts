@@ -17,6 +17,9 @@ const HEARTBEAT_MS = 15000;
 export class EventsService implements OnModuleInit, OnModuleDestroy {
   private readonly payments = new Subject<string>();
   private readonly closed = new Subject<void>();
+  private readonly changed = new Subject<void>();
+  /** Emits for every received payment event, before the event reaches any stream. */
+  readonly paymentChanged: Observable<void> = this.changed.asObservable();
   private unsubscribe?: () => Promise<void>;
 
   constructor(
@@ -27,6 +30,7 @@ export class EventsService implements OnModuleInit, OnModuleDestroy {
   async onModuleInit(): Promise<void> {
     const donationMin = this.config.get('DONATION_MIN', { infer: true });
     this.unsubscribe = await subscribePayments(this.redis, (body) => {
+      this.changed.next();
       try {
         const payment = JSON.parse(body) as {
           donation: boolean;

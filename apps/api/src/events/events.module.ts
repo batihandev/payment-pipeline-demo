@@ -6,5 +6,6 @@ import { StreamLimit } from './stream-limit';
 @Module({
   controllers: [EventsController],
   providers: [EventsService, StreamLimit],
+  exports: [EventsService],
 })
 export class EventsModule {}

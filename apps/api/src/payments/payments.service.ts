@@ -1,5 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { Subscription } from 'rxjs';
+import { EventsService } from '../events/events.service';
 import { PrismaService } from '../../../../libs/db/src';
 import { publicPayment } from '../../../../libs/events/src/public-payment';
 import { receiptNoteKinds } from '../../../../libs/core/src/receipt-notes';
@@ -10,14 +16,27 @@ import { ttlCache } from '../common/ttl-cache';
 const CACHE_MS = 5000;
 
 @Injectable()
-export class PaymentsService {
+export class PaymentsService implements OnModuleInit, OnModuleDestroy {
+  private readonly cached = new Map<number, () => Promise<unknown>>();
+  private subscription?: Subscription;
+
   constructor(
     private readonly db: PrismaService,
     private readonly config: ConfigService<ApiConfig, true>,
     @InjectNow() private readonly now: Now,
+    private readonly events: EventsService,
   ) {}
 
-  private readonly cached = new Map<number, () => Promise<unknown>>();
+  /** A page refetches after each live event, so a cached list must never predate one. */
+  onModuleInit(): void {
+    this.subscription = this.events.paymentChanged.subscribe(() =>
+      this.cached.clear(),
+    );
+  }
+
+  onModuleDestroy(): void {
+    this.subscription?.unsubscribe();
+  }
 
   /** At most 100 distinct limits pass validation, so the cache stays small. */
   list(limit: number): Promise<unknown> {
