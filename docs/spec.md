@@ -135,18 +135,18 @@ A stage never moves backwards: an event that would move a payment to an earlier 
 
 ### api
 
-| Route                     | Purpose                                                                                                                           |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /payments?limit=`    | Recent payments with order or donor name, stage, confirmations, block, explorer URL, note kinds                                   |
-| `GET /stats`              | Today: settled count, average time to settle, duplicates skipped, failures recovered. In-memory cache with a short TTL            |
-| `GET /stats/daily`        | Per UTC day for the retained period: settled count, average time to settle, scheduled and visitor purchases. Cached like `/stats` |
-| `GET /incidents?limit=`   | Recent incidents                                                                                                                  |
-| `GET /health`             | Head, cursor, lag, open gaps, queue depth, cooldown state, balances and low-balance flags, and the monitoring signals below       |
-| `GET /events`             | Server-sent events relayed from Redis pub/sub: payments, order changes, the visitor queue and a heartbeat                         |
-| `POST /test-purchases`    | Visitor test buy, as above                                                                                                        |
-| `GET /test-purchases/:id` | Queue position of a waiting visitor purchase, and whether it closed without a payment being sent                                  |
-| `POST /shop/notices`      | Receives the signed notice. Verifies the signature and timestamp, then marks the payment notified                                 |
-| `POST /stripe/webhooks`   | Receives Stripe events. Verifies the signature over the raw body, then moves the card payment the event names. See Card rail      |
+| Route                          | Purpose                                                                                                                           |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /payments?limit=&before=` | Recent payments with order or donor name, stage, confirmations, block, explorer URL, note kinds. `before` pages older ones        |
+| `GET /stats`                   | Today: settled count, average time to settle, duplicates skipped, failures recovered. In-memory cache with a short TTL            |
+| `GET /stats/daily`             | Per UTC day for the retained period: settled count, average time to settle, scheduled and visitor purchases. Cached like `/stats` |
+| `GET /incidents?limit=`        | Recent incidents                                                                                                                  |
+| `GET /health`                  | Head, cursor, lag, open gaps, queue depth, cooldown state, balances and low-balance flags, and the monitoring signals below       |
+| `GET /events`                  | Server-sent events relayed from Redis pub/sub: payments, order changes, the visitor queue and a heartbeat                         |
+| `POST /test-purchases`         | Visitor test buy, as above                                                                                                        |
+| `GET /test-purchases/:id`      | Queue position of a waiting visitor purchase, and whether it closed without a payment being sent                                  |
+| `POST /shop/notices`           | Receives the signed notice. Verifies the signature and timestamp, then marks the payment notified                                 |
+| `POST /stripe/webhooks`        | Receives Stripe events. Verifies the signature over the raw body, then moves the card payment the event names. See Card rail      |
 
 **Request limit:** one budget per client address across all routes, `API_REQUESTS_PER_MINUTE` (default 300) a minute, answered with `429`, `rate_limited` and `Retry-After`. `POST /shop/notices` and `POST /stripe/webhooks` are outside it; their signatures are their checks. The counted address is the same one the visitor limits and the stream cap use.
 
@@ -154,7 +154,9 @@ A stage never moves backwards: an event that would move a payment to an earlier 
 
 **Live streams:** `GET /events` allows `STREAMS_PER_IP` (default 5) open connections per client address and `STREAMS_TOTAL` (default 500) in all. A connection over either cap gets `429`, `rate_limited` and `Retry-After: 5`. A closed connection frees its slot. Payments arrive as unnamed events. Order changes arrive as named `order` events (`{id, closed}`), and the waiting visitor queue as `queue` events (`{waiting}`, the order ids oldest first), sent only when it changes. The stream sends a `heartbeat` event every 15 seconds, and a client that stops reading is dropped.
 
-**Payments cache:** `GET /payments` keeps its result per `limit` for 5 seconds, and concurrent requests share one database read.
+**Payments cache:** `GET /payments` keeps its first page per `limit` for 5 seconds, and concurrent requests share one database read. A payment event clears it.
+
+**Older payments:** `before` is an opaque cursor naming one payment's place in the feed order (newest send or receive time first, then id). `/payments?before=` returns the payments after it, so a page stays stable while new payments arrive. A malformed cursor answers `400` `bad_request`. Pages before a cursor are not cached.
 
 Every 4xx answers with a fixed body. Errors that reach the error filter get a fixed code for their status (for example `bad_request`, `not_found`, `rate_limited`), and routes send their own fixed codes (for example `busy`, `daily_limit`); bodies never echo messages. CORS is allowed only for the configured web origin. With `TRUST_PROXY` set, client addresses come from the proxy's forwarding header, so per-visitor limits apply to visitors rather than to the proxy.
 

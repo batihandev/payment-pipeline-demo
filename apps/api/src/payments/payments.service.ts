@@ -6,7 +6,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import type { Subscription } from 'rxjs';
 import { EventsService } from '../events/events.service';
-import { PrismaService } from '../../../../libs/db/src';
+import { Prisma, PrismaService } from '../../../../libs/db/src';
+import type { PaymentCursor } from '../../../../libs/core/src/payment-cursor';
 import { publicPayment } from '../../../../libs/events/src/public-payment';
 import { receiptNoteKinds } from '../../../../libs/core/src/receipt-notes';
 import type { ApiConfig } from '../common/api-config';
@@ -38,8 +39,12 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     this.subscription?.unsubscribe();
   }
 
-  /** At most 100 distinct limits pass validation, so the cache stays small. */
-  list(limit: number): Promise<unknown> {
+  /**
+   * Only the first page is cached: at most 100 distinct limits pass validation, so the cache
+   * stays small. A page before a cursor is read when asked for.
+   */
+  list(limit: number, before: PaymentCursor | null = null): Promise<unknown> {
+    if (before) return this.query(limit, before);
     let read = this.cached.get(limit);
     if (!read) {
       read = ttlCache(
@@ -52,12 +57,15 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     return read();
   }
 
-  private async query(limit: number): Promise<unknown> {
+  private async query(
+    limit: number,
+    before: PaymentCursor | null = null,
+  ): Promise<unknown> {
     const donationMin = this.config.get('DONATION_MIN', { infer: true });
     const explorer = this.config.get('BLOCK_EXPLORER_URL', { infer: true });
     const ids = await this.db.$queryRaw<
       { id: string }[]
-    >`SELECT id FROM payments WHERE NOT (donation AND amount < ${donationMin}) ORDER BY COALESCE(sent_at, received_at) DESC NULLS LAST, id DESC LIMIT ${limit}`;
+    >`SELECT id FROM payments WHERE NOT (donation AND amount < ${donationMin}) ${olderThan(before)} ORDER BY COALESCE(sent_at, received_at) DESC NULLS LAST, id DESC LIMIT ${limit}`;
     const rows = await this.db.payment.findMany({
       where: { id: { in: ids.map((row) => row.id) } },
       include: {
@@ -95,4 +103,13 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
           : null,
       }));
   }
+}
+
+/** The rows after `cursor` in the feed's order, where a row with no time sorts last. */
+function olderThan(cursor: PaymentCursor | null): Prisma.Sql {
+  if (!cursor) return Prisma.empty;
+  const at = Prisma.sql`COALESCE(sent_at, received_at)`;
+  return cursor.at === null
+    ? Prisma.sql`AND ${at} IS NULL AND id < ${cursor.id}::uuid`
+    : Prisma.sql`AND (${at} < ${cursor.at}::timestamptz OR (${at} = ${cursor.at}::timestamptz AND id < ${cursor.id}::uuid) OR ${at} IS NULL)`;
 }
