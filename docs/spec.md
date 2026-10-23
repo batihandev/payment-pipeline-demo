@@ -127,7 +127,7 @@ Stripe (phase 2): `received → processing → settled → notified`, without a 
 | `GET /health`             | Head, cursor, lag, open gaps, queue depth, cooldown state, balances and low-balance flags, and the monitoring signals below       |
 | `GET /events`             | Server-sent events relayed from Redis pub/sub                                                                                     |
 | `POST /test-purchases`    | Visitor test buy, as above                                                                                                        |
-| `GET /test-purchases/:id` | Queue position of a waiting visitor purchase                                                                                      |
+| `GET /test-purchases/:id` | Queue position of a waiting visitor purchase, and whether it closed without a payment being sent                                  |
 | `POST /shop/notices`      | Receives the signed notice. Verifies the signature and timestamp, then marks the payment notified                                 |
 | `POST /stripe/webhooks`   | Phase 2                                                                                                                           |
 

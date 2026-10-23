@@ -57,10 +57,13 @@ export type Step = {
 export function stepsFor(provider: Payment['provider']): readonly Step[] {
   return provider === 'stripe' ? cardSteps : steps;
 }
-export function cardAvailable(
+export type CardRail = 'checking' | 'available' | 'unavailable';
+/** Whether the card rail can be offered; "checking" until the first /health read arrives. */
+export function cardRail(
   health: Pick<Health, 'cardAvailable'> | null,
-): boolean {
-  return health?.cardAvailable === true;
+): CardRail {
+  if (!health) return 'checking';
+  return health.cardAvailable === true ? 'available' : 'unavailable';
 }
 const brandNames: Record<string, string> = {
   amex: 'American Express',
@@ -94,14 +97,33 @@ export function confirmationLabel(
     ? `${confirmations} of ${threshold}`
     : `${threshold}+ confirmations`;
 }
+/** Every stage step a payment on either rail can reach, in order, for the pipeline lanes. */
+export const pipelineSteps: readonly Step[] = [
+  steps[0],
+  steps[1],
+  cardSteps[1],
+  steps[2],
+  steps[3],
+];
+type StagePayment = Pick<Payment, 'stage' | 'confirmations' | 'final'> &
+  Partial<Pick<Payment, 'provider'>>;
+type StageView = {
+  label: string;
+  step: number;
+  color: string;
+  paid: boolean;
+  final: boolean;
+};
+/** The stage of a payment; with a confirmation threshold, also its confirmation progress. */
+export function stageView(payment: StagePayment): StageView;
 export function stageView(
-  payment: Pick<Payment, 'stage' | 'confirmations' | 'final'> &
-    Partial<Pick<Payment, 'provider'>>,
+  payment: StagePayment,
   threshold: number,
-) {
+): StageView & { progress: number; confirmationLabel: string };
+export function stageView(payment: StagePayment, threshold?: number) {
   const stages = stepsFor(payment.provider ?? 'chain');
   const step = stages.findIndex((s) => s.stage === payment.stage);
-  return {
+  const view: StageView = {
     label:
       payment.stage === 'sent'
         ? 'Sent'
@@ -112,6 +134,10 @@ export function stageView(
     color: stages[step]?.color ?? 'blue',
     paid: payment.stage === 'settled' || payment.stage === 'notified',
     final: payment.final,
+  };
+  if (threshold === undefined) return view;
+  return {
+    ...view,
     progress: Math.min(1, Math.max(0, payment.confirmations / threshold)),
     confirmationLabel: confirmationLabel(payment.confirmations, threshold),
   };

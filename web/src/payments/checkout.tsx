@@ -1,14 +1,15 @@
 import { useRef, useState } from 'react';
 import { CardTerminal } from './card-terminal';
 import { ChainTerminal } from './chain-terminal';
+import { checkoutState } from './checkout-state';
 import type { Rail } from './client';
 import { RailChoice } from './rail-choice';
 import { Receipt } from './receipt';
 import { paymentsClient, usePayments } from './use-payments';
-import { useQueuePosition } from './use-queue-position';
+import { useOrderStatus } from './use-order-status';
 import { useStageSequence } from './use-stage-sequence';
 import {
-  cardAvailable,
+  cardRail,
   confirmationsNeeded,
   money,
   purchaseMessage,
@@ -39,16 +40,20 @@ export function Checkout({
   const frame = useStageSequence(latest);
   const payment = latest && frame ? { ...latest, ...frame } : undefined;
   const threshold = confirmationsNeeded(data?.health ?? null);
-  const view = payment ? stageView(payment, threshold) : null;
+  const view = payment ? stageView(payment) : null;
   const item = ordered?.item ?? latest?.order?.item;
   const price = ordered?.price ?? latest?.order?.price ?? latest?.amount;
-  const position = useQueuePosition(
-    apiBaseUrl,
-    orderId ?? null,
-    accepted,
-    Boolean(payment),
-  );
-  const active = Boolean(orderId && !view?.paid);
+  const paid = view?.paid ?? false;
+  const order = useOrderStatus(apiBaseUrl, orderId ?? null, accepted, paid);
+  const checkout = checkoutState({
+    status,
+    orderId,
+    payment,
+    paid,
+    order,
+    sending,
+    message,
+  });
 
   async function purchase(chosen: Rail) {
     if (inFlight.current) return;
@@ -113,33 +118,16 @@ export function Checkout({
             The shop chooses an item when your order is accepted.
           </p>
           <RailChoice
-            cardAvailable={cardAvailable(data?.health ?? null)}
-            disabled={sending || active || status !== 'live'}
+            card={cardRail(data?.health ?? null)}
+            disabled={checkout.busy || status !== 'live'}
             chosen={rail}
-            busyLabel={
-              sending
-                ? 'Placing your order…'
-                : active
-                  ? 'Your purchase is in progress'
-                  : undefined
-            }
+            busyLabel={checkout.busyLabel}
             onChoose={(chosen) => {
               void purchase(chosen);
             }}
           />
           <div role="status" className="tp-purchase-status">
-            {status === 'offline'
-              ? 'Demo offline'
-              : message ||
-                (position > 1 && !payment
-                  ? `Queued · ${position - 1} ahead`
-                  : sending
-                    ? 'Requesting a test purchase…'
-                    : orderId && !payment
-                      ? 'Order accepted. Waiting for the payment to be sent.'
-                      : status === 'loading'
-                        ? 'Connecting to the demo…'
-                        : '')}
+            {checkout.statusText}
           </div>
           {item && price && (
             <div className="tp-item" key={orderId}>
@@ -148,7 +136,7 @@ export function Checkout({
               <span className="tp-price">{money(price)}</span>
             </div>
           )}
-          {payment && view && (
+          {payment && view && !checkout.closed && (
             <>
               {payment.provider === 'stripe' ? (
                 <CardTerminal payment={payment} />

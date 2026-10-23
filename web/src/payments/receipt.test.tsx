@@ -73,6 +73,21 @@ describe('Receipt', () => {
   });
 });
 
+describe('Receipt link', () => {
+  it('links the Stripe receipt only over https', () => {
+    for (const receiptUrl of [
+      'http://pay.stripe.com/receipts/1',
+      'javascript:alert(1)',
+      '//pay.stripe.com/receipts/1',
+    ])
+      expect(
+        renderToStaticMarkup(
+          <Receipt payment={cardPayment({ receiptUrl })} threshold={7} />,
+        ),
+      ).not.toContain('View Stripe receipt');
+  });
+});
+
 describe('StepStrip', () => {
   const labels = (html: string) =>
     [...html.matchAll(/<li[^>]*>(.*?)<\/li>/g)].map((m) => m[1]);

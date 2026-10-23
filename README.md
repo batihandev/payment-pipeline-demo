@@ -25,7 +25,7 @@ Chain payments follow `sent → received → confirming → settled → notified
 Two kinds of purchase share one send path and have separate limits.
 
 - **Scheduled purchases** make the shop look busy through the day. They share a daily budget per UTC day, by count and total amount (`DAILY_COUNT_CAP`, default 100; `DAILY_AMOUNT_CAP`, default 200 USDC).
-- **Visitor test buys** (`POST /test-purchases`) are sent at once, at the highest queue priority and outside the daily budget, so a visitor never waits behind the schedule. The response carries the order id and its queue position; `GET /test-purchases/:id` returns the position of a purchase that is still waiting, and the checkout shows "Queued · N ahead" until it is sent.
+- **Visitor test buys** (`POST /test-purchases`) are sent at once, at the highest queue priority and outside the daily budget, so a visitor never waits behind the schedule. The response carries the order id and its queue position; `GET /test-purchases/:id` returns the position of a purchase that is still waiting and whether its order closed without a payment being sent. The checkout shows "Queued · N ahead" until it is sent, and reopens with a "did not go through" note when the purchase fails.
 
 Visitor limits, with their defaults:
 
@@ -70,7 +70,7 @@ Each tracker pass re-reads the last `RESCAN_BLOCKS` blocks. A log re-read inside
 | `GET /health`             | Head, cursor, lag, open gaps, queue depth, cooldown state, balances, low-balance flags and the `monitoring` signals |
 | `GET /events`             | Server-sent events relayed from Redis pub/sub                                                                       |
 | `POST /test-purchases`    | Visitor test buy                                                                                                    |
-| `GET /test-purchases/:id` | Queue position of a waiting visitor purchase                                                                        |
+| `GET /test-purchases/:id` | Queue position of a waiting visitor purchase, and whether it closed without a payment being sent                    |
 | `POST /shop/notices`      | Receives the signed notice, verifies its signature and timestamp, then marks the payment notified                   |
 
 Each 4xx answers with a fixed body. Errors that reach the error filter get a fixed code for their status, such as `bad_request` or `rate_limited`, and routes send their own fixed codes, such as `busy` or `daily_limit`; bodies never echo messages.

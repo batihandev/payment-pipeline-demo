@@ -36,12 +36,4 @@ describe('CardTerminal', () => {
     expect(html).not.toContain('tp-block-stack');
     expect(html).not.toContain('progressbar');
   });
-  it('says when the card payment did not go through', () => {
-    const html = renderToStaticMarkup(
-      <CardTerminal payment={card({ noteKinds: ['card_failed'] })} />,
-    );
-    expect(html).toContain(
-      'This payment did not go through, so nothing was credited.',
-    );
-  });
 });

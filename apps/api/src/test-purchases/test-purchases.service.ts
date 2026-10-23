@@ -151,9 +151,19 @@ export class TestPurchasesService {
     });
   }
 
-  async positionOf(id: string): Promise<{ position: number }> {
-    if (!uuid.test(id)) return { position: 0 };
-    const order = await this.db.order.findFirst({ where: { id, ...waiting } });
-    return { position: order ? await this.position(order) : 0 };
+  /** The queue position of a waiting order, and whether it closed without a payment being sent. */
+  async positionOf(id: string): Promise<{ position: number; closed: boolean }> {
+    const unknown = { position: 0, closed: false };
+    if (!uuid.test(id)) return unknown;
+    const order = await this.db.order.findUnique({ where: { id } });
+    if (!order) return unknown;
+    const isWaiting =
+      order.source === waiting.source &&
+      order.sendState === waiting.sendState &&
+      order.status === waiting.status;
+    return {
+      position: isWaiting ? await this.position(order) : 0,
+      closed: order.status === 'expired' && order.sendState !== 'sent',
+    };
   }
 }

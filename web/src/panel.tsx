@@ -8,8 +8,8 @@ import { usePayments } from './payments/use-payments';
 import {
   confirmationsNeeded,
   isVisitorOrder,
+  pipelineSteps,
   shortId,
-  steps,
 } from './payments/view';
 import './panel.css';
 
@@ -30,13 +30,13 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
                   ? 'Demo offline'
                   : 'Connecting'}
             </span>
-            <span className="tp-network">Test network</span>
+            <span className="tp-network">Test payments</span>
           </div>
           <h1>Live payments</h1>
           <p>
-            Fake purchases paid on a public test network, tracked from first
-            sighting to settlement. Every payment is credited exactly once, even
-            when providers fail or notices arrive twice.
+            Fake purchases paid on a public test network or with a test card,
+            tracked from first sighting to settlement. Every payment is credited
+            exactly once, even when providers fail or notices arrive twice.
           </p>
         </div>
         <a className="tp-counter-link" href="#checkout">
@@ -74,7 +74,7 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
       ) : (
         <>
           <section aria-label="Pipeline" className="tp-pipeline">
-            {steps.map((step, index) => {
+            {pipelineSteps.map((step, index) => {
               const rows = data.payments.filter((p) => p.stage === step.stage);
               return (
                 <div key={step.stage} className={`tp-lane tp-${step.color}`}>
@@ -108,7 +108,7 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
             Pipeline counts cover the {data.payments.length} most recent
             payments.
             {data.payments.some((p) => p.stage === 'sent') &&
-              ` ${data.payments.filter((p) => p.stage === 'sent').length} sent; awaiting the tracker.`}
+              ` ${data.payments.filter((p) => p.stage === 'sent').length} sent, waiting for the tracker or Stripe.`}
           </p>
           <SettledChart days={data.daily} />
           <div className="tp-detail-grid">

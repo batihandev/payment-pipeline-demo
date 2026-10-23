@@ -7,7 +7,7 @@ import {
   confirmationLabel,
   railBadge,
   stepsFor,
-  cardAvailable,
+  cardRail,
 } from './view';
 import { payment } from './test-fixtures';
 
@@ -148,9 +148,20 @@ describe('payment views', () => {
     );
   });
   it('offers the card only once /health says a card is saved', () => {
-    expect(cardAvailable(null)).toBe(false);
-    expect(cardAvailable({ cardAvailable: false })).toBe(false);
-    expect(cardAvailable({ cardAvailable: true })).toBe(true);
+    expect(cardRail(null)).toBe('checking');
+    expect(cardRail({ cardAvailable: false })).toBe('unavailable');
+    expect(cardRail({ cardAvailable: true })).toBe('available');
+  });
+  it('maps a card payment without a confirmation threshold', () => {
+    const view = stageView({
+      stage: 'processing',
+      confirmations: 0,
+      final: false,
+      provider: 'stripe',
+    });
+    expect(view).toMatchObject({ label: 'Processing', step: 1, paid: false });
+    expect(view).not.toHaveProperty('progress');
+    expect(view).not.toHaveProperty('confirmationLabel');
   });
   it('says when the test card is unavailable', () => {
     expect(purchaseMessage(503, 'card_unavailable', null)).toBe(

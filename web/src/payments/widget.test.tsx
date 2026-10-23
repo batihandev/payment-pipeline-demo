@@ -47,4 +47,11 @@ describe('PaymentsWidget', () => {
     expect(html).toContain('Donation from Teal Otter');
     expect(html).not.toContain('tp-note');
   });
+  it('heads the widget with wording that fits both rails', async () => {
+    current = { status: 'live', data };
+    const { PaymentsWidget } = await import('./widget');
+    const html = renderToStaticMarkup(<PaymentsWidget apiBaseUrl="/api" />);
+    expect(html).toMatch(/<header[^>]*>.*Test payments.*<\/header>/);
+    expect(html).not.toMatch(/<header[^>]*>.*Test network.*<\/header>/);
+  });
 });

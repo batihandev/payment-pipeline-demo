@@ -235,8 +235,14 @@ it('admits when the gas reading is missing or stale', async () => {
 it('reports queue position', async () => {
   const first = (await buy('192.0.2.1')).body;
   const second = (await buy('192.0.2.2')).body;
-  expect((await position(first.orderId)).body).toEqual({ position: 1 });
-  expect((await position(second.orderId)).body).toEqual({ position: 2 });
+  expect((await position(first.orderId)).body).toEqual({
+    position: 1,
+    closed: false,
+  });
+  expect((await position(second.orderId)).body).toEqual({
+    position: 2,
+    closed: false,
+  });
   await database.db.order.update({
     where: { id: second.orderId },
     data: { sendState: 'sent' },
@@ -245,9 +251,39 @@ it('reports queue position', async () => {
     const response = await position(id);
     expect([response.statusCode, response.body]).toEqual([
       200,
-      { position: 0 },
+      { position: 0, closed: false },
     ]);
   }
+});
+
+it('reports an order that closed without a payment being sent', async () => {
+  const declined = (await buy('192.0.2.1')).body;
+  const failed = (await buy('192.0.2.2')).body;
+  const late = (await buy('192.0.2.3')).body;
+  await database.db.order.update({
+    where: { id: declined.orderId },
+    data: { sendState: 'failed', status: 'expired' },
+  });
+  await database.db.order.update({
+    where: { id: failed.orderId },
+    data: { sendState: 'review', status: 'expired' },
+  });
+  await database.db.order.update({
+    where: { id: late.orderId },
+    data: { sendState: 'sent', status: 'expired' },
+  });
+  expect((await position(declined.orderId)).body).toEqual({
+    position: 0,
+    closed: true,
+  });
+  expect((await position(failed.orderId)).body).toEqual({
+    position: 0,
+    closed: true,
+  });
+  expect((await position(late.orderId)).body).toEqual({
+    position: 0,
+    closed: false,
+  });
 });
 
 it('uses the forwarded client address when TRUST_PROXY is on', async () => {

@@ -15,7 +15,7 @@ export function PaymentsWidget({ apiBaseUrl }: { apiBaseUrl: string }) {
         >
           Live payments
         </span>
-        <span className="tp-network">Test network</span>
+        <span className="tp-network">Test payments</span>
       </header>
       {payment ? (
         <>

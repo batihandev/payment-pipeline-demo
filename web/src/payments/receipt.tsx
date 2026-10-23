@@ -64,7 +64,7 @@ export function Receipt({
   compact?: boolean;
   note?: string | null;
 }) {
-  const view = stageView(payment, threshold);
+  const view = stageView(payment);
   const card = payment.provider === 'stripe';
   return (
     <article
@@ -105,7 +105,7 @@ export function Receipt({
       {note && <p className="tp-note">{note}</p>}
       <div className="tp-receipt-footer tp-mono tp-muted">
         {card ? (
-          payment.receiptUrl && (
+          payment.receiptUrl?.startsWith('https://') && (
             <a href={payment.receiptUrl} target="_blank" rel="noreferrer">
               View Stripe receipt
             </a>

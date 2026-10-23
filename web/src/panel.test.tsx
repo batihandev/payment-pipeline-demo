@@ -54,4 +54,35 @@ describe('PaymentsPanel', () => {
     data.health = null;
     expect(html).not.toContain('running low');
   });
+  it('counts card payments in a Processing lane and words the header for both rails', async () => {
+    const before = data.payments;
+    data.payments = [
+      payment({
+        id: 'c1',
+        provider: 'stripe',
+        stage: 'processing',
+        confirmations: 0,
+      }),
+      payment({ id: 'c2', provider: 'stripe', stage: 'sent' }),
+      payment({ id: 'n1', stage: 'confirming' }),
+    ];
+    const { PaymentsPanel } = await import('./panel');
+    const html = renderToStaticMarkup(<PaymentsPanel apiBaseUrl="/api" />);
+    data.payments = before;
+    const lanes = [
+      ...html.matchAll(/<h2>(\d) · ([^<]+)<\/h2><strong>(\d+)<\/strong>/g),
+    ].map((m) => [m[2], Number(m[3])]);
+    expect(lanes).toEqual([
+      ['Received', 0],
+      ['Confirming', 1],
+      ['Processing', 1],
+      ['Settled', 0],
+      ['Shop notified', 0],
+    ]);
+    expect(html).toContain('1 sent, waiting for the tracker or Stripe.');
+    expect(html).not.toContain('awaiting the tracker');
+    expect(html).toContain('<span class="tp-network">Test payments</span>');
+    expect(html).not.toContain('<span class="tp-network">Test network</span>');
+    expect(html).toContain('on a public test network or with a test card');
+  });
 });

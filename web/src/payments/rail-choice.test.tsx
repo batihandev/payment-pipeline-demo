@@ -11,7 +11,7 @@ const buttons = (html: string) =>
 describe('RailChoice', () => {
   it('offers the test network and the test card as full-width buttons', () => {
     const html = renderToStaticMarkup(
-      <RailChoice cardAvailable disabled={false} onChoose={() => {}} />,
+      <RailChoice card="available" disabled={false} onChoose={() => {}} />,
     );
     expect(buttons(html).map((b) => b.label)).toEqual([
       'Pay on the test network',
@@ -22,16 +22,25 @@ describe('RailChoice', () => {
   });
   it('hides the card button while the card rail is unavailable', () => {
     const html = renderToStaticMarkup(
-      <RailChoice cardAvailable={false} disabled={false} onChoose={() => {}} />,
+      <RailChoice card="unavailable" disabled={false} onChoose={() => {}} />,
     );
     expect(buttons(html).map((b) => b.label)).toEqual([
       'Pay on the test network',
     ]);
   });
+  it('holds the card button in place, disabled, until /health answers', () => {
+    const html = renderToStaticMarkup(
+      <RailChoice card="checking" disabled={false} onChoose={() => {}} />,
+    );
+    const [chain, card] = buttons(html);
+    expect(card?.label).toBe('Pay with a test card');
+    expect(card?.tag).toContain('disabled');
+    expect(chain?.tag).not.toContain('disabled');
+  });
   it('shows progress on the chosen rail and disables both', () => {
     const html = renderToStaticMarkup(
       <RailChoice
-        cardAvailable
+        card="available"
         disabled
         chosen="card"
         busyLabel="Placing your order…"
