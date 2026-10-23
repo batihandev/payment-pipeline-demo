@@ -314,3 +314,49 @@ it('keeps an old transfer that is still in flight', async () => {
   await new RetentionService(db).pruneOlderThan(cutoff);
   expect(await db.payment.count()).toBe(1);
 });
+it('prunes failed card payments', async () => {
+  const { db } = database;
+  const o = await db.order.create({
+    data: {
+      item: 'Item',
+      status: 'expired',
+      sendState: 'failed',
+      rail: 'card',
+      createdAt: old,
+      expiresAt: old,
+      price: 100n,
+      expectedAmount: 100n,
+      source: 'visitor',
+    },
+  });
+  const failed = await db.payment.create({
+    data: {
+      provider: 'stripe',
+      externalKey: 'pi_failed',
+      orderId: o.id,
+      amount: 100n,
+      stage: 'failed',
+      final: true,
+      sentAt: old,
+      finalAt: old,
+    },
+  });
+  await db.paymentEvent.create({ data: { paymentId: failed.id, body: '{}' } });
+  await db.payment.create({
+    data: {
+      provider: 'stripe',
+      externalKey: 'pi_recent',
+      amount: 100n,
+      stage: 'failed',
+      final: true,
+      sentAt: old,
+      finalAt: recent,
+    },
+  });
+  await expect(
+    new RetentionService(db).pruneOlderThan(cutoff),
+  ).resolves.toMatchObject({ events: 1, payments: 1, orders: 1 });
+  expect(
+    (await db.payment.findMany()).map(({ externalKey }) => externalKey),
+  ).toEqual(['pi_recent']);
+});

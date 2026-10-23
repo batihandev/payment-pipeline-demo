@@ -36,6 +36,7 @@ enum PaymentStage {
   processing
   settled
   notified
+  failed
 }
 
 model Order {

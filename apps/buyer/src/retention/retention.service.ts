@@ -12,12 +12,14 @@ export class RetentionService {
           // Incidents newer than the cutoff still reference their payment.
           incidents: { none: { createdAt: { gte: cutoff } } },
           OR: [
-            // Final payments: settled ones by settle time, unmatched ones by receive time.
+            // Final payments: settled ones by settle time, unmatched ones by receive time, and
+            // failed ones by the time they became final.
             {
               final: true,
               OR: [
                 { settledAt: { lt: cutoff } },
                 { orderId: null, receivedAt: { lt: cutoff } },
+                { settledAt: null, finalAt: { lt: cutoff } },
               ],
             },
             // Transfers closed because they reverted or were replaced; they can never land.

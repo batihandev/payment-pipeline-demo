@@ -159,7 +159,7 @@ it('never charges twice when retried after a timeout', async () => {
 
 it('closes a declined card order with card_failed', async () => {
   const row = await order({ source: 'schedule' });
-  stripe.failure = new CardDeclinedError('card_declined');
+  stripe.failure = new CardDeclinedError('card_declined', null);
   await cards.charge(row.id, false);
   expect(await stored(row.id)).toMatchObject({
     sendState: 'failed',
@@ -179,9 +179,32 @@ it('closes a declined card order with card_failed', async () => {
   ]);
 });
 
+it('records a declined charge as a failed payment', async () => {
+  const row = await order();
+  stripe.failure = new CardDeclinedError('card_declined', 'pi_declined');
+  await cards.charge(row.id, false);
+  const [payment] = await payments(row.id);
+  expect(payment).toMatchObject({
+    externalKey: 'pi_declined',
+    stage: 'failed',
+    final: true,
+  });
+  expect(await stored(row.id)).toMatchObject({
+    sendState: 'failed',
+    status: 'expired',
+  });
+  expect(await database.db.incident.findMany()).toMatchObject([
+    {
+      kind: 'card_failed',
+      paymentId: payment?.id,
+      whatHappened: 'The test card was declined.',
+    },
+  ]);
+});
+
 it('leaves the budget alone when a visitor card order is declined', async () => {
   const row = await order();
-  stripe.failure = new CardDeclinedError(null);
+  stripe.failure = new CardDeclinedError(null, null);
   await cards.charge(row.id, false);
   expect((await stored(row.id)).sendState).toBe('failed');
   expect(await budget()).toMatchObject({ reservedCount: 1 });

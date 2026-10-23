@@ -4,6 +4,13 @@ import Stripe from 'stripe';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { testDatabase } from '../../../../libs/db/testing/database';
 import { PrismaService } from '../../../../libs/db/src';
+import { utcDay } from '../../../../libs/core/src/time';
+import { CustomersService } from '../../../../libs/orders/src';
+import {
+  CardDeclinedError,
+  type StripeClient,
+} from '../../../../libs/stripe/src';
+import { CardSenderService } from '../../../buyer/src/cards/card-sender.service';
 import { createTestApp } from '../../testing/app';
 
 const secret = 'whsec_test_secret';
@@ -20,7 +27,9 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await database.db.$executeRawUnsafe('TRUNCATE payments, orders CASCADE');
-  await database.db.$executeRawUnsafe('TRUNCATE stripe_events, incidents');
+  await database.db.$executeRawUnsafe(
+    'TRUNCATE stripe_events, incidents, customers, daily_budgets CASCADE',
+  );
   app = await createTestApp({
     environment: { STRIPE_WEBHOOK_SECRET: secret },
     override: (builder) => {
@@ -305,6 +314,106 @@ it('records an unmatched incident when the order id is not an id', async () => {
   );
   expect(response.statusCode).toBe(200);
   expect(await db().incident.count({ where: { kind: 'unmatched' } })).toBe(1);
+});
+
+it('marks the payment failed and final on payment_failed', async () => {
+  const { id } = await order();
+  await db().payment.create({
+    data: {
+      provider: 'stripe',
+      externalKey: 'pi_1',
+      orderId: id,
+      amount: 50n * CENTS,
+      stage: 'processing',
+      processingAt: new Date(),
+    },
+  });
+  await post(intentEvent('payment_intent.payment_failed', id));
+  const [payment] = await payments();
+  expect(payment).toMatchObject({ stage: 'failed', final: true });
+  expect(payment?.finalAt).toBeInstanceOf(Date);
+  const stages = (await db().paymentEvent.findMany()).map(
+    (row) => (JSON.parse(row.body) as { stage: string }).stage,
+  );
+  expect(stages).toEqual(['failed']);
+  await post(intentEvent('payment_intent.processing', id));
+  await post(intentEvent('payment_intent.succeeded', id));
+  expect((await payments())[0]).toMatchObject({ stage: 'failed' });
+  expect(await db().ledgerEntry.count()).toBe(0);
+});
+
+it('records card_failed once for a declined card', async () => {
+  const { id } = await order();
+  await db().order.update({ where: { id }, data: { sendState: 'pending' } });
+  await db().customer.create({
+    data: {
+      name: 'Demo customer',
+      stripeCustomerId: 'cus_demo',
+      stripePaymentMethodId: 'pm_demo',
+    },
+  });
+  const stripe = {
+    createPayment: async () => {
+      throw new CardDeclinedError('card_declined', 'pi_1');
+    },
+  } as unknown as StripeClient;
+  await new CardSenderService(db(), stripe, new CustomersService(db())).charge(
+    id,
+    false,
+  );
+  await post(intentEvent('payment_intent.payment_failed', id));
+  const all = await payments();
+  expect(all).toHaveLength(1);
+  expect(all[0]).toMatchObject({ stage: 'failed', final: true });
+  const incidents = await db().incident.findMany({
+    where: { kind: 'card_failed' },
+  });
+  expect(incidents).toHaveLength(1);
+  expect(incidents[0]?.paymentId).toBe(all[0]?.id);
+});
+
+it('releases the budget when an expired processing order fails', async () => {
+  const { id, createdAt } = await order('schedule');
+  await db().order.update({ where: { id }, data: { status: 'expired' } });
+  await db().dailyBudget.create({
+    data: {
+      day: utcDay(createdAt),
+      targetCount: 10,
+      targetAmount: 10_000_000n,
+      reservedCount: 1,
+      reservedAmount: 50n * CENTS,
+    },
+  });
+  await db().payment.create({
+    data: {
+      provider: 'stripe',
+      externalKey: 'pi_1',
+      orderId: id,
+      amount: 50n * CENTS,
+      stage: 'processing',
+    },
+  });
+  await post(intentEvent('payment_intent.payment_failed', id));
+  expect(
+    (await db().order.findUniqueOrThrow({ where: { id } })).sendState,
+  ).toBe('failed');
+  expect(await db().dailyBudget.findFirstOrThrow()).toMatchObject({
+    reservedCount: 0,
+    reservedAmount: 0n,
+  });
+});
+
+it('notes a card payment that settled after expiry', async () => {
+  const { id } = await order();
+  await db().order.update({ where: { id }, data: { status: 'expired' } });
+  await post(intentEvent('payment_intent.succeeded', id));
+  const [payment] = await payments();
+  expect(payment).toMatchObject({ stage: 'settled' });
+  const notes = await db().incident.findMany({
+    where: { kind: 'paid_after_expiry' },
+  });
+  expect(notes).toHaveLength(1);
+  expect(notes[0]?.paymentId).toBe(payment?.id);
 });
 
 const unmatched = () => db().incident.count({ where: { kind: 'unmatched' } });

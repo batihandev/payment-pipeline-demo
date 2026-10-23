@@ -16,7 +16,10 @@ export type CardPaymentInput = {
 };
 
 export class CardDeclinedError extends Error {
-  constructor(readonly declineCode: string | null) {
+  constructor(
+    readonly declineCode: string | null,
+    readonly intentId: string | null,
+  ) {
     super('Card payment declined');
   }
 }
@@ -28,7 +31,10 @@ export abstract class StripeClient {
 function classifyStripeError(error: unknown): RpcError | CardDeclinedError {
   if (error instanceof RpcError) return error;
   if (error instanceof Stripe.errors.StripeCardError)
-    return new CardDeclinedError(error.decline_code ?? error.code ?? null);
+    return new CardDeclinedError(
+      error.decline_code ?? error.code ?? null,
+      error.payment_intent?.id ?? null,
+    );
   if (error instanceof Stripe.errors.StripeRateLimitError)
     return new RpcError('rate_limit');
   if (

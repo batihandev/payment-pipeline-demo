@@ -82,12 +82,16 @@ it('maps a declined card to CardDeclinedError', async () => {
       code: 'card_declined',
       decline_code: 'insufficient_funds',
       message: 'Your card has insufficient funds.',
+      payment_intent: { id: 'pi_declined' } as Stripe.PaymentIntent,
     });
   });
   const client = new SdkStripeClient(fakeStripe(create), limiterWith().limiter);
   const error = await client.createPayment(input).catch((e: unknown) => e);
   expect(error).toBeInstanceOf(CardDeclinedError);
-  expect(error).toMatchObject({ declineCode: 'insufficient_funds' });
+  expect(error).toMatchObject({
+    declineCode: 'insufficient_funds',
+    intentId: 'pi_declined',
+  });
   expect((error as Error).message).not.toMatch(/insufficient/);
 });
 

@@ -1,7 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { RpcError } from '../../../../libs/chain/src/rpc-error';
-import { PrismaService, type Prisma } from '../../../../libs/db/src';
+import { PrismaService } from '../../../../libs/db/src';
+import {
+  BEFORE_PROCESSING,
+  BEFORE_SETTLED,
+} from '../../../../libs/orders/src/card-stages';
 import { closeOrder } from '../../../../libs/orders/src/close-order';
+import { failCardPayment } from '../../../../libs/orders/src/fail-card-payment';
+import { lockOrder } from '../../../../libs/orders/src/lock-order';
 import { CustomersService } from '../../../../libs/orders/src';
 import {
   CardDeclinedError,
@@ -10,7 +16,7 @@ import {
 } from '../../../../libs/stripe/src';
 
 const CENTS = 10000n;
-const BEFORE_PROCESSING = ['sent', 'received', 'confirming'] as const;
+const DECLINED = 'The test card was declined.';
 
 @Injectable()
 export class CardSenderService {
@@ -40,7 +46,8 @@ export class CardSenderService {
       });
       await this.record(orderId, order.expectedAmount, payment);
     } catch (error) {
-      if (error instanceof CardDeclinedError) await this.decline(orderId);
+      if (error instanceof CardDeclinedError)
+        await this.decline(orderId, error.intentId);
       else {
         await this.recordFailure(orderId, error, exhausted);
         throw error instanceof RpcError ? error : new RpcError('transient');
@@ -48,17 +55,10 @@ export class CardSenderService {
     }
   }
 
-  private async lockOrder(
-    tx: Prisma.TransactionClient,
-    orderId: string,
-  ): Promise<void> {
-    await tx.$queryRaw`SELECT id FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
-  }
-
   /** Returns the order when it is pending and open; closes an expired unsent one. */
   private claim(orderId: string) {
     return this.db.$transaction(async (tx) => {
-      await this.lockOrder(tx, orderId);
+      await lockOrder(tx, orderId);
       const order = await tx.order.findUniqueOrThrow({
         where: { id: orderId },
       });
@@ -77,7 +77,7 @@ export class CardSenderService {
 
   private record(orderId: string, amount: bigint, payment: CardPayment) {
     return this.db.$transaction(async (tx) => {
-      await this.lockOrder(tx, orderId);
+      await lockOrder(tx, orderId);
       const now = new Date();
       const where = {
         provider_externalKey: { provider: 'stripe', externalKey: payment.id },
@@ -112,18 +112,38 @@ export class CardSenderService {
     });
   }
 
-  private decline(orderId: string) {
+  private decline(orderId: string, intentId: string | null) {
     return this.db.$transaction(async (tx) => {
-      await this.lockOrder(tx, orderId);
+      await lockOrder(tx, orderId);
       const order = await tx.order.findUniqueOrThrow({
         where: { id: orderId },
       });
       if (order.sendState !== 'pending') return;
+      if (intentId) {
+        const now = new Date();
+        const payment = await tx.payment.upsert({
+          where: {
+            provider_externalKey: { provider: 'stripe', externalKey: intentId },
+          },
+          create: {
+            provider: 'stripe',
+            externalKey: intentId,
+            orderId,
+            amount: order.expectedAmount,
+            stage: 'sent',
+            sentAt: now,
+          },
+          update: {},
+        });
+        if (BEFORE_SETTLED.includes(payment.stage))
+          await failCardPayment(tx, { ...payment, orderId }, now, DECLINED);
+        return;
+      }
       await closeOrder(tx, order);
       await tx.incident.create({
         data: {
           kind: 'card_failed',
-          whatHappened: 'The test card was declined.',
+          whatHappened: DECLINED,
           howHandled: 'Closed the order; nothing was credited.',
         },
       });
@@ -133,7 +153,7 @@ export class CardSenderService {
   private recordFailure(orderId: string, error: unknown, exhausted: boolean) {
     const kind = error instanceof RpcError ? error.kind : 'transient';
     return this.db.$transaction(async (tx) => {
-      await this.lockOrder(tx, orderId);
+      await lockOrder(tx, orderId);
       const order = await tx.order.findUniqueOrThrow({
         where: { id: orderId },
       });
