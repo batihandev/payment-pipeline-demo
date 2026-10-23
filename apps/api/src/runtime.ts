@@ -46,7 +46,7 @@ export class ApiRuntime implements OnModuleDestroy {
         config.RPC_COOLDOWN_MS,
       ),
     );
-    await registerEvents(app, this.redis);
+    await registerEvents(app, this.redis, config.DONATION_MIN);
     registerNotices(app, this.db, config.NOTICE_SECRET);
     const purchases = new Purchases(this.db, purchaseOptions(config));
     const queue = this.queues.buyer as Queue<BuyerJobData>;

@@ -123,6 +123,42 @@ it('returns recent payments with safe order details, exact amounts and explorer 
   ]);
   expect(response.body).not.toContain('signedTransaction');
 });
+it('leaves out donations below DONATION_MIN', async () => {
+  for (const amount of [9999n, 10000n]) {
+    const row = await payment({
+      amount,
+      donation: true,
+      fromAddress: `0x${'ee'.repeat(20)}`,
+      settledAt: new Date('2026-10-22T08:00:08Z'),
+      stage: 'notified',
+    });
+    await database.db.ledgerEntry.create({
+      data: { paymentId: row.id, amount },
+    });
+  }
+  const response = await adapter.getInstance().inject('/payments');
+  expect(response.json()).toEqual([
+    expect.objectContaining({ amount: '10000', donation: true }),
+  ]);
+  expect(
+    (await adapter.getInstance().inject('/stats')).json().settledCount,
+  ).toBe(1);
+  const daily = (await adapter.getInstance().inject('/stats/daily')).json();
+  expect(
+    daily.find((entry: { day: string }) => entry.day === '2026-10-22').settled,
+  ).toBe(1);
+});
+it('never returns a sender address', async () => {
+  const sender = `0x${'ee'.repeat(20)}`;
+  await payment({ donation: true, fromAddress: sender, amount: 20000n });
+  await payment();
+  const response = await adapter.getInstance().inject('/payments');
+  const items = response.json() as Record<string, unknown>[];
+  expect(items).toHaveLength(2);
+  for (const item of items) expect(item).not.toHaveProperty('fromAddress');
+  expect(items.find((item) => item.donation)?.donorName).toMatch(/ /);
+  expect(response.body).not.toContain(sender);
+});
 it('returns newest incidents and rejects limits outside one to one hundred', async () => {
   for (const day of [19, 20])
     await database.db.incident.create({

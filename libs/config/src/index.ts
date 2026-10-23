@@ -82,6 +82,7 @@ export const apiSchema = z.object({
   VISITOR_PER_DAY: positiveInteger.default(100),
   VISITOR_QUEUE_LIMIT: positiveInteger.default(30),
   VISITOR_DAILY_LIMIT: positiveInteger.default(2000),
+  DONATION_MIN: microUnits.default(10_000n),
   GAS_FLOOR: microUnits.default(200_000_000_000_000n),
   TRUST_PROXY: z
     .enum(['true', 'false'])

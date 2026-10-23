@@ -4,6 +4,7 @@ import type { Redis } from 'ioredis';
 import type { z } from 'zod';
 import type { apiSchema } from '../../../libs/config/src';
 import type { PrismaClient } from '../../../libs/db/src';
+import { publicPayment } from '../../../libs/events/src/public-payment';
 import { cooldownKey } from '../../../libs/chain/src/service-limiter';
 import type {
   Balance,
@@ -43,7 +44,7 @@ export function registerReads(
     async (request) => {
       const ids = await db.$queryRaw<
         { id: string }[]
-      >`SELECT id FROM payments ORDER BY COALESCE(sent_at, received_at) DESC NULLS LAST, id DESC LIMIT ${request.query.limit}`;
+      >`SELECT id FROM payments WHERE NOT (donation AND amount < ${config.DONATION_MIN}) ORDER BY COALESCE(sent_at, received_at) DESC NULLS LAST, id DESC LIMIT ${request.query.limit}`;
       const rows = await db.payment.findMany({
         where: { id: { in: ids.map((row) => row.id) } },
         include: {
@@ -69,7 +70,8 @@ export function registerReads(
               ids.findIndex((row) => row.id === b.id),
           )
           .map((row) => ({
-            ...row,
+            ...publicPayment(row),
+            order: row.order,
             explorerUrl: row.transactionHash
               ? `${config.BLOCK_EXPLORER_URL.replace(/\/$/, '')}/tx/${row.transactionHash}`
               : null,
@@ -119,7 +121,7 @@ export function registerReads(
       const [rows, duplicatesSkipped, failuresRecovered] = await Promise.all([
         db.$queryRaw<
           { settledCount: bigint; averageTimeToSettleMs: number | null }[]
-        >`SELECT COUNT(*)::bigint AS "settledCount", AVG(EXTRACT(EPOCH FROM (p.settled_at - COALESCE(p.sent_at, p.received_at))) * 1000)::float8 AS "averageTimeToSettleMs" FROM ledger_entries l JOIN payments p ON p.id = l.payment_id WHERE p.settled_at >= ${from} AND p.settled_at < ${to}`,
+        >`SELECT COUNT(*)::bigint AS "settledCount", AVG(EXTRACT(EPOCH FROM (p.settled_at - COALESCE(p.sent_at, p.received_at))) * 1000)::float8 AS "averageTimeToSettleMs" FROM ledger_entries l JOIN payments p ON p.id = l.payment_id WHERE p.settled_at >= ${from} AND p.settled_at < ${to} AND NOT (p.donation AND p.amount < ${config.DONATION_MIN})`,
         db.incident.count({
           where: { kind: 'duplicate', createdAt: { gte: from, lt: to } },
         }),
@@ -148,7 +150,7 @@ export function registerReads(
           visitor: bigint;
           averageTimeToSettleMs: number | null;
         }[]
-      >`SELECT to_char(p.settled_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day, COUNT(*)::bigint AS settled, COUNT(*) FILTER (WHERE o.source = 'schedule')::bigint AS scheduled, COUNT(*) FILTER (WHERE o.source = 'visitor')::bigint AS visitor, AVG(EXTRACT(EPOCH FROM (p.settled_at - COALESCE(p.sent_at, p.received_at))) * 1000)::float8 AS "averageTimeToSettleMs" FROM ledger_entries l JOIN payments p ON p.id = l.payment_id LEFT JOIN orders o ON o.id = p.order_id WHERE p.settled_at >= ${from} AND p.settled_at < ${to} GROUP BY 1`;
+      >`SELECT to_char(p.settled_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS day, COUNT(*)::bigint AS settled, COUNT(*) FILTER (WHERE o.source = 'schedule')::bigint AS scheduled, COUNT(*) FILTER (WHERE o.source = 'visitor')::bigint AS visitor, AVG(EXTRACT(EPOCH FROM (p.settled_at - COALESCE(p.sent_at, p.received_at))) * 1000)::float8 AS "averageTimeToSettleMs" FROM ledger_entries l JOIN payments p ON p.id = l.payment_id LEFT JOIN orders o ON o.id = p.order_id WHERE p.settled_at >= ${from} AND p.settled_at < ${to} AND NOT (p.donation AND p.amount < ${config.DONATION_MIN}) GROUP BY 1`;
       const byDay = new Map(rows.map((row) => [row.day, row]));
       return Array.from({ length: config.RETENTION_DAYS }, (_, index) => {
         const day = new Date(from.getTime() + index * dayMs)

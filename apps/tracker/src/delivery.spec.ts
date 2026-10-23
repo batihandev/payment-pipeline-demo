@@ -65,7 +65,12 @@ it('saves full payment snapshots for every stage change and finality without dup
     transactionHash: log().txHash,
   });
   expect(Object.keys(bodies[0] ?? {}).sort()).toEqual(
-    Object.keys(await f.db.payment.findFirstOrThrow()).sort(),
+    [
+      ...Object.keys(await f.db.payment.findFirstOrThrow()).filter(
+        (key) => key !== 'fromAddress',
+      ),
+      'donorName',
+    ].sort(),
   );
 });
 it('publishes persisted events over Redis and marks each published snapshot', async () => {

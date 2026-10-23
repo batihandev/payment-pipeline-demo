@@ -34,7 +34,12 @@ it('publishes the complete saved payment with integer amounts encoded as decimal
       transactionHash: '0x1234',
       final: false,
     });
-    expect(Object.keys(message).sort()).toEqual(Object.keys(row).sort());
+    expect(Object.keys(message).sort()).toEqual(
+      [
+        ...Object.keys(row).filter((key) => key !== 'fromAddress'),
+        'donorName',
+      ].sort(),
+    );
   } finally {
     await subscriber.quit();
     await publisher.quit();

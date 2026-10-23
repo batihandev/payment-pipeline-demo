@@ -1,8 +1,9 @@
 import type { Redis } from 'ioredis';
 import type { Payment } from '../../db/generated/client';
+import { publicPayment } from './public-payment';
 export const paymentChannel = 'payments';
 export function serializePayment(payment: Payment): string {
-  return JSON.stringify(payment, (_key, value: unknown) =>
+  return JSON.stringify(publicPayment(payment), (_key, value: unknown) =>
     typeof value === 'bigint' ? value.toString() : value,
   );
 }
