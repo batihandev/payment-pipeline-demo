@@ -8,17 +8,18 @@ type ClosableOrder = {
 };
 
 /** Marks an unpaid order failed and expired, and gives a scheduled order's budget back. */
-export function closeOrder(
+export async function closeOrder(
   tx: Prisma.TransactionClient,
   order: ClosableOrder,
-): Promise<unknown> {
-  return Promise.all([
-    tx.order.update({
-      where: { id: order.id },
-      data: { sendState: 'failed', status: 'expired' },
-    }),
-    order.source === 'schedule'
-      ? new BudgetReservation(tx).release(order.createdAt, order.expectedAmount)
-      : undefined,
-  ]);
+): Promise<void> {
+  // An interactive transaction runs one query at a time, so these run in turn.
+  await tx.order.update({
+    where: { id: order.id },
+    data: { sendState: 'failed', status: 'expired' },
+  });
+  if (order.source === 'schedule')
+    await new BudgetReservation(tx).release(
+      order.createdAt,
+      order.expectedAmount,
+    );
 }

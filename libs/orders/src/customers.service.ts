@@ -3,8 +3,13 @@ import { PrismaService, PrismaClient } from '../../db/src';
 
 type Customer = Awaited<ReturnType<PrismaClient['customer']['findFirst']>>;
 
+type SavedCard = NonNullable<Customer> & {
+  stripeCustomerId: string;
+  stripePaymentMethodId: string;
+};
+
 /** The one saved card is the signal that the card rail is available. */
-export function hasSavedCard(customer: Customer): boolean {
+export function hasSavedCard(customer: Customer): customer is SavedCard {
   return Boolean(customer?.stripeCustomerId && customer.stripePaymentMethodId);
 }
 

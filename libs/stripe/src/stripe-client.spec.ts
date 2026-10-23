@@ -40,7 +40,6 @@ it('sends the same idempotency key on a retry', async () => {
   const retry = await client.createPayment(input);
   expect(first).toEqual({
     id: 'pi_1',
-    status: 'processing',
     receiptUrl: 'https://pay.stripe.com/receipts/1',
   });
   expect(retry).toEqual(first);

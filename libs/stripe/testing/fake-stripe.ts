@@ -24,7 +24,6 @@ export class FakeStripe implements StripeClient {
     const key = `order-${input.orderId}`;
     const intent = this.intents.get(key) ?? {
       id: `pi_${this.intents.size + 1}`,
-      status: 'processing',
       receiptUrl: 'https://pay.stripe.com/receipts/test',
     };
     this.intents.set(key, intent);

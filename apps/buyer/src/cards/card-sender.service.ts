@@ -8,7 +8,7 @@ import {
 import { closeOrder } from '../../../../libs/orders/src/close-order';
 import { failCardPayment } from '../../../../libs/orders/src/fail-card-payment';
 import { lockOrder } from '../../../../libs/orders/src/lock-order';
-import { CustomersService } from '../../../../libs/orders/src';
+import { CustomersService, hasSavedCard } from '../../../../libs/orders/src';
 import {
   CardDeclinedError,
   StripeClient,
@@ -34,24 +34,33 @@ export class CardSenderService {
   async charge(orderId: string, exhausted: boolean): Promise<void> {
     const order = await this.claim(orderId);
     if (!order) return;
+    let payment: CardPayment;
     try {
       const customer = await this.customers.demo();
-      if (!customer?.stripeCustomerId || !customer.stripePaymentMethodId)
+      if (!hasSavedCard(customer))
         throw new RpcError('permanent', 'no saved card');
-      const payment = await this.stripe.createPayment({
+      payment = await this.stripe.createPayment({
         amountCents: Number(order.price / CENTS),
         customer: customer.stripeCustomerId,
         paymentMethod: customer.stripePaymentMethodId,
         orderId,
       });
-      await this.record(orderId, order.expectedAmount, payment);
     } catch (error) {
       if (error instanceof CardDeclinedError)
-        await this.decline(orderId, error.intentId);
-      else {
-        await this.recordFailure(orderId, error, exhausted);
-        throw error instanceof RpcError ? error : new RpcError('transient');
-      }
+        return this.decline(orderId, error.intentId);
+      await this.recordFailure(orderId, error, exhausted, false);
+      throw error instanceof RpcError ? error : new RpcError('transient');
+    }
+    try {
+      await this.record(orderId, order.expectedAmount, payment);
+    } catch {
+      await this.recordFailure(
+        orderId,
+        new RpcError('transient'),
+        exhausted,
+        true,
+      );
+      throw new RpcError('transient');
     }
   }
 
@@ -154,7 +163,12 @@ export class CardSenderService {
     });
   }
 
-  private recordFailure(orderId: string, error: unknown, exhausted: boolean) {
+  private recordFailure(
+    orderId: string,
+    error: unknown,
+    exhausted: boolean,
+    accepted: boolean,
+  ) {
     const kind = error instanceof RpcError ? error.kind : 'transient';
     return this.db.$transaction(async (tx) => {
       await lockOrder(tx, orderId);
@@ -171,7 +185,9 @@ export class CardSenderService {
       await tx.incident.create({
         data: {
           kind: 'send_failed',
-          whatHappened: `Card payment ${orderId} failed (${kind}).`,
+          whatHappened: accepted
+            ? `Card payment ${orderId}: charge accepted; recording failed, retrying.`
+            : `Card payment ${orderId} failed (${kind}).`,
           howHandled: closed
             ? 'No charge was made; released the reservation and closed the order.'
             : exhausted

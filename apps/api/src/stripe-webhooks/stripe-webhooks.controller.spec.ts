@@ -164,7 +164,6 @@ it('creates the payment when the webhook arrives first', async () => {
     await cardSender({
       createPayment: async () => ({
         id: 'pi_1',
-        status: 'succeeded',
         receiptUrl: 'https://pay.stripe.com/receipts/test',
       }),
     })

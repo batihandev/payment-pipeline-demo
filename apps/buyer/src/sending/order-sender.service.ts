@@ -13,6 +13,7 @@ import {
   PrismaService,
   type Prisma,
 } from '../../../../libs/db/src';
+import { closeOrder } from '../../../../libs/orders/src/close-order';
 import type { BuyerConfig } from '../buyer-config';
 import { RedisLock } from './redis-lock';
 import {
@@ -122,15 +123,7 @@ export class OrderSenderService {
       const payment = order.payments.find((p) => p.stage === 'sent');
       // The tracker may have seen the transfer since the check began.
       if (order.sendState !== 'sent' || !payment) return;
-      await tx.order.update({
-        where: { id: orderId },
-        data: { sendState: 'failed', status: 'expired' },
-      });
-      if (order.source === 'schedule')
-        await new BudgetReservation(tx).release(
-          order.createdAt,
-          order.expectedAmount,
-        );
+      await closeOrder(tx, order);
       await tx.incident.create({
         data: {
           ...incident,

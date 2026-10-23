@@ -4,7 +4,6 @@ import type { RpcLimiter } from '../../chain/src/rpc-limiter';
 
 export type CardPayment = {
   id: string;
-  status: string;
   receiptUrl: string | null;
 };
 
@@ -78,7 +77,6 @@ export class SdkStripeClient implements StripeClient {
     const charge = intent.latest_charge;
     return {
       id: intent.id,
-      status: intent.status,
       receiptUrl:
         typeof charge === 'object' && charge ? charge.receipt_url : null,
     };

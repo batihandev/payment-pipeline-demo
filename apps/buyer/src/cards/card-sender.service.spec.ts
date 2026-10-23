@@ -249,6 +249,28 @@ it('retries a transient failure and sends the order to review when retries run o
   ).toBe(2);
 });
 
+it('says when Stripe accepted the charge but recording it failed', async () => {
+  const row = await order();
+  const transaction = database.db.$transaction.bind(database.db);
+  const spy = jest
+    .spyOn(database.db, '$transaction')
+    .mockImplementationOnce(transaction)
+    .mockRejectedValueOnce(new Error('connection lost'));
+  try {
+    await expect(cards.charge(row.id, false)).rejects.toMatchObject({
+      kind: 'transient',
+    });
+  } finally {
+    spy.mockRestore();
+  }
+  expect(stripe.intents.size).toBe(1);
+  expect(await database.db.incident.findFirstOrThrow()).toMatchObject({
+    kind: 'send_failed',
+    whatHappened: `Card payment ${row.id}: charge accepted; recording failed, retrying.`,
+    howHandled: 'Kept the reservation; retry with backoff.',
+  });
+});
+
 it('closes the order when Stripe cannot be used at all', async () => {
   const row = await order({ source: 'schedule' });
   stripe.failure = new RpcError('permanent');
