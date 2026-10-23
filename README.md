@@ -1,5 +1,7 @@
 # payment-pipeline-demo
 
+[![CI](https://github.com/batihandev/payment-pipeline-demo/actions/workflows/ci.yml/badge.svg)](https://github.com/batihandev/payment-pipeline-demo/actions/workflows/ci.yml)
+
 A payment-tracking demo follows test purchases through two payment rails into one ledger. On the chain rail, test USDC moves on Base Sepolia from broadcast through confirmation, settlement and shop notification. On the card rail, a saved Stripe test card is charged and the payment settles from a signed Stripe webhook. Separate buyer, tracker and API services share a PostgreSQL ledger and Redis, with a React dashboard showing payment progress.
 
 Both rails run on test networks only. Stripe runs in test mode: configuration rejects any `sk_live_` key, and any other key that does not start with `sk_test_`. Visitors never enter card details; the demo pays with a test card saved in Stripe for the demo's own customer. No card data is stored beyond Stripe IDs, the card brand and its last four digits.
