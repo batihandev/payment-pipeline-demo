@@ -146,7 +146,7 @@ Optional settings and their defaults:
 | `API_PORT`                                   | 3000                           | API HTTP port                                                                                   |
 | `API_REQUESTS_PER_MINUTE`                    | 300                            | Requests one client address may make per minute, except signed shop notices                     |
 | `BLOCK_EXPLORER_URL`                         | `https://sepolia.basescan.org` | Base URL for explorer links                                                                     |
-| `CONFIRMATIONS`                              | 30                             | Blocks on top of a payment's block before it settles                                            |
+| `CONFIRMATIONS`                              | 10                             | Blocks on top of a payment's block before it settles                                            |
 | `START_BLOCK`                                | `RESCAN_BLOCKS` below the head | First block the tracker scans when it has no cursor                                             |
 | `RESCAN_BLOCKS`                              | 5                              | Blocks re-read on each tracker pass                                                             |
 | `MAX_RANGE`, `MIN_RANGE`                     | 500, 10                        | Largest and smallest block range per log query; a rejected range is halved down to the minimum  |

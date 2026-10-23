@@ -83,7 +83,7 @@ Chain: `sent → received → confirming → settled → notified`, plus a `fina
 
 - **sent:** the buyer broadcast the transfer and stored its hash. This is the buyer's record, not yet seen by the tracker.
 - **received:** the transfer log was seen in a block.
-- **confirming:** waiting for `CONFIRMATIONS` blocks on top (default 30; at about five blocks a second on Base Sepolia, roughly six seconds, so the tracker records a few counts on the way). Counting stops at the threshold: after settlement only finality is recorded.
+- **confirming:** waiting for `CONFIRMATIONS` blocks on top (default 10). Counting stops at the threshold: after settlement only finality is recorded.
 - **settled:** the confirmation count was reached. The ledger entry is written; this is the credit.
 - **notified:** the shop accepted the signed notice.
 - **final:** the chain's `finalized` block tag has passed the payment's block. Shown as a badge; on Base this comes some minutes after settled.
