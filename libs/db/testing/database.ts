@@ -3,9 +3,15 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/client';
-import type { PrismaService } from '../src/database.module';
+import type { DatabasePool, PrismaService } from '../src/database.module';
 
-export async function testDatabase(): Promise<{
+/**
+ * A Prisma client on a fresh schema with every migration applied. `pool` replaces the
+ * driver's pool settings, for tests that depend on them.
+ */
+export async function testDatabase(
+  pool: Partial<Omit<DatabasePool, 'connectionString'>> = {},
+): Promise<{
   db: PrismaService;
   close: () => Promise<void>;
 }> {
@@ -20,7 +26,10 @@ export async function testDatabase(): Promise<{
   const url = new URL(connectionString);
   url.searchParams.set('options', `-c search_path=${schema}`);
   const client = new PrismaClient({
-    adapter: new PrismaPg({ connectionString: url.toString() }, { schema }),
+    adapter: new PrismaPg(
+      { ...pool, connectionString: url.toString() },
+      { schema },
+    ),
   });
   const db = Object.assign(client, {
     onModuleInit: async () => {},

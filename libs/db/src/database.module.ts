@@ -16,6 +16,23 @@ export type DatabaseConfig = {
   DATABASE_IDLE_TIMEOUT_MS: number;
 };
 
+export type DatabasePool = {
+  connectionString: string;
+  max: number;
+  connectionTimeoutMillis: number;
+  idleTimeoutMillis: number;
+};
+
+/** The PostgreSQL pool settings an app's Prisma client runs with. */
+export function databasePool(config: DatabaseConfig): DatabasePool {
+  return {
+    connectionString: config.DATABASE_URL,
+    max: config.DATABASE_POOL_MAX,
+    connectionTimeoutMillis: config.DATABASE_CONNECT_TIMEOUT_MS,
+    idleTimeoutMillis: config.DATABASE_IDLE_TIMEOUT_MS,
+  };
+}
+
 @Injectable()
 export class PrismaService
   extends PrismaClient
@@ -23,16 +40,19 @@ export class PrismaService
 {
   constructor(config: ConfigService<DatabaseConfig, true>) {
     super({
-      adapter: new PrismaPg({
-        connectionString: config.get('DATABASE_URL', { infer: true }),
-        max: config.get('DATABASE_POOL_MAX', { infer: true }),
-        connectionTimeoutMillis: config.get('DATABASE_CONNECT_TIMEOUT_MS', {
-          infer: true,
+      adapter: new PrismaPg(
+        databasePool({
+          DATABASE_URL: config.get('DATABASE_URL', { infer: true }),
+          DATABASE_POOL_MAX: config.get('DATABASE_POOL_MAX', { infer: true }),
+          DATABASE_CONNECT_TIMEOUT_MS: config.get(
+            'DATABASE_CONNECT_TIMEOUT_MS',
+            { infer: true },
+          ),
+          DATABASE_IDLE_TIMEOUT_MS: config.get('DATABASE_IDLE_TIMEOUT_MS', {
+            infer: true,
+          }),
         }),
-        idleTimeoutMillis: config.get('DATABASE_IDLE_TIMEOUT_MS', {
-          infer: true,
-        }),
-      }),
+      ),
     });
   }
 
