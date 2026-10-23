@@ -6,6 +6,7 @@ import type { Redis } from 'ioredis';
 import { ChainModule } from '../../../../libs/chain/src/chain.module';
 import { ChainClient } from '../../../../libs/chain/src/chain-client';
 import type { Address } from '../../../../libs/chain/src/chain-client';
+import { OrdersModule } from '../../../../libs/orders/src';
 import {
   QUEUES,
   QUEUE_ERROR_MESSAGE,
@@ -22,8 +23,11 @@ import { HealthController } from './health.controller';
 @Module({
   imports: [
     ChainModule.forRoot({ service: 'api' }),
+    OrdersModule,
     BullModule.registerQueue(
-      ...Object.values(QUEUES).map((name) => ({ name })),
+      ...Object.values(QUEUES)
+        .filter((name) => name !== QUEUES.buyer)
+        .map((name) => ({ name })),
     ),
   ],
   controllers: [HealthController],
@@ -35,8 +39,14 @@ import { HealthController } from './health.controller';
         QUEUE_ERROR_MESSAGE,
         ...Object.values(QUEUES).map(getQueueToken),
       ],
-      useFactory: (message: string, ...queues: Queue[]) =>
-        logQueueErrors(queues, message),
+      // OrdersModule logs the failures of the buyer queue it owns.
+      useFactory: (message: string, ...queues: Queue[]) => {
+        logQueueErrors(
+          queues.filter((queue) => queue.name !== QUEUES.buyer),
+          message,
+        );
+        return queues;
+      },
     },
     {
       provide: ChainSnapshotService,
