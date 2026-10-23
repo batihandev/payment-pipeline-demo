@@ -133,6 +133,9 @@ describe('visitor, refill and retention settings', () => {
         STRIPE_SECRET_KEY: 'sk_live_abc',
       }),
     ).toThrow('STRIPE_SECRET_KEY');
+  });
+
+  it('accepts only whsec_ webhook secrets', () => {
     expect(() =>
       validateConfig(apiSchema, { ...minimal, STRIPE_WEBHOOK_SECRET: 'abc' }),
     ).toThrow('STRIPE_WEBHOOK_SECRET');
@@ -142,9 +145,15 @@ describe('visitor, refill and retention settings', () => {
         STRIPE_WEBHOOK_SECRET: 'whsec_abc',
       }).STRIPE_WEBHOOK_SECRET,
     ).toBe('whsec_abc');
+  });
+
+  it('refuses a live key in the setup script', () => {
     expect(() =>
       validateConfig(stripeSetupSchema, { STRIPE_SECRET_KEY: 'sk_live_abc' }),
     ).toThrow('STRIPE_SECRET_KEY');
+    expect(() => validateConfig(stripeSetupSchema, {})).toThrow(
+      'STRIPE_SECRET_KEY',
+    );
   });
 
   it('defaults the Stripe limiter to 5 a second', () => {

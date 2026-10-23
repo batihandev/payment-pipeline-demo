@@ -4,7 +4,7 @@ const positiveInteger = z.coerce.number().int().positive();
 const microUnits = z.string().regex(/^\d+$/).transform(BigInt);
 const address = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
 const privateKey = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
-const stripeSecretKey = z.string().startsWith('sk_test_').optional();
+const sandboxSecretKey = z.string().startsWith('sk_test_');
 const connection = {
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
   REDIS_URL: z.url({ protocol: /^rediss?$/ }),
@@ -39,7 +39,7 @@ export const buyerSchema = z.object({
   REFILL_BELOW: microUnits.default(5_000_000n),
   REFILL_COOLDOWN_SECONDS: positiveInteger.default(20),
   RPC_REQUESTS_PER_SECOND_BUYER: positiveInteger.default(2),
-  STRIPE_SECRET_KEY: stripeSecretKey,
+  STRIPE_SECRET_KEY: sandboxSecretKey.optional(),
   STRIPE_REQUESTS_PER_SECOND: positiveInteger.default(5),
 });
 
@@ -99,7 +99,7 @@ export const apiSchema = z.object({
 });
 
 export const stripeSetupSchema = z.object({
-  STRIPE_SECRET_KEY: z.string().startsWith('sk_test_'),
+  STRIPE_SECRET_KEY: sandboxSecretKey,
   STRIPE_PAYMENT_METHOD: z.string().startsWith('pm_').default('pm_card_visa'),
 });
 
