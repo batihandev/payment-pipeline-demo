@@ -1,7 +1,8 @@
 import type { Redis } from 'ioredis';
 import type { Queue } from 'bullmq';
 import type { PrismaClient } from '../../../../libs/db/src';
-import { JOBS, retryOptions } from '../../../../libs/queues/src';
+import { JOBS } from '../../../../libs/queues/src';
+import { noticeRetryOptions } from '../notices/notice-retry';
 import { paymentChannel } from '../../../../libs/events/src/publish-payment';
 export class DeliveryService {
   constructor(
@@ -39,7 +40,7 @@ export class DeliveryService {
     const notices = await this.db.notice.findMany({
       where: {
         deliveredAt: null,
-        attempts: { lt: retryOptions.attempts },
+        attempts: { lt: noticeRetryOptions.attempts },
       },
       take: 100,
       orderBy: { paymentId: 'asc' },
@@ -49,8 +50,8 @@ export class DeliveryService {
         JOBS.shopNotices.shopNotice,
         { paymentId: notice.paymentId },
         {
-          ...retryOptions,
-          attempts: retryOptions.attempts - notice.attempts,
+          ...noticeRetryOptions,
+          attempts: noticeRetryOptions.attempts - notice.attempts,
           jobId: `notice-${notice.paymentId}`,
         },
       );
