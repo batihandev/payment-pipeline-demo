@@ -182,11 +182,23 @@ it('puts a new sent purchase ahead of older received payments', async () => {
 });
 
 it('answers 400 bad_request for an out-of-range or non-integer limit', async () => {
-  for (const query of ['limit=0', 'limit=101', 'limit=abc', 'limit=1.5']) {
+  for (const query of ['limit=0', 'limit=201', 'limit=abc', 'limit=1.5']) {
     const response = await get(`/payments?${query}`);
     expect(response.statusCode).toBe(400);
     expect(response.body).toEqual({ error: 'bad_request' });
   }
+});
+it('accepts limits up to 200', async () => {
+  const at = (minute: number) =>
+    new Date(Date.parse('2026-10-20T12:00:00Z') - minute * 60000);
+  for (let minute = 0; minute < 201; minute++)
+    await payment({ receivedAt: at(minute) });
+  for (const limit of [101, 200]) {
+    const response = await get(`/payments?limit=${limit}`);
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toHaveLength(limit);
+  }
+  expect((await get('/payments?limit=201')).statusCode).toBe(400);
 });
 it('pages older payments with a before cursor', async () => {
   const at = (time: string) => new Date(`2026-10-20T${time}Z`);
@@ -260,12 +272,27 @@ it('serves the change from a payment event on the next read, within the cache wi
 it('serves /payments from cache for 5 s per limit', async () => {
   await payment();
   expect((await get('/payments')).body).toHaveLength(1);
-  expect((await get('/payments?limit=1')).body).toHaveLength(1);
+  expect((await get('/payments?limit=40')).body).toHaveLength(1);
   await payment({ receivedAt: new Date('2026-10-20T13:00:00Z') });
   state.time += 4999;
   expect((await get('/payments')).body).toHaveLength(1);
-  expect((await get('/payments?limit=2')).body).toHaveLength(2);
-  expect((await get('/payments?limit=1')).body).toHaveLength(1);
+  expect((await get('/payments?limit=60')).body).toHaveLength(2);
+  expect((await get('/payments?limit=40')).body).toHaveLength(1);
   state.time += 1;
   expect((await get('/payments')).body).toHaveLength(2);
+});
+it('caches only multiples of 20', async () => {
+  await payment();
+  for (const limit of [20, 200, 21, 1]) {
+    expect((await get(`/payments?limit=${limit}`)).body).toHaveLength(1);
+  }
+  // Added without a payment event, so only the cache window decides what a read sees.
+  await payment({ receivedAt: new Date('2026-10-20T13:00:00Z') });
+  expect((await get('/payments?limit=20')).body).toHaveLength(1);
+  expect((await get('/payments?limit=200')).body).toHaveLength(1);
+  expect((await get('/payments?limit=21')).body).toHaveLength(2);
+  expect((await get('/payments?limit=1')).body).toHaveLength(1);
+  expect((await get('/payments?limit=1')).body[0].receivedAt).toBe(
+    '2026-10-20T13:00:00.000Z',
+  );
 });
