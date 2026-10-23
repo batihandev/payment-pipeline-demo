@@ -96,7 +96,7 @@ describe('visitor, refill and retention settings', () => {
     expect(api.VISITOR_DAILY_LIMIT).toBe(2000);
     expect(api.GAS_FLOOR).toBe(200000000000000n);
     expect(api.RETENTION_DAYS).toBe(30);
-    expect(api.TRUST_PROXY).toBe(false);
+    expect(api.CLIENT_IP_HEADER).toBe(undefined);
     expect(api.RPC_REQUESTS_PER_SECOND_API).toBe(1);
     const buyer = validateConfig(buyerSchema, minimal);
     expect(buyer.DAILY_COUNT_CAP).toBe(100);
@@ -123,11 +123,46 @@ describe('visitor, refill and retention settings', () => {
     ).toThrow('API_HOST');
   });
 
-  it('reads TRUST_PROXY=true', () => {
+  it('reads the client address header only when it is CF-Connecting-IP', () => {
     expect(
-      validateConfig(apiSchema, { ...minimal, TRUST_PROXY: 'true' })
-        .TRUST_PROXY,
-    ).toBe(true);
+      validateConfig(apiSchema, { ...minimal, CLIENT_IP_HEADER: '' })
+        .CLIENT_IP_HEADER,
+    ).toBe(undefined);
+    expect(
+      validateConfig(apiSchema, {
+        ...minimal,
+        CLIENT_IP_HEADER: 'cf-connecting-ip',
+      }).CLIENT_IP_HEADER,
+    ).toBe('cf-connecting-ip');
+    expect(() =>
+      validateConfig(apiSchema, {
+        ...minimal,
+        CLIENT_IP_HEADER: 'x-forwarded-for',
+      }),
+    ).toThrow('CLIENT_IP_HEADER');
+  });
+
+  it('accepts a comma-separated list of web origins', () => {
+    expect(validateConfig(apiSchema, minimal).WEB_ORIGIN).toEqual([
+      'http://localhost:5173',
+    ]);
+    expect(
+      validateConfig(apiSchema, {
+        ...minimal,
+        WEB_ORIGIN: ' https://example.com ,https://www.example.com,',
+      }).WEB_ORIGIN,
+    ).toEqual(['https://example.com', 'https://www.example.com']);
+    for (const WEB_ORIGIN of [
+      '',
+      ' , ',
+      'https://example.com,not a url',
+      'ftp://example.com',
+      'https://example.com/',
+      'https://example.com/path',
+    ])
+      expect(() =>
+        validateConfig(apiSchema, { ...minimal, WEB_ORIGIN }),
+      ).toThrow('WEB_ORIGIN');
   });
 
   it('accepts only sandbox Stripe keys', () => {

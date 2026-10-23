@@ -5,6 +5,11 @@ const microUnits = z.string().regex(/^\d+$/).transform(BigInt);
 const address = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
 const privateKey = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
 const sandboxSecretKey = z.string().startsWith('sk_test_');
+const emptyAsUnset = (value: unknown) => (value === '' ? undefined : value);
+/** A bare http(s) origin: scheme, host and optional port, with no path or trailing slash. */
+const webOrigin = z
+  .url({ protocol: /^https?$/ })
+  .refine((value) => URL.canParse(value) && new URL(value).origin === value);
 const connection = {
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
   REDIS_URL: z.url({ protocol: /^rediss?$/ }),
@@ -51,10 +56,7 @@ export const trackerSchema = z.object({
   NOTICE_SECRET: z.string().min(32),
   SHOP_NOTICE_URL: z.url({ protocol: /^https?$/ }),
   ...confirmations,
-  START_BLOCK: z.preprocess(
-    (value) => (value === '' ? undefined : value),
-    microUnits.optional(),
-  ),
+  START_BLOCK: z.preprocess(emptyAsUnset, microUnits.optional()),
   RESCAN_BLOCKS: positiveInteger.default(5),
   MAX_RANGE: positiveInteger.default(500),
   MIN_RANGE: positiveInteger.default(10),
@@ -76,7 +78,15 @@ export const apiSchema = z.object({
   BUYER_ADDRESS: address,
   SHOP_ADDRESS: address,
   NOTICE_SECRET: z.string().min(32),
-  WEB_ORIGIN: z.url({ protocol: /^https?$/ }),
+  WEB_ORIGIN: z
+    .string()
+    .transform((value) =>
+      value
+        .split(',')
+        .map((origin) => origin.trim())
+        .filter(Boolean),
+    )
+    .pipe(z.array(webOrigin).min(1)),
   BLOCK_EXPLORER_URL: z
     .url({ protocol: /^https?$/ })
     .default('https://sepolia.basescan.org'),
@@ -91,10 +101,10 @@ export const apiSchema = z.object({
   VISITOR_DAILY_LIMIT: positiveInteger.default(2000),
   DONATION_MIN: microUnits.default(10_000n),
   GAS_FLOOR: microUnits.default(200_000_000_000_000n),
-  TRUST_PROXY: z
-    .enum(['true', 'false'])
-    .default('false')
-    .transform((value) => value === 'true'),
+  CLIENT_IP_HEADER: z.preprocess(
+    emptyAsUnset,
+    z.enum(['cf-connecting-ip']).optional(),
+  ),
   RPC_REQUESTS_PER_SECOND_API: positiveInteger.default(1),
   STRIPE_WEBHOOK_SECRET: z.string().startsWith('whsec_').optional(),
 });

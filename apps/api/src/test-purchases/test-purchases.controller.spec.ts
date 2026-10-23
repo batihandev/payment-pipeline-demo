@@ -42,7 +42,7 @@ let gas: GasReading;
 let tick: number;
 const queuePrefix = `api-visitors-${randomUUID()}`;
 const now = new Date('2026-10-20T12:00:00Z');
-// Every app trusts one proxy, so each test's visitors are told apart by X-Forwarded-For.
+// Every app reads CF-Connecting-IP, so each test's visitors are told apart by that header.
 async function build(
   override: (
     builder: Parameters<
@@ -53,12 +53,12 @@ async function build(
       .overrideProvider(ChainSnapshotService)
       .useValue({ buyerGas: async () => gas });
   },
-  trustProxy = true,
+  clientIpHeader = 'cf-connecting-ip',
 ) {
   await app?.close();
   app = await createTestApp({
     environment: {
-      TRUST_PROXY: String(trustProxy),
+      CLIENT_IP_HEADER: clientIpHeader,
       STRIPE_WEBHOOK_SECRET: 'whsec_test',
     },
     queuePrefix,
@@ -131,7 +131,7 @@ afterEach(async () => {
 const buy = (ip = '127.0.0.1', headers: Record<string, string> = {}) =>
   request(app.getHttpServer())
     .post('/test-purchases')
-    .set({ 'x-forwarded-for': ip, ...headers });
+    .set({ 'cf-connecting-ip': ip, ...headers });
 const position = (id: string) =>
   request(app.getHttpServer()).get(`/test-purchases/${id}`);
 const seedPending = async (count: number) => {
@@ -315,25 +315,14 @@ it('reports an order that closed without a payment being sent', async () => {
   });
 });
 
-it('uses the forwarded client address when TRUST_PROXY is on', async () => {
+it('limits visitors by CF-Connecting-IP and ignores a forged X-Forwarded-For', async () => {
   limits.perMinute = 1;
-  const first = await buy('10.0.0.1', { 'x-forwarded-for': '198.51.100.1' });
-  const second = await buy('10.0.0.1', { 'x-forwarded-for': '198.51.100.2' });
-  const repeat = await buy('10.0.0.1', { 'x-forwarded-for': '198.51.100.1' });
-  expect([first.statusCode, second.statusCode, repeat.statusCode]).toEqual([
+  const first = await buy('198.51.100.1', { 'x-forwarded-for': '6.6.6.6' });
+  const second = await buy('198.51.100.2', { 'x-forwarded-for': '6.6.6.6' });
+  const forged = await buy('198.51.100.1', { 'x-forwarded-for': '7.7.7.7' });
+  expect([first.statusCode, second.statusCode, forged.statusCode]).toEqual([
     202, 202, 429,
   ]);
-});
-
-it('trusts only the nearest proxy, so a forged leftmost address does not help', async () => {
-  limits.perMinute = 1;
-  const first = await buy('10.0.0.1', {
-    'x-forwarded-for': '6.6.6.6, 1.1.1.1',
-  });
-  const forged = await buy('10.0.0.1', {
-    'x-forwarded-for': '7.7.7.7, 1.1.1.1',
-  });
-  expect([first.statusCode, forged.statusCode]).toEqual([202, 429]);
 });
 
 it('ignores expired orders when checking the queue and counting position', async () => {
@@ -380,8 +369,8 @@ it('admits without waiting on a chain read that has not finished', async () => {
   expect((await buy('192.0.2.2')).statusCode).toBe(202);
 });
 
-it('ignores a forwarded address when TRUST_PROXY is off', async () => {
-  await build(undefined, false);
+it('ignores CF-Connecting-IP when no client header is configured', async () => {
+  await build(undefined, '');
   limits.perMinute = 1;
   const first = await buy('198.51.100.1');
   const second = await buy('198.51.100.2');

@@ -53,3 +53,23 @@ it('allows the configured origin to receive the live event stream', async () => 
   expect(response.headers['content-type']).toBe('text/event-stream');
   response.destroy();
 });
+it('allows every origin listed in WEB_ORIGIN and no other', async () => {
+  const second = 'https://www.example.com';
+  const listed = await createTestApp({
+    environment: { WEB_ORIGIN: `${origin}, ${second}` },
+  });
+  try {
+    for (const allowed of [origin, second]) {
+      const response = await request(listed.getHttpServer())
+        .get('/payments?limit=1')
+        .set('origin', allowed);
+      expect(response.headers['access-control-allow-origin']).toBe(allowed);
+    }
+    const other = await request(listed.getHttpServer())
+      .get('/payments?limit=1')
+      .set('origin', 'https://example.com');
+    expect(other.headers['access-control-allow-origin']).toBeUndefined();
+  } finally {
+    await listed.close();
+  }
+});

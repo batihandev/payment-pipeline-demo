@@ -6,6 +6,7 @@ import { apiSchema, validateConfig } from '../../../libs/config/src';
 import { bigintReplacer } from '../../../libs/core/src/json';
 import { AppModule } from './app.module';
 import type { ApiConfig } from './common/api-config';
+import { CLIENT_IP_HEADER_SETTING } from './common/client-ip';
 
 const MAX_BODY_BYTES = 4096;
 // Stripe events run to several kilobytes.
@@ -22,9 +23,7 @@ export function configureApp(
   app: NestExpressApplication,
   config: ApiConfig,
 ): void {
-  // One proxy hop is trusted, so the client address is the entry it appended and a
-  // forged leftmost X-Forwarded-For value is ignored.
-  app.set('trust proxy', config.TRUST_PROXY ? 1 : false);
+  app.set(CLIENT_IP_HEADER_SETTING, config.CLIENT_IP_HEADER);
   // Responses carry no X-Powered-By or ETag header.
   app.disable('x-powered-by');
   app.set('etag', false);
@@ -37,7 +36,7 @@ export function configureApp(
   app.useBodyParser('json', { limit: MAX_BODY_BYTES });
   app.useBodyParser('urlencoded', { limit: MAX_BODY_BYTES, extended: false });
   app.enableCors({
-    origin: [config.WEB_ORIGIN],
+    origin: config.WEB_ORIGIN,
     methods: ['GET', 'POST', 'OPTIONS'],
     exposedHeaders: ['Retry-After'],
   });
