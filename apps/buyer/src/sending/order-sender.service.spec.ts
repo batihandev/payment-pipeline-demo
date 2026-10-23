@@ -6,6 +6,8 @@ import { testDatabase } from '../../../../libs/db/testing/database';
 import { OrderSenderService } from './order-sender.service';
 import { RedisLock } from './redis-lock';
 import { testRedisUrl } from '../../../../libs/config/testing/redis';
+import { fakeConfig } from '../../../../libs/config/testing/config';
+import type { BuyerConfig } from '../buyer-config';
 
 const buyer = `0x${'11'.repeat(20)}` as const;
 const shop = `0x${'22'.repeat(20)}` as const;
@@ -44,7 +46,9 @@ beforeEach(async () => {
     chain,
     chain,
     new RedisLock(redis, `test-${Date.now()}-${Math.random()}`),
-    { buyer, shop, chainId: 84532 },
+    buyer,
+    shop,
+    fakeConfig<BuyerConfig>({ CHAIN_ID: 84532 }),
   );
 });
 async function order(source: 'visitor' | 'schedule' = 'visitor') {
@@ -77,7 +81,9 @@ it('rebroadcasts the stored transaction after a crash before broadcast without s
     chain,
     chain,
     new RedisLock(redis, 'restarted-buyer'),
-    { buyer, shop, chainId: 84532 },
+    buyer,
+    shop,
+    fakeConfig<BuyerConfig>({ CHAIN_ID: 84532 }),
   );
   await sender.sendForOrder(row.id);
   expect(chain.signed).toBe(1);
@@ -102,7 +108,9 @@ it('finds the landed transaction after a crash following broadcast without signi
     chain,
     chain,
     new RedisLock(redis, 'restarted-buyer'),
-    { buyer, shop, chainId: 84532 },
+    buyer,
+    shop,
+    fakeConfig<BuyerConfig>({ CHAIN_ID: 84532 }),
   );
   await sender.sendForOrder(row.id);
   expect(chain.signed).toBe(1);
@@ -227,7 +235,9 @@ it('fences simultaneous nonce allocators even when they hold separate Redis leas
     chain,
     chain,
     new RedisLock(redis, 'separate-lease'),
-    { buyer, shop, chainId: 84532 },
+    buyer,
+    shop,
+    fakeConfig<BuyerConfig>({ CHAIN_ID: 84532 }),
   );
   const first = await order();
   const second = await order();
@@ -410,7 +420,9 @@ it('counts in-flight transfers from the database after a restart', async () => {
     chain,
     chain,
     new RedisLock(redis, 'restarted-buyer'),
-    { buyer, shop, chainId: 84532 },
+    buyer,
+    shop,
+    fakeConfig<BuyerConfig>({ CHAIN_ID: 84532 }),
   );
   expect(await restarted.inFlight()).toBe(3);
 });

@@ -1,3 +1,5 @@
+import { fakeConfig } from '../../../libs/config/testing/config';
+import type { TrackerConfig } from '../src/tracker-config';
 import type {
   ChainClient,
   Hex,
@@ -20,6 +22,24 @@ export const options = {
   rpcAttempts: 3,
   gapAttempts: 3,
   confirmations: 10,
+};
+/** The tracker settings the options above and the poll intervals stand for. */
+export const trackerConfig = (overrides: Partial<typeof options> = {}) => {
+  const settings = { ...options, ...overrides };
+  return fakeConfig<TrackerConfig>({
+    START_BLOCK: settings.startBlock,
+    CHAIN_ID: settings.chainId,
+    SHOP_ADDRESS: settings.shop,
+    BUYER_ADDRESS: settings.buyer,
+    MAX_RANGE: settings.maxRange,
+    MIN_RANGE: settings.minRange,
+    RESCAN_BLOCKS: settings.rescanBlocks,
+    RPC_MAX_ATTEMPTS: settings.rpcAttempts,
+    GAP_MAX_ATTEMPTS: settings.gapAttempts,
+    CONFIRMATIONS: settings.confirmations,
+    ACTIVE_POLL_MS: 2000,
+    IDLE_POLL_MS: 30000,
+  });
 };
 export const hash = (n: bigint): Hex => `0x${n.toString(16).padStart(64, '0')}`;
 export const log = (block = 10n, index = 0): TransferLog => ({

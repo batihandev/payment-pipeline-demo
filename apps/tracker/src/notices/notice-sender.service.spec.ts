@@ -8,7 +8,7 @@ import {
   TrackerChain,
   log,
   now,
-  options,
+  trackerConfig,
   order,
 } from '../../testing/fixtures';
 import { ScannerService } from '../scanning/scanner.service';
@@ -16,11 +16,15 @@ import { ProgressService } from '../scanning/progress.service';
 import { DeliveryService } from '../delivery/delivery.service';
 import { NoticeSenderService } from './notice-sender.service';
 import { testRedisUrl } from '../../../../libs/config/testing/redis';
+import { fakeConfig } from '../../../../libs/config/testing/config';
+import type { TrackerConfig } from '../tracker-config';
 let f: Awaited<ReturnType<typeof fixture>>;
 let server: Server;
 let url: string;
 let reject = false;
 let unavailable = false;
+const noticeConfig = (url: string, secret: string) =>
+  fakeConfig<TrackerConfig>({ SHOP_NOTICE_URL: url, NOTICE_SECRET: secret });
 const accepted = new Set<string>();
 const secret = 'test-notice-secret-01234567890123456789';
 beforeAll(async () => {
@@ -76,12 +80,16 @@ beforeEach(async () => {
   f.chain = new TrackerChain();
   f.chain.logs = [log()];
   await order(f.db);
-  const scanner = new ScannerService(f.db, f.chain, options, () => now);
+  const scanner = new ScannerService(f.db, f.chain, trackerConfig(), () => now);
   await scanner.scanOnce();
   await new ProgressService(f.db, scanner, () => now).advance(20n);
 });
 it('posts a verifiable timestamped HMAC notice and records successful delivery once', async () => {
-  const sender = new NoticeSenderService(f.db, { url, secret }, () => now);
+  const sender = new NoticeSenderService(
+    f.db,
+    noticeConfig(url, secret),
+    () => now,
+  );
   const payment = await f.db.payment.findFirstOrThrow();
   await sender.send(payment.id);
   await sender.send(payment.id);
@@ -95,7 +103,7 @@ it('keeps a rejected notice undelivered with a handling incident', async () => {
   reject = true;
   const payment = await f.db.payment.findFirstOrThrow();
   await expect(
-    new NoticeSenderService(f.db, { url, secret }, () => now).send(
+    new NoticeSenderService(f.db, noticeConfig(url, secret), () => now).send(
       payment.id,
       true,
     ),
@@ -114,7 +122,11 @@ it('retries a shop outage through BullMQ and delivers the same payment after rec
   const connection = { url: testRedisUrl() };
   const name = `notice-retries-${randomUUID()}`;
   const queue = new Queue<{ paymentId: string }>(name, { connection });
-  const sender = new NoticeSenderService(f.db, { url, secret }, () => now);
+  const sender = new NoticeSenderService(
+    f.db,
+    noticeConfig(url, secret),
+    () => now,
+  );
   const worker = new Worker<{ paymentId: string }>(
     name,
     (job) =>

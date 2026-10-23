@@ -1,9 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common';
-import { PrismaService, type PrismaClient } from '../../../../libs/db/src';
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../../../../libs/db/src';
 
 @Injectable()
 export class RetentionService {
-  constructor(@Inject(PrismaService) private readonly db: PrismaClient) {}
+  constructor(private readonly db: PrismaService) {}
 
   async pruneOlderThan(cutoff: Date): Promise<Record<string, number>> {
     return this.db.$transaction(async (tx) => {

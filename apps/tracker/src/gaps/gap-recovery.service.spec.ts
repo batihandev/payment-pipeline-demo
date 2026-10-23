@@ -5,7 +5,7 @@ import {
   TrackerChain,
   log,
   now,
-  options,
+  trackerConfig,
   order,
 } from '../../testing/fixtures';
 import { ScannerService } from '../scanning/scanner.service';
@@ -26,7 +26,7 @@ beforeEach(async () => {
     new ScannerService(
       f.db,
       f.chain,
-      options,
+      trackerConfig(),
       () => now,
       async () => {},
       () => 0.5,
@@ -73,7 +73,12 @@ it('stops automatic gap retries at the attempt cap while new scans keep progress
     resolvedAt: null,
   });
   f.chain.failure = undefined;
-  await new ScannerService(f.db, f.chain, options, () => now).scanOnce();
+  await new ScannerService(
+    f.db,
+    f.chain,
+    trackerConfig(),
+    () => now,
+  ).scanOnce();
   expect((await f.db.cursor.findFirstOrThrow()).blockNumber).toBe(20n);
 });
 it('leaves future and permanently malformed gaps open without retrying them', async () => {

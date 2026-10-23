@@ -8,7 +8,7 @@ import {
   TrackerChain,
   log,
   now,
-  options,
+  trackerConfig,
   order,
 } from '../../testing/fixtures';
 import { ScannerService } from '../scanning/scanner.service';
@@ -38,7 +38,7 @@ beforeEach(async () => {
   await queue.obliterate({ force: true });
   f.chain = new TrackerChain();
   f.chain.logs = [log()];
-  scanner = new ScannerService(f.db, f.chain, options, () => now);
+  scanner = new ScannerService(f.db, f.chain, trackerConfig(), () => now);
   progress = new ProgressService(f.db, scanner, () => now);
 });
 it('saves full payment snapshots for every stage change and finality without duplicate events on rescan', async () => {

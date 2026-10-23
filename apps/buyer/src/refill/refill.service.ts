@@ -1,32 +1,39 @@
-import type {
-  Address,
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import {
   ChainClient,
+  type Address,
 } from '../../../../libs/chain/src/chain-client';
-import type { PrismaClient } from '../../../../libs/db/src';
+import { PrismaService } from '../../../../libs/db/src';
+import type { BuyerConfig } from '../buyer-config';
 import { OrderSenderService } from '../sending/order-sender.service';
+import { BUYER_ADDRESS, SHOP_ADDRESS } from '../sending/wallets';
 
 // The scheduler fires every cooldown and job starts jitter, so allow a short margin.
 const COOLDOWN_TOLERANCE_MS = 1000;
 
 export type RefillResult =
   'sent' | 'not-needed' | 'cooling-down' | 'shop-empty';
-export type RefillOptions = {
-  below: bigint;
-  cooldownMs: number;
-  now?: () => Date;
-};
-
+@Injectable()
 export class RefillService {
+  private readonly below: bigint;
+  private readonly cooldownMs: number;
+
   constructor(
-    private readonly db: PrismaClient,
+    private readonly db: PrismaService,
     private readonly chain: ChainClient,
     private readonly sender: OrderSenderService,
-    private readonly buyer: Address,
-    private readonly shop: Address,
-    private readonly options: RefillOptions,
-  ) {}
+    @Inject(BUYER_ADDRESS) private readonly buyer: Address,
+    @Inject(SHOP_ADDRESS) private readonly shop: Address,
+    config: ConfigService<BuyerConfig, true>,
+    @Optional() private readonly now = () => new Date(),
+  ) {
+    this.below = config.get('REFILL_BELOW', { infer: true });
+    this.cooldownMs =
+      config.get('REFILL_COOLDOWN_SECONDS', { infer: true }) * 1000;
+  }
   async run(exhausted = false): Promise<RefillResult> {
-    const now = (this.options.now ?? (() => new Date()))();
+    const now = this.now();
     const latest = await this.db.sweep.findFirst({
       where: { id: { startsWith: 'refill:' } },
       orderBy: { createdAt: 'desc' },
@@ -38,11 +45,11 @@ export class RefillService {
     if (
       latest &&
       now.getTime() - latest.createdAt.getTime() <
-        this.options.cooldownMs - COOLDOWN_TOLERANCE_MS
+        this.cooldownMs - COOLDOWN_TOLERANCE_MS
     )
       return 'cooling-down';
     const buyer = await this.chain.getBalances(this.buyer);
-    if (buyer.usdc >= this.options.below) return 'not-needed';
+    if (buyer.usdc >= this.below) return 'not-needed';
     const shop = await this.chain.getBalances(this.shop);
     if (shop.usdc === 0n || shop.native === 0n) return 'shop-empty';
     const id = `refill:${now.toISOString()}`;

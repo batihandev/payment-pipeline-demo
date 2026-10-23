@@ -1,12 +1,22 @@
-import type { PrismaClient } from '../../../../libs/db/src';
+import { Injectable, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../../../../libs/db/src';
+import type { TrackerConfig } from '../tracker-config';
 import { noticeRetryOptions } from './notice-retry';
 import { signNotice } from '../../../../libs/core/src/notices';
+@Injectable()
 export class NoticeSenderService {
+  private readonly url: string;
+  private readonly secret: string;
+
   constructor(
-    readonly db: PrismaClient,
-    readonly config: { url: string; secret: string },
-    readonly now = () => new Date(),
-  ) {}
+    private readonly db: PrismaService,
+    config: ConfigService<TrackerConfig, true>,
+    @Optional() private readonly now = () => new Date(),
+  ) {
+    this.url = config.get('SHOP_NOTICE_URL', { infer: true });
+    this.secret = config.get('NOTICE_SECRET', { infer: true });
+  }
   async send(paymentId: string, exhausted = false): Promise<void> {
     const notice = await this.db.notice.findUniqueOrThrow({
       where: { paymentId },
@@ -20,12 +30,12 @@ export class NoticeSenderService {
     const body = JSON.stringify({ paymentId });
     const timestamp = Math.floor(this.now().getTime() / 1000);
     try {
-      const response = await fetch(this.config.url, {
+      const response = await fetch(this.url, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
           'x-notice-timestamp': String(timestamp),
-          'x-notice-signature': signNotice(body, this.config.secret, timestamp),
+          'x-notice-signature': signNotice(body, this.secret, timestamp),
         },
         body,
         signal: AbortSignal.timeout(10000),

@@ -4,7 +4,7 @@ import {
   TrackerChain,
   log,
   now,
-  options,
+  trackerConfig,
   order,
 } from '../../testing/fixtures';
 import { ScannerService } from '../scanning/scanner.service';
@@ -21,12 +21,12 @@ afterAll(async () => {
 beforeEach(async () => {
   await clear(f.db);
   f.chain = new TrackerChain();
-  const scanner = new ScannerService(f.db, f.chain, options, () => now);
+  const scanner = new ScannerService(f.db, f.chain, trackerConfig(), () => now);
   poller = new PollerService(
     f.db,
     scanner,
     new ProgressService(f.db, scanner, () => now),
-    { active: 2000, idle: 30000 },
+    trackerConfig(),
     () => 0.5,
   );
 });
@@ -51,19 +51,19 @@ it('uses active polling during bounded catch-up without open orders', async () =
   expect(await poller.pass()).toBe(2000);
 });
 it('adds small bounded jitter to poll intervals', async () => {
-  const scanner = new ScannerService(f.db, f.chain, options, () => now);
+  const scanner = new ScannerService(f.db, f.chain, trackerConfig(), () => now);
   const low = new PollerService(
     f.db,
     scanner,
     new ProgressService(f.db, scanner, () => now),
-    { active: 2000, idle: 30000 },
+    trackerConfig(),
     () => 0,
   );
   const high = new PollerService(
     f.db,
     scanner,
     new ProgressService(f.db, scanner, () => now),
-    { active: 2000, idle: 30000 },
+    trackerConfig(),
     () => 1,
   );
   expect(await low.pass()).toBe(27000);

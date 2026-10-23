@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto';
+import { Injectable, Optional } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import { RpcError } from '../../../../libs/chain/src/rpc-error';
+import { InjectRedis } from '../../../../libs/redis/src';
 
+@Injectable()
 export class RedisLock {
   constructor(
-    private readonly redis: Redis,
-    private readonly prefix = 'buyer',
+    @InjectRedis() private readonly redis: Redis,
+    @Optional() private readonly prefix = 'buyer',
   ) {}
   async run<T>(wallet: string, operation: () => Promise<T>): Promise<T> {
     const key = `${this.prefix}:nonce:${wallet.toLowerCase()}`;

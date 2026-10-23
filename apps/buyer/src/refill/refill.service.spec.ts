@@ -6,6 +6,8 @@ import { RedisLock } from '../sending/redis-lock';
 import { OrderSenderService } from '../sending/order-sender.service';
 import { RefillService } from './refill.service';
 import { SweepService } from '../sweep/sweep.service';
+import { fakeConfig } from '../../../../libs/config/testing/config';
+import type { BuyerConfig } from '../buyer-config';
 const buyer = `0x${'11'.repeat(20)}` as const;
 const shop = `0x${'22'.repeat(20)}` as const;
 let database: Awaited<ReturnType<typeof testDatabase>>;
@@ -38,14 +40,23 @@ beforeEach(async () => {
     chain,
     chain,
     new RedisLock(redis, 'refill-test'),
-    { buyer, shop, chainId: 84532 },
+    buyer,
+    shop,
+    fakeConfig<BuyerConfig>({ CHAIN_ID: 84532 }),
   );
   clock = new Date('2026-10-22T10:00:00.000Z');
-  refill = new RefillService(database.db, chain, sender, buyer, shop, {
-    below: 5_000_000n,
-    cooldownMs: 20_000,
-    now: () => clock,
-  });
+  refill = new RefillService(
+    database.db,
+    chain,
+    sender,
+    buyer,
+    shop,
+    fakeConfig<BuyerConfig>({
+      REFILL_BELOW: 5_000_000n,
+      REFILL_COOLDOWN_SECONDS: 20,
+    }),
+    () => clock,
+  );
 });
 it('refills when the buyer is below the threshold', async () => {
   expect(await refill.run()).toBe('sent');

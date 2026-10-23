@@ -1,19 +1,34 @@
 import { setTimeout } from 'node:timers/promises';
-import type { OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
-import type { PrismaClient } from '../../../../libs/db/src';
-import type { ScannerService } from '../scanning/scanner.service';
-import type { ProgressService } from '../scanning/progress.service';
+import {
+  Injectable,
+  Optional,
+  type OnApplicationBootstrap,
+  type OnModuleDestroy,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../../../../libs/db/src';
+import { ScannerService } from '../scanning/scanner.service';
+import { ProgressService } from '../scanning/progress.service';
+import type { TrackerConfig } from '../tracker-config';
+@Injectable()
 export class PollerService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly stopped = new AbortController();
+  private readonly intervals: { active: number; idle: number };
   private loop: Promise<void> | undefined;
 
   constructor(
-    readonly db: PrismaClient,
-    readonly scanner: ScannerService,
-    readonly progress: ProgressService,
-    readonly intervals: { active: number; idle: number },
-    readonly rng = Math.random,
-  ) {}
+    private readonly db: PrismaService,
+    private readonly scanner: ScannerService,
+    private readonly progress: ProgressService,
+    config: ConfigService<TrackerConfig, true>,
+    @Optional() private readonly rng = Math.random,
+  ) {
+    this.intervals = {
+      active: config.get('ACTIVE_POLL_MS', { infer: true }),
+      idle: config.get('IDLE_POLL_MS', { infer: true }),
+    };
+  }
+
   onApplicationBootstrap(): void {
     this.loop = this.poll();
   }

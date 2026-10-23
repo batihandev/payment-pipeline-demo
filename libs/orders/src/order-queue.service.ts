@@ -1,7 +1,7 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
-import { PrismaService, type PrismaClient } from '../../db/src';
+import { PrismaService } from '../../db/src';
 import {
   JOBS,
   QUEUES,
@@ -12,7 +12,7 @@ import {
 @Injectable()
 export class OrderQueueService {
   constructor(
-    @Inject(PrismaService) private readonly db: PrismaClient,
+    private readonly db: PrismaService,
     @InjectQueue(QUEUES.buyer) private readonly queue: Queue<BuyerJobData>,
   ) {}
 

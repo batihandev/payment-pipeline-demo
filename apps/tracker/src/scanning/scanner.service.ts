@@ -2,12 +2,15 @@ import { handlePaymentReorg } from './payment-reorg';
 import { savePaymentEvent } from '../../../../libs/events/src/save-payment-event';
 import { receiveTransfer } from './matching';
 import { setTimeout } from 'node:timers/promises';
-import type {
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import {
   ChainClient,
-  TransferLog,
+  type TransferLog,
 } from '../../../../libs/chain/src/chain-client';
 import { RpcError } from '../../../../libs/chain/src/rpc-error';
-import type { Prisma, PrismaClient } from '../../../../libs/db/src';
+import { PrismaService, type Prisma } from '../../../../libs/db/src';
+import type { TrackerConfig } from '../tracker-config';
 export type TrackerOptions = {
   startBlock?: bigint;
   chainId: number;
@@ -26,16 +29,34 @@ export type TrackerChain = Pick<
 >;
 const max = (a: bigint, b: bigint) => (a > b ? a : b);
 const min = (a: bigint, b: bigint) => (a < b ? a : b);
+@Injectable()
 export class ScannerService {
   readonly cursorName: string;
+  readonly options: TrackerOptions;
   constructor(
-    readonly db: PrismaClient,
-    readonly chain: TrackerChain,
-    readonly options: TrackerOptions,
-    readonly now = () => new Date(),
-    readonly sleep: (ms: number) => Promise<unknown> = setTimeout,
-    readonly rng = Math.random,
+    private readonly db: PrismaService,
+    @Inject(ChainClient) readonly chain: TrackerChain,
+    config: ConfigService<TrackerConfig, true>,
+    @Optional() private readonly now = () => new Date(),
+    @Optional()
+    private readonly sleep: (ms: number) => Promise<unknown> = setTimeout,
+    @Optional() private readonly rng = Math.random,
   ) {
+    const get = <K extends keyof TrackerConfig>(key: K) =>
+      config.get(key, { infer: true });
+    const options: TrackerOptions = {
+      startBlock: get('START_BLOCK'),
+      chainId: get('CHAIN_ID'),
+      shop: get('SHOP_ADDRESS'),
+      buyer: get('BUYER_ADDRESS'),
+      maxRange: get('MAX_RANGE'),
+      minRange: get('MIN_RANGE'),
+      rescanBlocks: get('RESCAN_BLOCKS'),
+      rpcAttempts: get('RPC_MAX_ATTEMPTS'),
+      gapAttempts: get('GAP_MAX_ATTEMPTS'),
+      confirmations: get('CONFIRMATIONS'),
+    };
+    this.options = options;
     this.cursorName = `chain-${options.chainId}-${options.shop.toLowerCase()}`;
     if (
       options.maxRange <= options.rescanBlocks + 1 ||

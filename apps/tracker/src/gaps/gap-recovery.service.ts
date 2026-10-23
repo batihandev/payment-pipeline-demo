@@ -1,10 +1,12 @@
-import type { PrismaClient } from '../../../../libs/db/src';
-import type { ScannerService } from '../scanning/scanner.service';
+import { Injectable, Optional } from '@nestjs/common';
+import { PrismaService } from '../../../../libs/db/src';
+import { ScannerService } from '../scanning/scanner.service';
+@Injectable()
 export class GapRecoveryService {
   constructor(
-    readonly db: PrismaClient,
-    readonly scanner: ScannerService,
-    readonly now = () => new Date(),
+    private readonly db: PrismaService,
+    private readonly scanner: ScannerService,
+    @Optional() private readonly now = () => new Date(),
   ) {}
   async retryOnce(): Promise<void> {
     const gap = await this.db.scanGap.findFirst({

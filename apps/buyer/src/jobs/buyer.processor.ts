@@ -9,7 +9,7 @@ import { UnrecoverableError, type Job } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { RpcError } from '../../../../libs/chain/src/rpc-error';
 import { DAY_MS } from '../../../../libs/core/src/time';
-import { PrismaService, type PrismaClient } from '../../../../libs/db/src';
+import { PrismaService } from '../../../../libs/db/src';
 import { publishPayment } from '../../../../libs/events/src/publish-payment';
 import {
   OrderQueueService,
@@ -34,7 +34,7 @@ export class BuyerProcessor
   private readonly retentionMs: number;
 
   constructor(
-    @Inject(PrismaService) private readonly db: PrismaClient,
+    private readonly db: PrismaService,
     @Inject(REDIS) private readonly redis: Redis,
     private readonly purchases: PurchasesService,
     private readonly orderQueue: OrderQueueService,

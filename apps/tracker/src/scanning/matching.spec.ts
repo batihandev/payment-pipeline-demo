@@ -6,6 +6,7 @@ import {
   log,
   now,
   options,
+  trackerConfig,
   order,
 } from '../../testing/fixtures';
 import { ScannerService } from './scanner.service';
@@ -21,7 +22,7 @@ beforeEach(async () => {
   await clear(f.db);
   f.chain = new TrackerChain();
   f.chain.logs = [log()];
-  scanner = new ScannerService(f.db, f.chain, options, () => now);
+  scanner = new ScannerService(f.db, f.chain, trackerConfig(), () => now);
 });
 it('matches a transfer by its integer amount to a recent open order', async () => {
   const row = await order(f.db);
@@ -128,12 +129,12 @@ it('does not credit a paid order from a copied amount', async () => {
 });
 it('matches buyer transfers whatever the address case', async () => {
   const row = await order(f.db);
-  const checksummed = `0x${'1A'.repeat(20)}`;
+  const checksummed = `0x${'1A'.repeat(20)}` as const;
   f.chain.logs = [{ ...log(), from: `0x${'1a'.repeat(20)}` }];
   scanner = new ScannerService(
     f.db,
     f.chain,
-    { ...options, buyer: checksummed },
+    trackerConfig({ buyer: checksummed }),
     () => now,
   );
   await scanner.scanOnce();
@@ -148,7 +149,7 @@ it('matches a checksummed log sender against a lower-case buyer address', async 
   scanner = new ScannerService(
     f.db,
     f.chain,
-    { ...options, buyer: `0x${'1a'.repeat(20)}` },
+    trackerConfig({ buyer: `0x${'1a'.repeat(20)}` }),
     () => now,
   );
   await scanner.scanOnce();

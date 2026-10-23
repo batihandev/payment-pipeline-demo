@@ -7,6 +7,7 @@ import {
   log,
   now,
   options,
+  trackerConfig,
   order,
 } from '../../testing/fixtures';
 import { ScannerService } from './scanner.service';
@@ -25,7 +26,7 @@ beforeEach(async () => {
   f.chain = new TrackerChain();
   f.chain.logs = [log()];
   await order(f.db);
-  scanner = new ScannerService(f.db, f.chain, options, () => now);
+  scanner = new ScannerService(f.db, f.chain, trackerConfig(), () => now);
   await scanner.scanOnce();
   progress = new ProgressService(f.db, scanner, () => now);
 });

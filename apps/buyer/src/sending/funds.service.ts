@@ -1,17 +1,21 @@
-import type {
-  Address,
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import {
   ChainClient,
+  type Address,
 } from '../../../../libs/chain/src/chain-client';
-import type { PrismaClient } from '../../../../libs/db/src';
+import { PrismaService } from '../../../../libs/db/src';
+import { BUYER_ADDRESS } from './wallets';
 
+@Injectable()
 export class FundsService {
   private cached?: { usdc: bigint; at: number };
   constructor(
-    private readonly db: PrismaClient,
+    private readonly db: PrismaService,
+    @Inject(ChainClient)
     private readonly chain: Pick<ChainClient, 'getBalances'>,
-    private readonly buyer: Address,
-    private readonly ttlMs = 3000,
-    private readonly now = Date.now,
+    @Inject(BUYER_ADDRESS) private readonly buyer: Address,
+    @Optional() private readonly ttlMs = 3000,
+    @Optional() private readonly now = Date.now,
   ) {}
 
   /**

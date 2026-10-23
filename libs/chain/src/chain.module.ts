@@ -1,7 +1,6 @@
 import { Module, type DynamicModule, type Provider } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Redis } from 'ioredis';
-import { privateKeyToAccount } from 'viem/accounts';
 import type { apiSchema, buyerSchema, trackerSchema } from '../../config/src';
 import type { z } from 'zod';
 import { REDIS } from '../../redis/src';
@@ -11,6 +10,7 @@ import {
   type Address,
   type Hex,
 } from './chain-client';
+import { walletAddress } from './wallet-address';
 import { serviceLimiter } from './service-limiter';
 import { ViemChainClient } from './viem-client';
 
@@ -38,7 +38,7 @@ function viemClient(
       : undefined;
   const shopAddress =
     service === 'buyer'
-      ? privateKeyToAccount(get('SHOP_PRIVATE_KEY') as Hex).address
+      ? walletAddress(get('SHOP_PRIVATE_KEY'))
       : service === 'tracker'
         ? (get('SHOP_ADDRESS') as Address)
         : undefined;

@@ -1,18 +1,21 @@
 import { RpcError } from '../../../../libs/chain/src/rpc-error';
-import type {
-  Address,
+import { Inject, Injectable } from '@nestjs/common';
+import {
   ChainClient,
+  type Address,
 } from '../../../../libs/chain/src/chain-client';
-import type { PrismaClient } from '../../../../libs/db/src';
+import { PrismaService } from '../../../../libs/db/src';
 import { OrderSenderService } from '../sending/order-sender.service';
+import { SHOP_ADDRESS } from '../sending/wallets';
 import { utcDateKey } from '../../../../libs/core/src/time';
 
+@Injectable()
 export class SweepService {
   constructor(
-    private readonly db: PrismaClient,
+    private readonly db: PrismaService,
     private readonly chain: ChainClient,
     private readonly sender: OrderSenderService,
-    private readonly shop: Address,
+    @Inject(SHOP_ADDRESS) private readonly shop: Address,
   ) {}
   async run(day: Date, exhausted = false): Promise<void> {
     const id = utcDateKey(day);

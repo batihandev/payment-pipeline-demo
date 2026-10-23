@@ -1,13 +1,15 @@
 import { handlePaymentReorg } from './payment-reorg';
 import { savePaymentEvent } from '../../../../libs/events/src/save-payment-event';
 import type { Hex } from '../../../../libs/chain/src/chain-client';
-import type { PrismaClient } from '../../../../libs/db/src';
-import type { ScannerService } from './scanner.service';
+import { Injectable, Optional } from '@nestjs/common';
+import { PrismaService } from '../../../../libs/db/src';
+import { ScannerService } from './scanner.service';
+@Injectable()
 export class ProgressService {
   constructor(
-    readonly db: PrismaClient,
-    readonly scanner: ScannerService,
-    readonly now = () => new Date(),
+    private readonly db: PrismaService,
+    private readonly scanner: ScannerService,
+    @Optional() private readonly now = () => new Date(),
   ) {}
   async advance(head: bigint, finalized = 0n): Promise<void> {
     const payments = await this.db.payment.findMany({

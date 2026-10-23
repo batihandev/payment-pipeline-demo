@@ -1,7 +1,6 @@
 import type { Provider } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { Hex } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
+import { walletAddress } from '../../../../libs/chain/src/wallet-address';
 import type { BuyerConfig } from '../buyer-config';
 
 export const BUYER_ADDRESS = Symbol('BUYER_ADDRESS');
@@ -14,7 +13,7 @@ const addressOf = (
   provide,
   inject: [ConfigService],
   useFactory: (config: ConfigService<BuyerConfig, true>) =>
-    privateKeyToAccount(config.get(key, { infer: true }) as Hex).address,
+    walletAddress(config.get(key, { infer: true })),
 });
 
 export const walletProviders: Provider[] = [

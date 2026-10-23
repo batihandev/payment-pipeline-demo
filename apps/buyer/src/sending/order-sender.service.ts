@@ -1,17 +1,21 @@
+import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { keccak256 } from 'viem';
-import type {
-  Address,
+import {
   ChainClient,
-  Hex,
   TransferSigner,
+  type Address,
+  type Hex,
 } from '../../../../libs/chain/src/chain-client';
 import { RpcError } from '../../../../libs/chain/src/rpc-error';
 import {
   BudgetReservation,
+  PrismaService,
   type Prisma,
-  type PrismaClient,
 } from '../../../../libs/db/src';
+import type { BuyerConfig } from '../buyer-config';
 import { RedisLock } from './redis-lock';
+import { BUYER_ADDRESS, SHOP_ADDRESS } from './wallets';
 
 class NonceResynced extends RpcError {
   constructor() {
@@ -20,15 +24,21 @@ class NonceResynced extends RpcError {
 }
 type Target = { kind: 'order' | 'sweep'; id: string };
 const UNSEEN_AFTER_MS = 2 * 60 * 1000;
-type SenderOptions = { buyer: Address; shop: Address; chainId: number };
+@Injectable()
 export class OrderSenderService {
+  private readonly chainId: number;
+
   constructor(
-    private readonly db: PrismaClient,
+    private readonly db: PrismaService,
     private readonly chain: ChainClient,
     private readonly signer: TransferSigner,
     private readonly lock: RedisLock,
-    private readonly options: SenderOptions,
-  ) {}
+    @Inject(BUYER_ADDRESS) private readonly buyer: Address,
+    @Inject(SHOP_ADDRESS) private readonly shop: Address,
+    config: ConfigService<BuyerConfig, true>,
+  ) {
+    this.chainId = config.get('CHAIN_ID', { infer: true });
+  }
   private readonly suspectedDropped = new Set<string>();
   /** Buyer-wallet transfers broadcast but not yet seen by the tracker. */
   inFlight(): Promise<number> {
@@ -67,9 +77,7 @@ export class OrderSenderService {
       if (!listed.has(id)) this.suspectedDropped.delete(id);
     if (!orders.length) return;
     // Read before the receipts, as in broadcast(), to narrow the lagging-node window.
-    const confirmed = BigInt(
-      await this.chain.getConfirmedNonce(this.options.buyer),
-    );
+    const confirmed = BigInt(await this.chain.getConfirmedNonce(this.buyer));
     for (const order of orders) {
       if (!order.transactionHash || !order.signedTransaction) continue;
       const receipt = await this.chain.getTransactionReceipt(
@@ -226,9 +234,8 @@ export class OrderSenderService {
     );
   }
   private async send(target: Target, exhausted: boolean): Promise<void> {
-    const from =
-      target.kind === 'order' ? this.options.buyer : this.options.shop;
-    const to = target.kind === 'order' ? this.options.shop : this.options.buyer;
+    const from = target.kind === 'order' ? this.buyer : this.shop;
+    const to = target.kind === 'order' ? this.shop : this.buyer;
     try {
       await this.lock.run(from, async () => {
         const row = await this.prepare(target, from, to);
@@ -254,7 +261,7 @@ export class OrderSenderService {
             const observed = await tx.payment.findFirst({
               where: {
                 provider: 'chain',
-                chainId: this.options.chainId,
+                chainId: this.chainId,
                 transactionHash: { equals: hash, mode: 'insensitive' },
               },
             });
@@ -281,7 +288,7 @@ export class OrderSenderService {
                 orderId: row.id,
                 amount: row.amount,
                 stage: 'sent',
-                chainId: this.options.chainId,
+                chainId: this.chainId,
                 transactionHash: hash,
                 sentAt: new Date(),
               },

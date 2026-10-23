@@ -5,7 +5,7 @@ import {
   hash,
   log,
   now,
-  options,
+  trackerConfig,
 } from '../../testing/fixtures';
 import { ScannerService } from './scanner.service';
 let f: Awaited<ReturnType<typeof fixture>>;
@@ -24,7 +24,7 @@ beforeEach(async () => {
   scanner = new ScannerService(
     f.db,
     f.chain,
-    options,
+    trackerConfig(),
     () => now,
     async () => {},
     () => 0.5,
@@ -139,7 +139,7 @@ it('backs off transient failures and stores an exhausted range as a gap', async 
   scanner = new ScannerService(
     f.db,
     f.chain,
-    options,
+    trackerConfig(),
     () => now,
     async (ms) => {
       waits.push(ms);
@@ -214,7 +214,7 @@ it('retains one open gap when an unchanged head repeats the same failed range', 
 });
 it('rejects a minimum scan range that cannot advance beyond the configured overlap', () => {
   expect(
-    () => new ScannerService(f.db, f.chain, { ...options, minRange: 5 }),
+    () => new ScannerService(f.db, f.chain, trackerConfig({ minRange: 5 })),
   ).toThrow('MIN_RANGE');
 });
 it('stores one payment and one cursor when two scans overlap', async () => {
@@ -226,20 +226,22 @@ it('stores one payment and one cursor when two scans overlap', async () => {
 
 it('starts a fresh database near the head and saves the cursor', async () => {
   f.chain.head = 100000n;
-  scanner = new ScannerService(f.db, f.chain, {
-    ...options,
-    startBlock: undefined,
-  });
+  scanner = new ScannerService(
+    f.db,
+    f.chain,
+    trackerConfig({ startBlock: undefined }),
+  );
   await scanner.scanOnce();
   expect(f.chain.ranges).toEqual([[99995n, 100000n]]);
   expect((await f.db.cursor.findFirstOrThrow()).blockNumber).toBe(100000n);
 });
 it('uses START_BLOCK on a fresh database and retains an existing cursor on restart', async () => {
   f.chain.head = 100000n;
-  scanner = new ScannerService(f.db, f.chain, {
-    ...options,
-    startBlock: 80000n,
-  });
+  scanner = new ScannerService(
+    f.db,
+    f.chain,
+    trackerConfig({ startBlock: 80000n }),
+  );
   await scanner.scanOnce();
   expect(f.chain.ranges).toEqual([[80000n, 80499n]]);
   await scanner.scanOnce();

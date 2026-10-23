@@ -3,9 +3,10 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/client';
+import type { PrismaService } from '../src/database.module';
 
 export async function testDatabase(): Promise<{
-  db: PrismaClient;
+  db: PrismaService;
   close: () => Promise<void>;
 }> {
   const connectionString = process.env.TEST_DATABASE_URL;
@@ -18,8 +19,13 @@ export async function testDatabase(): Promise<{
   await admin.$executeRawUnsafe(`CREATE SCHEMA "${schema}"`);
   const url = new URL(connectionString);
   url.searchParams.set('options', `-c search_path=${schema}`);
-  const db = new PrismaClient({
+  const client = new PrismaClient({
     adapter: new PrismaPg({ connectionString: url.toString() }, { schema }),
+  });
+  const db = Object.assign(client, {
+    onModuleDestroy: async () => {
+      await client.$disconnect();
+    },
   });
   const migrations = join(__dirname, '../prisma/migrations');
   for (const entry of readdirSync(migrations, { withFileTypes: true })

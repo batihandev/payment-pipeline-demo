@@ -10,11 +10,14 @@ import {
   log,
   now,
   options,
+  trackerConfig,
   order,
   shop,
 } from '../testing/fixtures';
 import { ScannerService } from './scanning/scanner.service';
 import { testRedisUrl } from '../../../libs/config/testing/redis';
+import { fakeConfig } from '../../../libs/config/testing/config';
+import type { BuyerConfig } from '../../buyer/src/buyer-config';
 let f: Awaited<ReturnType<typeof fixture>>;
 let redis: Redis;
 beforeAll(async () => {
@@ -37,7 +40,9 @@ it('keeps one payment when the tracker observes a broadcast before the buyer rec
     chain,
     chain,
     new RedisLock(redis, 'tracker-buyer-link'),
-    { buyer: log().from, shop, chainId: options.chainId },
+    log().from,
+    shop,
+    fakeConfig<BuyerConfig>({ CHAIN_ID: options.chainId }),
   );
   chain.fail = 'after-broadcast';
   await expect(sender.sendForOrder(row.id)).rejects.toMatchObject({
@@ -48,7 +53,7 @@ it('keeps one payment when the tracker observes a broadcast before the buyer rec
   });
   const blocks = new TrackerChain();
   blocks.logs = [{ ...log(), txHash: sentOrder.transactionHash as Hex }];
-  await new ScannerService(f.db, blocks, options, () => now).scanOnce();
+  await new ScannerService(f.db, blocks, trackerConfig(), () => now).scanOnce();
   const received = await f.db.payment.findFirstOrThrow();
   chain.fail = null;
   await sender.sendForOrder(row.id);

@@ -6,6 +6,8 @@ import { RedisLock } from '../sending/redis-lock';
 import { OrderSenderService } from '../sending/order-sender.service';
 import { SweepService } from './sweep.service';
 import { testRedisUrl } from '../../../../libs/config/testing/redis';
+import { fakeConfig } from '../../../../libs/config/testing/config';
+import type { BuyerConfig } from '../buyer-config';
 const buyer = `0x${'11'.repeat(20)}` as const;
 const shop = `0x${'22'.repeat(20)}` as const;
 const day = new Date('2026-10-20');
@@ -31,7 +33,9 @@ beforeEach(async () => {
     chain,
     chain,
     new RedisLock(redis, 'sweep-test'),
-    { buyer, shop, chainId: 84532 },
+    buyer,
+    shop,
+    fakeConfig<BuyerConfig>({ CHAIN_ID: 84532 }),
   );
   sweep = new SweepService(database.db, chain, sender, shop);
 });
@@ -103,7 +107,9 @@ it('records a concurrent rebroadcast of one sweep as one completed sweep', async
     chain,
     chain,
     new RedisLock(redis, 'other-sweep-lease'),
-    { buyer, shop, chainId: 84532 },
+    buyer,
+    shop,
+    fakeConfig<BuyerConfig>({ CHAIN_ID: 84532 }),
   );
   await Promise.all([sweep.run(day), other.sendForSweep('2026-10-20')]);
   expect(chain.signed).toBe(1);

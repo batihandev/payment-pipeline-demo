@@ -1,13 +1,15 @@
+import { Injectable, Optional } from '@nestjs/common';
 import {
   OrderQueueService,
   PurchasesService,
 } from '../../../../libs/orders/src';
 
+@Injectable()
 export class PaceService {
   constructor(
     private readonly purchases: PurchasesService,
     private readonly orderQueue: OrderQueueService,
-    private readonly rng = Math.random,
+    @Optional() private readonly rng = Math.random,
   ) {}
 
   async pace(now: Date) {

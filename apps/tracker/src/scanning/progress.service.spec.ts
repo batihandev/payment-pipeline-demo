@@ -4,7 +4,7 @@ import {
   TrackerChain,
   log,
   now,
-  options,
+  trackerConfig,
   order,
 } from '../../testing/fixtures';
 import { ScannerService } from './scanner.service';
@@ -22,17 +22,22 @@ beforeEach(async () => {
   f.chain = new TrackerChain();
   f.chain.logs = [log()];
   await order(f.db);
-  await new ScannerService(f.db, f.chain, options, () => now).scanOnce();
+  await new ScannerService(
+    f.db,
+    f.chain,
+    trackerConfig(),
+    () => now,
+  ).scanOnce();
   progress = new ProgressService(
     f.db,
-    new ScannerService(f.db, f.chain, options, () => now),
+    new ScannerService(f.db, f.chain, trackerConfig(), () => now),
     () => now,
   );
 });
 it('settles a donation without an order or notice', async () => {
   await clear(f.db);
   f.chain.logs = [{ ...log(), from: `0x${'aa'.repeat(20)}` }];
-  const scanner = new ScannerService(f.db, f.chain, options, () => now);
+  const scanner = new ScannerService(f.db, f.chain, trackerConfig(), () => now);
   await scanner.scanOnce();
   await new ProgressService(f.db, scanner, () => now).advance(15n);
   expect(await f.db.payment.findFirstOrThrow()).toMatchObject({

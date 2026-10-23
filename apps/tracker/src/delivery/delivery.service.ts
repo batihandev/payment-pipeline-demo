@@ -1,15 +1,20 @@
+import { InjectQueue } from '@nestjs/bullmq';
+import { Injectable, Optional } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import type { Queue } from 'bullmq';
-import type { PrismaClient } from '../../../../libs/db/src';
-import { JOBS } from '../../../../libs/queues/src';
+import { PrismaService } from '../../../../libs/db/src';
+import { JOBS, QUEUES } from '../../../../libs/queues/src';
+import { InjectRedis } from '../../../../libs/redis/src';
 import { noticeRetryOptions } from '../notices/notice-retry';
 import { paymentChannel } from '../../../../libs/events/src/publish-payment';
+@Injectable()
 export class DeliveryService {
   constructor(
-    readonly db: PrismaClient,
-    readonly redis: Pick<Redis, 'publish'>,
-    readonly queue: Queue<{ paymentId: string }>,
-    readonly now = () => new Date(),
+    private readonly db: PrismaService,
+    @InjectRedis() private readonly redis: Pick<Redis, 'publish'>,
+    @InjectQueue(QUEUES.shopNotices)
+    private readonly queue: Queue<{ paymentId: string }>,
+    @Optional() private readonly now = () => new Date(),
   ) {}
   async flush(): Promise<void> {
     const events = await this.db.paymentEvent.findMany({

@@ -1,9 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common';
-import { PrismaService, type PrismaClient } from '../../../../libs/db/src';
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../../../../libs/db/src';
 
 @Injectable()
 export class ExpiryService {
-  constructor(@Inject(PrismaService) private readonly db: PrismaClient) {}
+  constructor(private readonly db: PrismaService) {}
 
   async expireOrders(now: Date): Promise<number> {
     const result = await this.db.order.updateMany({

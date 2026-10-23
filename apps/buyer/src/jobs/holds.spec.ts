@@ -7,6 +7,8 @@ import { ExpiryService } from '../expiry/expiry.service';
 import { holdWhenFull, holdWhenShort } from './holds';
 import { OrderSenderService } from '../sending/order-sender.service';
 import { testRedisUrl } from '../../../../libs/config/testing/redis';
+import { fakeConfig } from '../../../../libs/config/testing/config';
+import type { BuyerConfig } from '../buyer-config';
 
 let database: Awaited<ReturnType<typeof testDatabase>>;
 let queue: Queue<BuyerJobData>;
@@ -69,7 +71,9 @@ it('delays a send while 10 are in flight without using an attempt', async () => 
     {} as never,
     {} as never,
     {} as never,
-    { buyer: `0x${'11'.repeat(20)}`, shop: `0x${'22'.repeat(20)}`, chainId: 1 },
+    `0x${'11'.repeat(20)}`,
+    `0x${'22'.repeat(20)}`,
+    fakeConfig<BuyerConfig>({ CHAIN_ID: 1 }),
   );
   await queue.add('send-order', { orderId: ids[0] }, { attempts: 1 });
   let sent = false;
