@@ -28,7 +28,7 @@ On the chain rail, only transfers from `BUYER_ADDRESS` are matched to orders. An
 
 Chain payments follow `sent → received → confirming → settled → notified` and gain a final flag when the chain finalizes their block. The ledger's unique payment key enforces one credit per payment.
 
-Card payments follow `sent → processing → settled → notified`, with no confirmation count, or end at the terminal `failed` stage. The buyer creates a Stripe PaymentIntent for the order and records the payment as `processing`. The API's `POST /stripe/webhooks` route is the only writer of card settlement: `payment_intent.succeeded` writes the ledger entry, the shop notice and the order's `paid` status, and sets the final flag at once. The notice then marks the payment `notified`, as on the chain rail. A stage never moves backwards, whatever order the events arrive in.
+Card payments follow `sent → processing → settled → notified`, with no confirmation count, or end at the terminal `failed` stage. The buyer creates a Stripe PaymentIntent for the order and records the payment as `processing`. The API's `POST /stripe/webhooks` route is the only writer of card settlement: `payment_intent.succeeded` writes the ledger entry, the shop notice and the order's `paid` status, and sets the final flag at once. The notice then marks the payment `notified`, as on the chain rail. A card payment's stage never moves backwards, whatever order the events arrive in.
 
 Webhook handling:
 
