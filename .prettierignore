@@ -4,4 +4,3 @@ dist/
 coverage/
 libs/db/generated/
 .superpowers/
-.stage3/
