@@ -35,6 +35,7 @@ export function configureApp(
     type: isStripeEvent,
   });
   app.useBodyParser('json', { limit: MAX_BODY_BYTES });
+  app.useBodyParser('urlencoded', { limit: MAX_BODY_BYTES, extended: false });
   app.enableCors({
     origin: [config.WEB_ORIGIN],
     methods: ['GET', 'POST', 'OPTIONS'],
