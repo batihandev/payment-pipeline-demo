@@ -167,7 +167,11 @@ export function SettledChart({ days }: { days: DailyStat[] }) {
               cx={point(i).x.toFixed(1)}
               cy={point(i).y.toFixed(1)}
               r="4"
-            />
+            >
+              <title>
+                {`${bars[i]?.label}: average ${seconds(bars[i]?.averageMs ?? 0)}`}
+              </title>
+            </circle>
           ))}
           {labelIndexes(bars.length, plotWidth).map((index) => {
             const bar = bars[index];
