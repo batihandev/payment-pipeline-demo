@@ -181,7 +181,7 @@ Optional settings and their defaults:
 | `STREAMS_PER_IP`                             | 5                              | Open live-stream connections allowed per client address                                                |
 | `STREAMS_TOTAL`                              | 500                            | Open live-stream connections allowed in all                                                            |
 | `STRIPE_SECRET_KEY`                          | unset                          | Stripe test-mode secret key (`sk_test_…`); the card rail is off without it; other prefixes are refused |
-| `STRIPE_WEBHOOK_SECRET`                      | unset                          | Stripe webhook signing secret (`whsec_…`); the API answers 404 on the webhook route without it         |
+| `STRIPE_WEBHOOK_SECRET`                      | unset                          | Stripe webhook signing secret (`whsec_…`); the API rejects every webhook with 400 without it           |
 | `STRIPE_PAYMENT_METHOD`                      | `pm_card_visa`                 | Test payment method the setup script attaches to the demo customer                                     |
 | `STRIPE_REQUESTS_PER_SECOND`                 | 5                              | Buyer's Stripe request rate                                                                            |
 | `TRUST_PROXY`                                | `false`                        | Set `true` to read the client address from proxy headers                                               |

@@ -7,5 +7,6 @@ it('lists the incident kinds a receipt note can explain', () => {
     'send_reverted',
     'send_dropped',
     'paid_after_expiry',
+    'card_failed',
   ]);
 });

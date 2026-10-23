@@ -1,10 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { RpcError } from '../../../../libs/chain/src/rpc-error';
-import {
-  BudgetReservation,
-  PrismaService,
-  type Prisma,
-} from '../../../../libs/db/src';
+import { PrismaService, type Prisma } from '../../../../libs/db/src';
+import { closeOrder } from '../../../../libs/orders/src/close-order';
 import { CustomersService } from '../../../../libs/orders/src';
 import {
   CardDeclinedError,
@@ -58,21 +55,6 @@ export class CardSenderService {
     await tx.$queryRaw`SELECT id FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
   }
 
-  private close(tx: Prisma.TransactionClient, order: ClosableOrder) {
-    return Promise.all([
-      tx.order.update({
-        where: { id: order.id },
-        data: { sendState: 'failed', status: 'expired' },
-      }),
-      order.source === 'schedule'
-        ? new BudgetReservation(tx).release(
-            order.createdAt,
-            order.expectedAmount,
-          )
-        : undefined,
-    ]);
-  }
-
   /** Returns the order when it is pending and open; closes an expired unsent one. */
   private claim(orderId: string) {
     return this.db.$transaction(async (tx) => {
@@ -82,7 +64,7 @@ export class CardSenderService {
       });
       if (order.sendState !== 'pending') return null;
       if (order.status === 'expired') {
-        await this.close(tx, order);
+        await closeOrder(tx, order);
         return null;
       }
       await tx.order.update({
@@ -137,7 +119,7 @@ export class CardSenderService {
         where: { id: orderId },
       });
       if (order.sendState !== 'pending') return;
-      await this.close(tx, order);
+      await closeOrder(tx, order);
       await tx.incident.create({
         data: {
           kind: 'card_failed',
@@ -156,7 +138,7 @@ export class CardSenderService {
         where: { id: orderId },
       });
       const closed = kind === 'permanent' && order.sendState === 'pending';
-      if (closed) await this.close(tx, order);
+      if (closed) await closeOrder(tx, order);
       else if (exhausted && order.sendState === 'pending')
         await tx.order.update({
           where: { id: orderId },
@@ -176,10 +158,3 @@ export class CardSenderService {
     });
   }
 }
-
-type ClosableOrder = {
-  id: string;
-  source: 'schedule' | 'visitor';
-  createdAt: Date;
-  expectedAmount: bigint;
-};

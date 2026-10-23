@@ -7,7 +7,7 @@ const notes: { kinds: ReceiptNoteKind[]; text: string }[] = [
     text: 'The block with this payment was replaced, so the tracker checked it again.',
   },
   {
-    kinds: ['send_reverted', 'send_dropped'],
+    kinds: ['send_reverted', 'send_dropped', 'card_failed'],
     text: 'This payment did not go through, so nothing was credited.',
   },
   {

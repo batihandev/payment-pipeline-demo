@@ -6,8 +6,8 @@ import { bigintReplacer } from '../../../libs/core/src/json';
 import { AppModule } from './app.module';
 import type { ApiConfig } from './common/api-config';
 
-// Only the shop notice route takes a body, and a signed notice is far smaller than this.
-const MAX_BODY_BYTES = 4096;
+// Stripe events run to several kilobytes; the shop notice route enforces its own, smaller limit.
+const MAX_BODY_BYTES = 65_536;
 
 export const applicationOptions = { rawBody: true, logger: false } as const;
 

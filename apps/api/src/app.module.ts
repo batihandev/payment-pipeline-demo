@@ -18,6 +18,7 @@ import { HealthModule } from './health/health.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { NoticesModule } from './notices/notices.module';
 import { PaymentsModule } from './payments/payments.module';
+import { StripeWebhooksModule } from './stripe-webhooks/stripe-webhooks.module';
 import { TestPurchasesModule } from './test-purchases/test-purchases.module';
 import { StatsModule } from './stats/stats.module';
 
@@ -59,6 +60,7 @@ export class AppModule {
         EventsModule,
         TestPurchasesModule,
         NoticesModule,
+        StripeWebhooksModule,
       ],
       providers: [
         { provide: APP_GUARD, useClass: ClientThrottlerGuard },

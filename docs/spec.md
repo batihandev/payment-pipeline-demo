@@ -129,7 +129,7 @@ Stripe (phase 2): `received → processing → settled → notified`, without a 
 | `POST /test-purchases`    | Visitor test buy, as above                                                                                                        |
 | `GET /test-purchases/:id` | Queue position of a waiting visitor purchase                                                                                      |
 | `POST /shop/notices`      | Receives the signed notice. Verifies the signature and timestamp, then marks the payment notified                                 |
-| `POST /stripe/webhook`    | Phase 2                                                                                                                           |
+| `POST /stripe/webhooks`   | Phase 2                                                                                                                           |
 
 **Request limit:** one budget per client address across all routes, `API_REQUESTS_PER_MINUTE` (default 300) a minute, answered with `429`, `rate_limited` and `Retry-After`. `POST /shop/notices` is outside it; its signature is its check. The counted address is the same one the visitor limits and the stream cap use.
 
@@ -188,7 +188,7 @@ The monitor sends one message when a condition starts, one when it clears, and a
 ## Phase 2: Stripe
 
 - The buyer can pay an order with Stripe test mode: create a PaymentIntent with a test card and confirm it server-side.
-- `POST /stripe/webhook` verifies the Stripe signature and credits once, keyed by PaymentIntent id. The event id guards against processing the same event twice.
+- `POST /stripe/webhooks` verifies the Stripe signature and credits once, keyed by PaymentIntent id. The event id guards against processing the same event twice.
 - A repeatable reconciliation job lists recent Stripe events and processes any the webhook missed, recording an incident when it does.
 - Locally, `stripe listen --forward-to` delivers webhooks.
 - Scheduled purchases pick a payment method at creation by a configured split (for example 70% test network, 30% card). Both methods share the same daily budget reservation.

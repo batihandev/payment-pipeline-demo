@@ -11,6 +11,9 @@ import { ApiError } from '../common/api-error';
 import type { ApiConfig } from '../common/api-config';
 import { InjectNow, type Now } from '../common/clock.module';
 
+// A signed notice is far smaller than this.
+const MAX_NOTICE_BYTES = 4096;
+
 /** Checks the HMAC over the exact request bytes before the body is parsed into a DTO. */
 @Injectable()
 export class NoticeSignatureGuard implements CanActivate {
@@ -24,6 +27,8 @@ export class NoticeSignatureGuard implements CanActivate {
       .switchToHttp()
       .getRequest<RawBodyRequest<Request>>();
     const raw = request.rawBody;
+    if (raw && raw.length > MAX_NOTICE_BYTES)
+      throw new ApiError(413, 'payload_too_large');
     const timestamp = request.headers['x-notice-timestamp'];
     const signature = request.headers['x-notice-signature'];
     if (
