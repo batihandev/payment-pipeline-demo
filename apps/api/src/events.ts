@@ -9,8 +9,12 @@ export async function registerEvents(
 ): Promise<void> {
   const clients = new Set<PassThrough>();
   const unsubscribe = await subscribePayments(redis, (body) => {
-    const payment = JSON.parse(body) as { donation: boolean; amount: string };
-    if (payment.donation && BigInt(payment.amount) < donationMin) return;
+    try {
+      const payment = JSON.parse(body) as { donation: boolean; amount: string };
+      if (payment.donation && BigInt(payment.amount) < donationMin) return;
+    } catch {
+      return;
+    }
     for (const stream of clients)
       if (!stream.write(`data: ${body}\n\n`)) stream.destroy();
   });

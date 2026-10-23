@@ -2,6 +2,7 @@ import { FastifyAdapter } from '@nestjs/platform-fastify';
 import { Redis } from 'ioredis';
 import { once } from 'node:events';
 import {
+  paymentChannel,
   publishPayment,
   serializePayment,
 } from '../../../libs/events/src/publish-payment';
@@ -83,6 +84,16 @@ it('skips donations below DONATION_MIN on the stream', async () => {
   const body = chunks.join('');
   expect(body).toContain('"amount":"10000"');
   expect(body).not.toContain('"amount":"9999"');
+  stream.destroy();
+});
+it('skips a malformed message and relays the next one', async () => {
+  const stream = await openStream();
+  const chunks: string[] = [];
+  stream.on('data', (chunk) => chunks.push(String(chunk)));
+  await redis.publish(paymentChannel, 'not json');
+  await publishPayment(redis, await donation('after-malformed', 10000n));
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  expect(chunks.join('')).toContain('"amount":"10000"');
   stream.destroy();
 });
 it('streams donations without the sender', async () => {
