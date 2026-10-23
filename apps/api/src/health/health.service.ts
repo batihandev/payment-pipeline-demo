@@ -65,7 +65,7 @@ export class HealthService {
         }),
       ),
       Promise.all(
-        ['buyer', 'tracker', 'api'].map(
+        ['buyer', 'tracker', 'api', 'stripe'].map(
           async (name) =>
             [
               name,

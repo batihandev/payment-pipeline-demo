@@ -128,6 +128,16 @@ Buyer and tracker run as Nest application contexts. All three stop cleanly on `S
 
 PostgreSQL binds to `127.0.0.1:55432` and Redis to `127.0.0.1:56379`. `pnpm db:migrate` waits for healthy services before running Prisma migrations. Compose volumes persist their data. `docker compose down` stops the services.
 
+## Card payments
+
+The card rail uses Stripe test mode and is off until a test secret key is set. Keys with any other prefix are refused at startup. Cards are charged off-session with an idempotency key per order, so a retried send never charges twice.
+
+1. Put a test secret key (`sk_test_…`) in `STRIPE_SECRET_KEY`.
+2. Run `pnpm stripe:setup`. It creates the demo customer in Stripe, attaches a test card (`STRIPE_PAYMENT_METHOD`, `pm_card_visa` by default) as the customer's own payment method, and stores the Stripe IDs, the card brand and the last four digits. It sets the customer's chain address from `BUYER_PRIVATE_KEY`. It prints only those IDs and the card label, and a second run changes nothing.
+3. Set `STRIPE_WEBHOOK_SECRET` (`whsec_…`) from the webhook endpoint you register in the Stripe dashboard.
+
+No card data is stored beyond Stripe IDs, the brand and the last four digits.
+
 ## Configuration
 
 `.env.example` lists the environment variables; `libs/config/src/index.ts` defines validation and defaults. Money settings use integer micro-units; native balance thresholds use wei. Quiet-window hours and budget days use UTC.

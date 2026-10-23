@@ -56,7 +56,7 @@ it('reports head, scoped cursor lag, open gaps, queued work and live balance war
         lowUsdc: true,
       },
     },
-    cooldowns: { buyer: 0, tracker: 0, api: 0 },
+    cooldowns: { buyer: 0, tracker: 0, api: 0, stripe: 0 },
   });
   await queue.obliterate({ force: true });
   await queue.close();
@@ -205,7 +205,7 @@ it('returns monitoring with null chain fields when the chain read fails', async 
     balances: null,
     chainError: 'timeout',
     openGaps: 0,
-    cooldowns: { buyer: 0, tracker: 0, api: 0 },
+    cooldowns: { buyer: 0, tracker: 0, api: 0, stripe: 0 },
     monitoring: expect.objectContaining({ oldestUnsettledAt: null }),
   });
 });
