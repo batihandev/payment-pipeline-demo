@@ -247,3 +247,14 @@ it('uses START_BLOCK on a fresh database and retains an existing cursor on resta
   await scanner.scanOnce();
   expect(f.chain.ranges[1]).toEqual([80494n, 80993n]);
 });
+it('returns the highest head seen when a later fetch is lower', async () => {
+  f.chain.head = 120n;
+  expect((await scanner.scanOnce()).number).toBe(120n);
+  f.chain.head = 110n;
+  expect(await scanner.scanOnce()).toEqual({
+    number: 120n,
+    hash: hash(120n),
+  });
+  f.chain.head = 130n;
+  expect((await scanner.scanOnce()).number).toBe(130n);
+});

@@ -82,6 +82,20 @@ it('uses one head and finalized snapshot for every payment in a pass', async () 
     final: false,
   });
 });
+it('keeps counting confirmations from the highest head seen when the RPC node lags', async () => {
+  await order(f.db);
+  f.chain.logs = [log(115n)];
+  f.chain.head = 120n;
+  await poller.pass();
+  expect(await f.db.payment.findFirstOrThrow()).toMatchObject({
+    confirmations: 5,
+  });
+  f.chain.head = 110n;
+  await poller.pass();
+  expect(await f.db.payment.findFirstOrThrow()).toMatchObject({
+    confirmations: 5,
+  });
+});
 describe('poll loop', () => {
   const gate = () => {
     let open!: () => void;

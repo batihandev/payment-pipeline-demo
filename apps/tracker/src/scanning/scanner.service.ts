@@ -33,6 +33,8 @@ const min = (a: bigint, b: bigint) => (a < b ? a : b);
 export class ScannerService {
   readonly cursorName: string;
   readonly options: TrackerOptions;
+  /** The public RPC endpoint is load-balanced and some backends answer with an older head. */
+  private highestHead: { number: bigint; hash: string } | undefined;
   constructor(
     private readonly db: PrismaService,
     @Inject(ChainClient) readonly chain: TrackerChain,
@@ -68,7 +70,10 @@ export class ScannerService {
       );
   }
   async scanOnce(): Promise<{ number: bigint; hash: string }> {
-    const head = await this.rpc(() => this.chain.getHead());
+    const fetched = await this.rpc(() => this.chain.getHead());
+    if (!this.highestHead || fetched.number > this.highestHead.number)
+      this.highestHead = fetched;
+    const head = this.highestHead;
     const cursor = await this.db.cursor.findUnique({
       where: { name: this.cursorName },
     });
