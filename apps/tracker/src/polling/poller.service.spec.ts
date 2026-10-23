@@ -94,7 +94,7 @@ describe('poll loop', () => {
     poller.onApplicationBootstrap();
     await new Promise((resolve) => setImmediate(resolve));
     expect(pass).toHaveBeenCalledTimes(1);
-    await poller.beforeApplicationShutdown();
+    await poller.onModuleDestroy();
     expect(pass).toHaveBeenCalledTimes(1);
   });
 
@@ -106,7 +106,7 @@ describe('poll loop', () => {
     });
     poller.onApplicationBootstrap();
     let stopped = false;
-    const stopping = poller.beforeApplicationShutdown().then(() => {
+    const stopping = poller.onModuleDestroy().then(() => {
       stopped = true;
     });
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -123,7 +123,7 @@ describe('poll loop', () => {
       .mockRejectedValue(new Error('rpc down'));
     poller.onApplicationBootstrap();
     await new Promise((resolve) => setTimeout(resolve, 50));
-    await poller.beforeApplicationShutdown();
+    await poller.onModuleDestroy();
     expect(pass).toHaveBeenCalledTimes(1);
     expect(
       await f.db.incident.count({ where: { kind: 'tracker_pass_failed' } }),

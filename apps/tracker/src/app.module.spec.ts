@@ -12,11 +12,12 @@ import { fixture, shop, buyer, TrackerChain } from '../testing/fixtures';
 import { AppModule } from './app.module';
 import { TrackerProcessor } from './delivery/tracker.processor';
 import { ShopNoticesProcessor } from './notices/shop-notices.processor';
+import { PollerService } from './polling/poller.service';
 
 const prefix = `tracker-shutdown-test-${randomUUID()}`;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-it('closes both workers, the poll loop and Redis on shutdown', async () => {
+it('stops the poll loop before closing workers, Redis and the database', async () => {
   Object.assign(process.env, {
     DATABASE_URL: process.env.TEST_DATABASE_URL ?? '',
     REDIS_URL: testRedisUrl(),
@@ -36,6 +37,7 @@ it('closes both workers, the poll loop and Redis on shutdown', async () => {
   let entered!: () => void;
   const inPass = new Promise<void>((resolve) => (entered = resolve));
   let passes = 0;
+  const order: string[] = [];
   const chain = new TrackerChain();
   const getHead = chain.getHead;
   chain.getHead = async () => {
@@ -50,7 +52,16 @@ it('closes both workers, the poll loop and Redis on shutdown', async () => {
     .overrideProvider(getSharedConfigToken())
     .useValue({ connection: { url: testRedisUrl() }, prefix })
     .overrideProvider(PrismaService)
-    .useValue(f.db)
+    .useValue(
+      new Proxy(f.db, {
+        get: (target, name) =>
+          name === 'onModuleDestroy'
+            ? async () => {
+                order.push('database');
+              }
+            : Reflect.get(target, name, target),
+      }),
+    )
     .overrideProvider(ChainClient)
     .useValue(chain)
     .compile();
@@ -60,6 +71,22 @@ it('closes both workers, the poll loop and Redis on shutdown', async () => {
   try {
     await module.init();
     await inPass;
+    const recordEnd = <T extends object>(
+      target: T,
+      method: keyof T,
+      name: string,
+    ) => {
+      const original = (target[method] as () => Promise<unknown>).bind(target);
+      jest.spyOn(target, method as never).mockImplementation((async () => {
+        const result = await original();
+        order.push(name);
+        return result;
+      }) as never);
+    };
+    void module.get(PollerService)['loop']?.then(() => order.push('loop'));
+    recordEnd(tracker.worker, 'close', 'tracker worker');
+    recordEnd(notices.worker, 'close', 'notices worker');
+    recordEnd(redis, 'quit', 'redis');
     expect(tracker.worker.isRunning()).toBe(true);
     expect(notices.worker.isRunning()).toBe(true);
 
@@ -91,6 +118,13 @@ it('closes both workers, the poll loop and Redis on shutdown', async () => {
     await closing;
 
     expect(passes).toBe(1);
+    expect(order[0]).toBe('loop');
+    expect([...new Set(order.slice(1))].sort()).toEqual([
+      'database',
+      'notices worker',
+      'redis',
+      'tracker worker',
+    ]);
     expect(tracker.worker.isRunning()).toBe(false);
     expect(notices.worker.isRunning()).toBe(false);
     expect(redis.status).toBe('end');

@@ -1,14 +1,9 @@
 import { setTimeout } from 'node:timers/promises';
-import type {
-  BeforeApplicationShutdown,
-  OnApplicationBootstrap,
-} from '@nestjs/common';
+import type { OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import type { PrismaClient } from '../../../../libs/db/src';
 import type { ScannerService } from '../scanning/scanner.service';
 import type { ProgressService } from '../scanning/progress.service';
-export class PollerService
-  implements OnApplicationBootstrap, BeforeApplicationShutdown
-{
+export class PollerService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly stopped = new AbortController();
   private loop: Promise<void> | undefined;
 
@@ -23,7 +18,8 @@ export class PollerService
     this.loop = this.poll();
   }
 
-  async beforeApplicationShutdown(): Promise<void> {
+  /** Runs before the global Redis and database modules are destroyed. */
+  async onModuleDestroy(): Promise<void> {
     this.stopped.abort();
     await this.loop;
   }
