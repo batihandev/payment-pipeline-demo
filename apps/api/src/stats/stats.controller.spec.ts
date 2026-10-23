@@ -9,7 +9,10 @@ const state = useReadApi();
 const get = (url: string) => request(state.app.getHttpServer()).get(url);
 const payment = (data = {}) => createPayment(state, data);
 it('computes statistics from ledger rows and incidents and refreshes after five seconds', async () => {
-  expect((await get('/stats')).body).toEqual({
+  const first = await get('/stats');
+  expect(first.headers).not.toHaveProperty('x-powered-by');
+  expect(first.headers).not.toHaveProperty('etag');
+  expect(first.body).toEqual({
     settledCount: 0,
     averageTimeToSettleMs: null,
     duplicatesSkipped: 0,
