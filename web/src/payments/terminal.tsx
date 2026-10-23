@@ -25,7 +25,7 @@ function StateLabel({ label }: { label: string }) {
     };
   }, [shown.swaps]);
   return (
-    <span className="tp-terminal-label">
+    <span className="tp-terminal-label" aria-live="polite">
       <strong
         key={shown.swaps}
         className={`tp-terminal-state ${shown.swaps ? 'tp-terminal-state-in' : ''}`}
@@ -57,7 +57,7 @@ export function Terminal({
   children: ReactNode;
 }) {
   return (
-    <div className="tp-terminal" aria-label="Payment terminal">
+    <div className="tp-terminal" role="group" aria-label="Payment terminal">
       <div className="tp-terminal-screen">
         <span className="tp-mono">{rail}</span>
         <StateLabel label={label} />

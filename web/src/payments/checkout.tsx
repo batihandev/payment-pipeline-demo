@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CardTerminal } from './card-terminal';
 import { ChainTerminal } from './chain-terminal';
 import { checkoutDeadline, checkoutState } from './checkout-state';
@@ -41,6 +41,10 @@ export function Checkout({
 }) {
   const { data, status } = usePayments(apiBaseUrl);
   const [opened, setOpened] = useState(false);
+  const drawerHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (opened) drawerHeading.current?.focus();
+  }, [opened]);
   const {
     sending,
     orderId,
@@ -96,7 +100,9 @@ export function Checkout({
         </button>
       ) : (
         <div className="tp-drawer">
-          <h3>How would you like to pay?</h3>
+          <h3 ref={drawerHeading} tabIndex={-1}>
+            How would you like to pay?
+          </h3>
           <p className="tp-muted">
             The shop chooses an item when your order is accepted.
           </p>
