@@ -1,11 +1,14 @@
 import { ConfigModule } from '@nestjs/config';
-import type { z } from 'zod';
-import { validateConfig } from './index';
 
-export function appConfig(schema: z.ZodObject) {
+/**
+ * Serves a configuration that the app's entry point has already validated. It never reads
+ * `process.env`, so every value has the type its schema parsed it to.
+ */
+export function appConfig(config: object) {
   return ConfigModule.forRoot({
     isGlobal: true,
     ignoreEnvFile: true,
-    validate: (environment) => validateConfig(schema, environment),
+    skipProcessEnv: true,
+    load: [() => ({ ...config })],
   });
 }

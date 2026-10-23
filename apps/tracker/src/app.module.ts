@@ -3,7 +3,6 @@ import { BullModule, getQueueToken } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import type { Queue } from 'bullmq';
 import { appConfig } from '../../../libs/config/src/config.module';
-import { trackerSchema } from '../../../libs/config/src';
 import { DatabaseModule } from '../../../libs/db/src';
 import {
   QUEUES,
@@ -22,12 +21,12 @@ const TRACKER_QUEUE_ERRORS = Symbol('TRACKER_QUEUE_ERRORS');
 
 @Module({})
 export class AppModule {
-  /** Reads and validates the environment when called, so it can be set up first. */
-  static forRoot(): DynamicModule {
+  /** Builds the app from a configuration the entry point has already validated. */
+  static forRoot(config: TrackerConfig): DynamicModule {
     return {
       module: AppModule,
       imports: [
-        appConfig(trackerSchema),
+        appConfig(config),
         DatabaseModule,
         RedisModule.forRoot({ service: 'Tracker' }),
         QueueErrorsModule.forRoot({

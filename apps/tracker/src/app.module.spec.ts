@@ -5,6 +5,7 @@ import { Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { ChainClient } from '../../../libs/chain/src/chain-client';
 import { restoreEnvironmentAfterAll } from '../../../libs/config/testing/environment';
+import { trackerSchema, validateConfig } from '../../../libs/config/src';
 import { testRedisUrl } from '../../../libs/config/testing/redis';
 import { PrismaService } from '../../../libs/db/src';
 import { QUEUES } from '../../../libs/queues/src';
@@ -50,7 +51,7 @@ it('stops the poll loop before closing workers, Redis and the database', async (
     return getHead();
   };
   const module = await Test.createTestingModule({
-    imports: [AppModule.forRoot()],
+    imports: [AppModule.forRoot(validateConfig(trackerSchema, process.env))],
   })
     .overrideProvider(getSharedConfigToken())
     .useValue({ connection: { url: testRedisUrl() }, prefix })

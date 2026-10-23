@@ -45,7 +45,7 @@ export function configureApp(
 export async function createApp(): Promise<NestExpressApplication> {
   const config = validateConfig(apiSchema, process.env);
   const app = await NestFactory.create<NestExpressApplication>(
-    AppModule.forRoot(),
+    AppModule.forRoot(config),
     applicationOptions,
   );
   configureApp(app, config);

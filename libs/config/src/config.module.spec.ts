@@ -1,33 +1,38 @@
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { z } from 'zod';
+import { restoreEnvironmentAfterAll } from '../testing/environment';
 import { appConfig } from './config.module';
+import { validateConfig } from './index';
+
+restoreEnvironmentAfterAll();
 
 const schema = z.object({
   DATABASE_URL: z.url(),
   LIMIT: z.coerce.number().int().default(3),
+  ORIGINS: z.string().transform((value) => value.split(',')),
+  OPTIONAL: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().optional(),
+  ),
 });
 
-afterEach(() => {
-  delete process.env.DATABASE_URL;
-  delete process.env.LIMIT;
-});
-
-it('rejects an invalid environment with the variable names', async () => {
-  process.env.DATABASE_URL = 'not a url';
-  await expect(
-    Test.createTestingModule({ imports: [appConfig(schema)] }).compile(),
-  ).rejects.toThrow('Invalid or missing environment variables: DATABASE_URL');
-});
-
-it('serves validated values with their parsed types', async () => {
-  process.env.DATABASE_URL = 'postgres://localhost/db';
-  process.env.LIMIT = '7';
+it('serves the parsed values it is given and never reads the environment', async () => {
+  const config = validateConfig(schema, {
+    DATABASE_URL: 'postgres://localhost/db',
+    LIMIT: '7',
+    ORIGINS: 'a,b',
+    OPTIONAL: '',
+  });
+  process.env.LIMIT = 'from the environment';
+  process.env.OPTIONAL = '';
   const module = await Test.createTestingModule({
-    imports: [appConfig(schema)],
+    imports: [appConfig(config)],
   }).compile();
-  const config =
+  const service =
     module.get<ConfigService<z.output<typeof schema>, true>>(ConfigService);
-  expect(config.get('LIMIT', { infer: true })).toBe(7);
+  expect(service.get('LIMIT', { infer: true })).toBe(7);
+  expect(service.get('ORIGINS', { infer: true })).toEqual(['a', 'b']);
+  expect(service.get('OPTIONAL', { infer: true })).toBeUndefined();
   await module.close();
 });

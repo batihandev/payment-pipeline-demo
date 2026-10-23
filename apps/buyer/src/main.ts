@@ -1,9 +1,13 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
+import { buyerSchema, validateConfig } from '../../../libs/config/src';
 import { AppModule } from './app.module';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.createApplicationContext(AppModule.forRoot());
+  const config = validateConfig(buyerSchema, process.env);
+  const app = await NestFactory.createApplicationContext(
+    AppModule.forRoot(config),
+  );
   app.enableShutdownHooks();
 }
 

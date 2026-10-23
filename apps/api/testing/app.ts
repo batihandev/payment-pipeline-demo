@@ -39,8 +39,9 @@ export async function createTestApp(
   } = {},
 ): Promise<NestExpressApplication> {
   Object.assign(process.env, apiTestEnvironment(), options.environment);
+  const config = validateConfig(apiSchema, process.env);
   const builder = Test.createTestingModule({
-    imports: [AppModule.forRoot()],
+    imports: [AppModule.forRoot(config)],
     controllers: options.controllers ?? [],
   });
   if (options.queuePrefix)
@@ -50,7 +51,6 @@ export async function createTestApp(
     });
   options.override?.(builder);
   const module = await builder.compile();
-  const config = validateConfig(apiSchema, process.env);
   const app =
     module.createNestApplication<NestExpressApplication>(applicationOptions);
   configureApp(app, config);

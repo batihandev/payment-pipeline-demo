@@ -5,6 +5,7 @@ import { Test } from '@nestjs/testing';
 import { Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { generatePrivateKey } from 'viem/accounts';
+import { buyerSchema, validateConfig } from '../../../libs/config/src';
 import { testRedisUrl } from '../../../libs/config/testing/redis';
 import { PrismaClient, PrismaService } from '../../../libs/db/src';
 import { OrderQueueService } from '../../../libs/orders/src';
@@ -54,7 +55,7 @@ it('closes both workers and Redis on shutdown', async () => {
     },
   };
   const module = await Test.createTestingModule({
-    imports: [AppModule.forRoot()],
+    imports: [AppModule.forRoot(validateConfig(buyerSchema, process.env))],
   })
     .overrideProvider(getSharedConfigToken())
     .useValue({ connection: { url: testRedisUrl() }, prefix })
