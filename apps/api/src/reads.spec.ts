@@ -482,6 +482,17 @@ it('reports monitoring timestamps in /health', async () => {
     await redis.del('visitor-paused-since');
   }
 });
+it('leaves settled donations out of the unnotified signal', async () => {
+  await payment({
+    donation: true,
+    stage: 'settled',
+    settledAt: new Date('2026-10-01T00:00:00Z'),
+  });
+  expect(
+    (await adapter.getInstance().inject('/health')).json().monitoring
+      .oldestUnnotifiedAt,
+  ).toBeNull();
+});
 it('answers /health from a fresh chain snapshot without RPC calls', async () => {
   const calls = chainCalls.length;
   const response = await adapter.getInstance().inject('/health');

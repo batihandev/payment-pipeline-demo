@@ -173,7 +173,7 @@ export function registerReads(
         { at: Date | null }[]
       >`SELECT MIN(COALESCE(p.sent_at, p.received_at)) AS at FROM payments p JOIN orders o ON o.id = p.order_id WHERE o.send_state <> 'failed' AND p.stage IN ('sent', 'received', 'confirming')`,
       db.payment.aggregate({
-        where: { stage: 'settled' },
+        where: { stage: 'settled', donation: false },
         _min: { settledAt: true },
       }),
       db.order.findFirst({
