@@ -1,4 +1,5 @@
-import { Controller, Get, HttpException } from '@nestjs/common';
+import { Controller, Get, HttpException, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import request from 'supertest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { createTestApp } from '../../testing/app';
@@ -29,6 +30,13 @@ class FailingController {
   @Get('status-418')
   teapot(): never {
     throw Object.assign(new Error('secret detail'), { statusCode: 418 });
+  }
+
+  @Get('after-headers')
+  afterHeaders(@Res() response: Response): never {
+    response.writeHead(200, { 'content-type': 'text/event-stream' });
+    response.write('data: first\n\n');
+    throw new Error('failed after the stream started');
   }
 
   @Get('coded')
@@ -91,4 +99,10 @@ it('keeps the code, details and headers a route chose', async () => {
   expect(response.statusCode).toBe(429);
   expect(response.body).toEqual({ error: 'busy', orderId: 'o1' });
   expect(response.headers['retry-after']).toBe('2');
+});
+
+it('does not write a body after headers are sent', async () => {
+  const response = await request(app.getHttpServer()).get('/after-headers');
+  expect(response.statusCode).toBe(200);
+  expect(response.text).toBe('data: first\n\n');
 });

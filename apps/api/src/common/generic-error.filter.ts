@@ -3,7 +3,7 @@ import {
   type ArgumentsHost,
   type ExceptionFilter,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import { HttpAdapterHost } from '@nestjs/core';
 import { ApiError } from './api-error';
 
 const clientErrorCodes: Record<number, string> = {
@@ -33,24 +33,33 @@ function statusOf(error: unknown): number {
  * Answers every error that reaches the HTTP adapter with a fixed body. The adapters' and
  * Nest's defaults echo the error message, and a database error's message can carry
  * connection details. Request errors keep their 4xx status and get a code for it; an
- * `ApiError` keeps the code its route chose.
+ * `ApiError` keeps the code its route chose. An error after the headers went out, such as
+ * one in a started event stream, only ends the response.
  */
 @Catch()
 export class GenericErrorFilter implements ExceptionFilter {
+  constructor(private readonly adapterHost: HttpAdapterHost) {}
+
   catch(error: unknown, host: ArgumentsHost): void {
-    const response = host.switchToHttp().getResponse<Response>();
+    const { httpAdapter } = this.adapterHost;
+    const response: unknown = host.switchToHttp().getResponse();
+    if (httpAdapter.isHeadersSent(response)) {
+      httpAdapter.end(response);
+      return;
+    }
     if (error instanceof ApiError) {
-      response
-        .set(error.headers)
-        .status(error.getStatus())
-        .json(error.getResponse());
+      for (const [name, value] of Object.entries(error.headers))
+        httpAdapter.setHeader(response, name, value);
+      httpAdapter.reply(response, error.getResponse(), error.getStatus());
       return;
     }
     const status = statusOf(error);
     if (status >= 400 && status < 500)
-      response
-        .status(status)
-        .json({ error: clientErrorCodes[status] ?? 'bad_request' });
-    else response.status(500).json({ error: 'internal' });
+      httpAdapter.reply(
+        response,
+        { error: clientErrorCodes[status] ?? 'bad_request' },
+        status,
+      );
+    else httpAdapter.reply(response, { error: 'internal' }, 500);
   }
 }
