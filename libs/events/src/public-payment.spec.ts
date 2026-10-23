@@ -73,3 +73,12 @@ it('omits the PaymentIntent id from a card payment', () => {
     publicPayment(payment({ provider: 'chain', externalKey: '84532:0x1:0' })),
   ).toMatchObject({ externalKey: '84532:0x1:0' });
 });
+
+it('omits when reconciliation last checked a payment', () => {
+  const checked = payment({
+    provider: 'stripe',
+    reconciledAt: new Date('2026-10-23T12:00:00Z'),
+  });
+  expect(publicPayment(checked)).not.toHaveProperty('reconciledAt');
+  expect(serializePayment(checked)).not.toContain('2026-10-23T12:00:00');
+});

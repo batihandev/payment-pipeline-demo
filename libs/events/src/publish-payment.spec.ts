@@ -36,7 +36,9 @@ it('publishes the complete saved payment with integer amounts encoded as decimal
     });
     expect(Object.keys(message).sort()).toEqual(
       [
-        ...Object.keys(row).filter((key) => key !== 'fromAddress'),
+        ...Object.keys(row).filter(
+          (key) => key !== 'fromAddress' && key !== 'reconciledAt',
+        ),
         'donorName',
       ].sort(),
     );

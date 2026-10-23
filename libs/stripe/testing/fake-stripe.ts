@@ -1,4 +1,5 @@
 import type Stripe from 'stripe';
+import { RpcError } from '../../chain/src/rpc-error';
 import type {
   CardPayment,
   CardPaymentInput,
@@ -15,6 +16,8 @@ export class FakeStripe implements StripeClient {
   /** What `retrieve` and `search` find, by PaymentIntent id. */
   readonly stored = new Map<string, Stripe.PaymentIntent>();
   readonly lookups: string[] = [];
+  /** An error a lookup throws, by PaymentIntent id for `retrieve` and order id for `search`. */
+  readonly failures = new Map<string, Error>();
   failure: Error | null = null;
   failAfterAccepting = false;
 
@@ -33,15 +36,18 @@ export class FakeStripe implements StripeClient {
 
   async retrieve(intentId: string): Promise<Stripe.PaymentIntent> {
     this.lookups.push(intentId);
-    if (this.failure) throw this.failure;
+    const failure = this.failure ?? this.failures.get(intentId);
+    if (failure) throw failure;
     const intent = this.stored.get(intentId);
-    if (!intent) throw new Error(`No such PaymentIntent: ${intentId}`);
+    // Stripe answers 404 resource_missing, which the client maps to a permanent error.
+    if (!intent) throw new RpcError('permanent', 'resource_missing');
     return intent;
   }
 
   async search(orderId: string): Promise<Stripe.PaymentIntent[]> {
     this.lookups.push(orderId);
-    if (this.failure) throw this.failure;
+    const failure = this.failure ?? this.failures.get(orderId);
+    if (failure) throw failure;
     return [...this.stored.values()].filter(
       (intent) => intent.metadata.orderId === orderId,
     );

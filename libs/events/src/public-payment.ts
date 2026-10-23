@@ -7,7 +7,7 @@ export type PublicOrder<O extends OrderWithCustomer> = Omit<O, 'customer'> & {
   customer: PublicCard | null;
 };
 export type PublicPayment<O extends OrderWithCustomer = OrderWithCustomer> =
-  Omit<Payment, 'fromAddress' | 'externalKey'> & {
+  Omit<Payment, 'fromAddress' | 'externalKey' | 'reconciledAt'> & {
     /** Set for chain payments only; a card payment's PaymentIntent id stays private. */
     externalKey?: string;
     donorName: string | null;
@@ -27,13 +27,14 @@ function publicOrder<O extends OrderWithCustomer>({
 }
 
 /**
- * A payment as the page sees it: no sender address, no PaymentIntent id, and of the order's
- * customer only the card brand and last 4.
+ * A payment as the page sees it: no sender address, no PaymentIntent id, no reconciliation
+ * time, and of the order's customer only the card brand and last 4.
  */
 export function publicPayment<O extends OrderWithCustomer>(
   payment: Payment & { order?: O | null },
 ): PublicPayment<O> {
-  const { fromAddress, externalKey, order, ...rest } = payment;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- left out of the payload
+  const { fromAddress, externalKey, reconciledAt, order, ...rest } = payment;
   return {
     ...rest,
     ...(payment.provider !== 'stripe' && { externalKey }),

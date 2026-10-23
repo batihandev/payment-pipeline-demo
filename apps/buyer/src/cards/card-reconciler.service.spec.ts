@@ -1,4 +1,5 @@
 import { Redis } from 'ioredis';
+import { RpcError } from '../../../../libs/chain/src/rpc-error';
 import { cooldownKey } from '../../../../libs/chain/src/service-limiter';
 import { testRedisUrl } from '../../../../libs/config/testing/redis';
 import { testDatabase } from '../../../../libs/db/testing/database';
@@ -27,7 +28,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await database.db.$executeRawUnsafe(
-    'TRUNCATE payments, orders, incidents CASCADE',
+    'TRUNCATE payments, orders, incidents, daily_budgets CASCADE',
   );
   await redis.del(cooldownKey('stripe'));
   stripe = new FakeStripe();
@@ -37,7 +38,11 @@ beforeEach(async () => {
 const db = () => database.db;
 
 function order(
-  data: { sendState?: string; status?: 'open' | 'expired' } = {},
+  data: {
+    sendState?: string;
+    status?: 'open' | 'expired';
+    source?: 'visitor' | 'schedule';
+  } = {},
   createdAt = minutesAgo(10),
 ) {
   return db().order.create({
@@ -45,7 +50,7 @@ function order(
       item: 'Lucky paperclip',
       price: 500000n,
       expectedAmount: 500000n,
-      source: 'visitor',
+      source: data.source ?? 'visitor',
       rail: 'card',
       sendState: data.sendState ?? 'sent',
       status: data.status ?? 'open',
@@ -60,11 +65,12 @@ function payment(
   orderId: string,
   stage: 'sent' | 'processing' | 'settled',
   at = minutesAgo(5),
+  externalKey = 'pi_1',
 ) {
   return db().payment.create({
     data: {
       provider: 'stripe',
-      externalKey: 'pi_1',
+      externalKey,
       orderId,
       amount: 500000n,
       stage,
@@ -171,4 +177,122 @@ it('skips the run while Stripe is cooling down', async () => {
   await reconciler.run(now);
   expect(stripe.lookups).toEqual([]);
   await redis.del(cooldownKey('stripe'));
+});
+
+it('skips a PaymentIntent Stripe cannot find and reconciles the rest', async () => {
+  const missing = await order();
+  await payment(missing.id, 'processing', minutesAgo(6), 'pi_missing');
+  const found = await order();
+  await payment(found.id, 'processing', minutesAgo(5), 'pi_found');
+  stripe.stored.set(
+    'pi_found',
+    paymentIntent({ id: 'pi_found', status: 'succeeded', orderId: found.id }),
+  );
+  await reconciler.run(now);
+  await reconciler.run(new Date(now.getTime() + 60 * 60_000));
+  expect(
+    await db().payment.findFirstOrThrow({ where: { externalKey: 'pi_found' } }),
+  ).toMatchObject({ stage: 'settled' });
+  const incidents = await db().incident.findMany({
+    where: { kind: 'reconcile_failed' },
+    include: { payment: true },
+  });
+  expect(incidents).toHaveLength(1);
+  expect(incidents[0]?.payment?.externalKey).toBe('pi_missing');
+});
+
+it('records one incident for an order whose search Stripe refuses', async () => {
+  const refused = await order({ sendState: 'review' });
+  stripe.failures.set(refused.id, new RpcError('permanent'));
+  await reconciler.run(now);
+  await reconciler.run(new Date(now.getTime() + 60 * 60_000));
+  const incidents = await db().incident.findMany({
+    where: { kind: 'reconcile_failed' },
+  });
+  expect(incidents).toHaveLength(1);
+  expect(incidents[0]?.whatHappened).toContain(refused.id);
+});
+
+it('stops the run on a transient Stripe error', async () => {
+  const first = await order();
+  await payment(first.id, 'processing', minutesAgo(6), 'pi_first');
+  const second = await order();
+  await payment(second.id, 'processing', minutesAgo(5), 'pi_second');
+  stripe.failures.set('pi_first', new RpcError('transient'));
+  stripe.stored.set(
+    'pi_second',
+    paymentIntent({ id: 'pi_second', status: 'succeeded', orderId: second.id }),
+  );
+  await expect(reconciler.run(now)).rejects.toMatchObject({
+    kind: 'transient',
+  });
+  expect(stripe.lookups).toEqual(['pi_first']);
+  expect(await db().incident.count()).toBe(0);
+  expect(await db().ledgerEntry.count()).toBe(0);
+});
+
+it('reaches a newer order when 20 older ones keep finding nothing', async () => {
+  for (let i = 0; i < 21; i++)
+    await order({ sendState: 'review' }, minutesAgo(30 - i));
+  const newer = await order({ sendState: 'review' }, minutesAgo(5));
+  stripe.stored.set(
+    'pi_newer',
+    paymentIntent({ id: 'pi_newer', status: 'succeeded', orderId: newer.id }),
+  );
+  await reconciler.run(now);
+  await reconciler.run(new Date(now.getTime() + 60_000));
+  expect(
+    (await db().order.findUniqueOrThrow({ where: { id: newer.id } })).status,
+  ).toBe('paid');
+});
+
+it('backs off a payment Stripe still reports as processing', async () => {
+  const { id } = await order();
+  await payment(id, 'processing');
+  stripe.stored.set(
+    'pi_1',
+    paymentIntent({ id: 'pi_1', status: 'processing', orderId: id }),
+  );
+  await reconciler.run(now);
+  await reconciler.run(new Date(now.getTime() + 60_000));
+  expect(stripe.lookups).toEqual(['pi_1']);
+  await reconciler.run(new Date(now.getTime() + 10 * 60_000));
+  expect(stripe.lookups).toEqual(['pi_1', 'pi_1']);
+});
+
+it('finds a charge on an order left pending after expiry', async () => {
+  const left = await order({ sendState: 'pending', status: 'expired' });
+  stripe.stored.set(
+    'pi_left',
+    paymentIntent({ id: 'pi_left', status: 'succeeded', orderId: left.id }),
+  );
+  await reconciler.run(now);
+  expect(stripe.lookups).toEqual([left.id]);
+  expect(await db().payment.findFirstOrThrow()).toMatchObject({
+    externalKey: 'pi_left',
+    stage: 'settled',
+  });
+  expect(
+    await db().incident.count({ where: { kind: 'paid_after_expiry' } }),
+  ).toBe(1);
+});
+
+it('counts a late settle of a scheduled order against the daily budget', async () => {
+  const day = new Date('2026-10-23T00:00:00Z');
+  await db().dailyBudget.create({
+    data: { day, targetCount: 10, targetAmount: 10_000_000n },
+  });
+  const closed = await order({
+    sendState: 'failed',
+    status: 'expired',
+    source: 'schedule',
+  });
+  stripe.stored.set(
+    'pi_late',
+    paymentIntent({ id: 'pi_late', status: 'succeeded', orderId: closed.id }),
+  );
+  await reconciler.run(now);
+  expect(
+    await db().dailyBudget.findUniqueOrThrow({ where: { day } }),
+  ).toMatchObject({ reservedCount: 1, reservedAmount: 500000n });
 });

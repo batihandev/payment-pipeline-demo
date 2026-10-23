@@ -69,7 +69,7 @@ it('saves full payment snapshots for every stage change and finality without dup
   expect(Object.keys(bodies[0] ?? {}).sort()).toEqual(
     [
       ...Object.keys(await f.db.payment.findFirstOrThrow()).filter(
-        (key) => key !== 'fromAddress',
+        (key) => key !== 'fromAddress' && key !== 'reconciledAt',
       ),
       'donorName',
     ].sort(),

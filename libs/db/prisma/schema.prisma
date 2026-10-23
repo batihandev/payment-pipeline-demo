@@ -56,6 +56,8 @@ model Order {
   sendAttempts      Int          @default(0) @map("send_attempts")
   createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   expiresAt         DateTime     @map("expires_at") @db.Timestamptz(3)
+  /// When card reconciliation last searched Stripe for the order's charge.
+  reconciledAt      DateTime?    @map("reconciled_at") @db.Timestamptz(3)
   payments          Payment[]
   events            OrderEvent[]
 
@@ -134,6 +136,8 @@ model Payment {
   settledAt       DateTime?       @map("settled_at") @db.Timestamptz(3)
   notifiedAt      DateTime?       @map("notified_at") @db.Timestamptz(3)
   finalAt         DateTime?       @map("final_at") @db.Timestamptz(3)
+  /// When card reconciliation last read the payment's PaymentIntent from Stripe.
+  reconciledAt    DateTime?       @map("reconciled_at") @db.Timestamptz(3)
   ledgerEntry     LedgerEntry?
   notice          Notice?
   incidents       Incident[]
