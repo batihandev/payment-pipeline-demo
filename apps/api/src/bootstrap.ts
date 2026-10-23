@@ -18,7 +18,7 @@ export function configureApp(
   // One proxy hop is trusted, so the client address is the entry it appended and a
   // forged leftmost X-Forwarded-For value is ignored.
   app.set('trust proxy', config.TRUST_PROXY ? 1 : false);
-  // Express adds these by default; the Fastify adapter this replaced sent neither.
+  // Responses carry no X-Powered-By or ETag header.
   app.disable('x-powered-by');
   app.set('etag', false);
   app.set('json replacer', bigintReplacer);

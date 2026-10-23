@@ -133,7 +133,7 @@ Stripe (phase 2): `received → processing → settled → notified`, without a 
 
 **Request limit:** one budget per client address across all routes, `API_REQUESTS_PER_MINUTE` (default 300) a minute, answered with `429`, `rate_limited` and `Retry-After`. `POST /shop/notices` is outside it; its signature is its check. The counted address is the same one the visitor limits and the stream cap use.
 
-**Live streams:** `GET /events` allows `STREAMS_PER_IP` (default 5) open connections per client address and `STREAMS_TOTAL` (default 500) in all. A connection over either cap gets `429`, `rate_limited` and `Retry-After: 5`. A closed connection frees its slot. The stream sends a `heartbeat` event every 15 seconds while idle, and a client that stops reading is dropped.
+**Live streams:** `GET /events` allows `STREAMS_PER_IP` (default 5) open connections per client address and `STREAMS_TOTAL` (default 500) in all. A connection over either cap gets `429`, `rate_limited` and `Retry-After: 5`. A closed connection frees its slot. The stream sends a `heartbeat` event every 15 seconds, and a client that stops reading is dropped.
 
 **Payments cache:** `GET /payments` keeps its result per `limit` for 5 seconds, and concurrent requests share one database read.
 

@@ -45,7 +45,7 @@ export class EventsService implements OnModuleInit, OnModuleDestroy {
     await this.unsubscribe?.();
   }
 
-  /** Each published payment as an unnamed event, and a named heartbeat while idle. */
+  /** Each published payment as an unnamed event, and a named heartbeat. */
   stream(): Observable<MessageEvent> {
     return merge(
       this.payments.pipe(map((body): MessageEvent => ({ data: body }))),
