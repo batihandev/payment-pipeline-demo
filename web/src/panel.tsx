@@ -137,6 +137,11 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
                   />
                 </div>
               ))}
+              {data.olderFailed && (
+                <p className="tp-muted tp-older-failed" role="status">
+                  Could not load older receipts. Try again.
+                </p>
+              )}
               {data.olderReceipts !== 'none' && (
                 <button
                   type="button"

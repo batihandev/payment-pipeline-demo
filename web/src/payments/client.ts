@@ -2,6 +2,7 @@ import {
   encodePaymentCursor,
   paymentCursor,
 } from '../../../libs/core/src/payment-cursor';
+import { stageRank } from './use-stage-sequence';
 import type { Dashboard, Health, Payment, Snapshot } from './types';
 
 export type Rail = 'chain' | 'card';
@@ -90,6 +91,9 @@ export class PaymentsClient {
   private older = new Map<string, Payment>();
   private olderLoading = false;
   private oldestReached = false;
+  private olderFailed = false;
+  /** Changes when the older rows are dropped, so a read still in flight is ignored. */
+  private olderEpoch = 0;
   readonly baseUrl: string;
   constructor(
     baseUrl: string,
@@ -154,6 +158,7 @@ export class PaymentsClient {
         : all.length > this.receiptCount || canRead
           ? 'more'
           : 'none',
+      olderFailed: this.olderFailed,
     };
   }
   /** Older payments exist on the server only past a full live list, until a short page ends them. */
@@ -164,6 +169,7 @@ export class PaymentsClient {
   showMoreReceipts = (): void => {
     const data = this.snapshot.data;
     if (!data || this.olderLoading || data.olderReceipts === 'none') return;
+    this.olderFailed = false;
     this.receiptCount += RECEIPT_PAGE;
     const known = data.payments.length + this.older.size;
     if (known >= this.receiptCount || !this.canReadOlder(data.payments)) {
@@ -180,22 +186,42 @@ export class PaymentsClient {
   };
   private async readOlder(before: string): Promise<void> {
     const request = this.request;
+    const epoch = this.olderEpoch;
     try {
       const response = await request(
         `${this.baseUrl}/payments?limit=${RECEIPT_PAGE}&before=${before}`,
       );
       if (!response.ok) throw new Error('Demo offline');
       const rows = (await response.json()) as Payment[];
+      if (epoch !== this.olderEpoch) return;
       const live = new Set(this.snapshot.data?.payments.map((p) => p.id));
-      for (const p of rows) if (!live.has(p.id)) this.older.set(p.id, p);
+      for (const p of rows) {
+        if (live.has(p.id)) continue;
+        // A live event may have moved this row on while the page was in flight.
+        const held = this.older.get(p.id);
+        if (!held || stageRank(held) <= stageRank(p)) this.older.set(p.id, p);
+      }
       if (rows.length < RECEIPT_PAGE) this.oldestReached = true;
     } catch {
+      if (epoch !== this.olderEpoch) return;
       // A failed read keeps what is shown; Show more stays available to try again.
       this.receiptCount -= RECEIPT_PAGE;
-    } finally {
-      this.olderLoading = false;
-      this.update(this.snapshot);
+      this.olderFailed = true;
     }
+    this.olderLoading = false;
+    this.update(this.snapshot);
+  }
+  /**
+   * A reload is the live list's only fresh read, so rows read with Show more are dropped with it
+   * rather than read again: they may be stale, and Show more reads them afresh when asked.
+   */
+  private dropOlderRows() {
+    this.older.clear();
+    this.olderEpoch++;
+    this.olderLoading = false;
+    this.olderFailed = false;
+    this.oldestReached = false;
+    this.receiptCount = RECEIPT_PAGE;
   }
   private openStream() {
     this.stream = this.createStream(`${this.baseUrl}/events`);
@@ -203,6 +229,7 @@ export class PaymentsClient {
       this.generation++;
       this.loading = false;
       this.buffered = [];
+      this.dropOlderRows();
       void this.refresh();
       this.sendOrderUpdate({ type: 'opened' });
     };

@@ -23,6 +23,7 @@ const data: Dashboard = {
     return this.payments;
   },
   olderReceipts: 'none',
+  olderFailed: false,
 };
 
 vi.mock('./payments/use-payments', () => ({
@@ -116,5 +117,14 @@ describe('PaymentsPanel', () => {
     expect(render()).toMatch(/disabled="">Loading older receipts…<\/button>/);
     data.olderReceipts = 'none';
     expect(render()).not.toContain('tp-show-more');
+  });
+  it('shows a calm line and keeps Show more when older receipts failed', async () => {
+    const { PaymentsPanel } = await import('./panel');
+    data.olderReceipts = 'more';
+    data.olderFailed = true;
+    const html = renderToStaticMarkup(<PaymentsPanel apiBaseUrl="/api" />);
+    data.olderFailed = false;
+    expect(html).toContain('Could not load older receipts. Try again.');
+    expect(html).toContain('>Show more</button>');
   });
 });

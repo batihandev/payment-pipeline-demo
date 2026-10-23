@@ -23,6 +23,7 @@ const data: Dashboard = {
     return this.payments;
   },
   olderReceipts: 'none',
+  olderFailed: false,
 };
 
 let current: { status: string; data: Dashboard | null } = {

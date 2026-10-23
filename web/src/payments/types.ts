@@ -59,6 +59,8 @@ export type Dashboard = {
   receipts: Payment[];
   /** Whether Show more has receipts to add, is loading them, or has reached the oldest. */
   olderReceipts: 'more' | 'loading' | 'none';
+  /** Whether the last read of older receipts failed; Show more stays available to try again. */
+  olderFailed: boolean;
   stats: Stats;
   daily: DailyStat[];
   /** Null until the first /health read arrives. */

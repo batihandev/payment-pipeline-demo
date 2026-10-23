@@ -462,6 +462,126 @@ describe('receipts when every payment is live', () => {
     stop();
   });
 });
+describe('older receipts', () => {
+  const at = (minutes: number) =>
+    new Date(
+      Date.parse('2026-10-20T12:00:00Z') - minutes * 60000,
+    ).toISOString();
+  const rows = Array.from({ length: 130 }, (_, i) => ({
+    ...row(`p${String(i).padStart(3, '0')}`, 'received'),
+    sentAt: at(i),
+  }));
+  /** A client over 130 payments whose older-page reads can be held, failed or answered late. */
+  function paged() {
+    const stream = new FakeEventSource();
+    const older = {
+      hold: null as Promise<void> | null,
+      fail: false,
+      reads: 0,
+      repeat: [] as unknown[],
+      refreshes: 0,
+    };
+    const client = new PaymentsClient(
+      'https://api.example.com',
+      async (url) => {
+        const { pathname, searchParams } = new URL(String(url));
+        if (pathname === '/payments') {
+          const before = searchParams.get('before');
+          const cursor = before ? decodeTestCursor(before) : null;
+          const index = cursor
+            ? rows.findIndex((r) => r.id === cursor.id) + 1
+            : 0;
+          const page = rows.slice(
+            index,
+            index + Number(searchParams.get('limit')),
+          );
+          if (before) {
+            older.reads++;
+            await older.hold;
+            if (older.fail) return new Response('{}', { status: 503 });
+          }
+          return Response.json(before ? [...page, ...older.repeat] : page);
+        }
+        if (pathname === '/stats/daily') {
+          older.refreshes++;
+          return Response.json([]);
+        }
+        return Response.json({});
+      },
+      () => stream,
+    );
+    const data = () => {
+      const current = client.getSnapshot().data;
+      if (!current) throw new Error('No data yet');
+      return current;
+    };
+    const showAll = async () => {
+      for (let page = 0; page < 4; page++) client.showMoreReceipts();
+    };
+    return { client, stream, older, data, showAll };
+  }
+  it('keeps a newer stage when an older page arrives late', async () => {
+    const s = paged();
+    const stop = s.client.subscribe(() => {});
+    s.stream.open();
+    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await s.showAll();
+    s.client.showMoreReceipts();
+    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(120));
+    let release = () => {};
+    s.older.hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    s.older.repeat = [rows[110]];
+    s.client.showMoreReceipts();
+    await vi.waitFor(() => expect(s.older.reads).toBe(2));
+    const refreshes = s.older.refreshes;
+    s.stream.send({ ...rows[110], stage: 'settled' });
+    // The event's own refresh finishes first, so the page is the late one.
+    await vi.waitFor(() => expect(s.older.refreshes).toBe(refreshes + 1));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    release();
+    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(130));
+    expect(s.data().receipts.find((p) => p.id === 'p110')?.stage).toBe(
+      'settled',
+    );
+    stop();
+  });
+  it('drops stale older receipts when the stream reopens', async () => {
+    const s = paged();
+    const stop = s.client.subscribe(() => {});
+    s.stream.open();
+    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await s.showAll();
+    s.client.showMoreReceipts();
+    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(120));
+    s.stream.disconnect();
+    s.stream.open();
+    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(20));
+    expect(s.data().olderReceipts).toBe('more');
+    await s.showAll();
+    s.client.showMoreReceipts();
+    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(120));
+    stop();
+  });
+  it('says when older receipts could not load', async () => {
+    const s = paged();
+    const stop = s.client.subscribe(() => {});
+    s.stream.open();
+    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await s.showAll();
+    s.older.fail = true;
+    s.client.showMoreReceipts();
+    await vi.waitFor(() => expect(s.data().olderFailed).toBe(true));
+    expect(s.data().olderReceipts).toBe('more');
+    expect(s.data().receipts).toHaveLength(100);
+    s.older.fail = false;
+    s.client.showMoreReceipts();
+    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(120));
+    expect(s.data().olderFailed).toBe(false);
+    stop();
+  });
+});
 function beforeOf(path: string): string {
   return (
     new URL(path, 'https://api.example.com').searchParams.get('before') ?? ''
