@@ -70,6 +70,9 @@ model Order {
 
   @@index([expectedAmount, createdAt])
   @@index([customerId])
+  @@index([status, expiresAt])
+  @@index([sendState, rail])
+  @@index([source, createdAt])
   @@map("orders")
 }
 
@@ -156,6 +159,7 @@ model Payment {
   @@unique([provider, externalKey])
   @@unique([chainId, transactionHash, logIndex])
   @@index([orderId])
+  @@index([provider, chainId, final, stage])
   @@map("payments")
 }
 
@@ -181,6 +185,7 @@ model Incident {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([paymentId])
+  @@index([kind, createdAt])
   @@map("incidents")
 }
 
@@ -200,6 +205,7 @@ model Notice {
   attempts    Int       @default(0)
   deliveredAt DateTime? @map("delivered_at") @db.Timestamptz(3)
 
+  @@index([deliveredAt])
   @@map("notices")
 }
 
