@@ -8,12 +8,12 @@ import {
   now,
   options,
   order,
-} from '../testing/fixtures';
-import { Scanner } from './scanner';
-import { PaymentProgress } from './progress';
+} from '../../testing/fixtures';
+import { ScannerService } from './scanner.service';
+import { ProgressService } from './progress.service';
 let f: Awaited<ReturnType<typeof fixture>>;
-let scanner: Scanner;
-let progress: PaymentProgress;
+let scanner: ScannerService;
+let progress: ProgressService;
 beforeAll(async () => {
   f = await fixture();
 });
@@ -25,9 +25,9 @@ beforeEach(async () => {
   f.chain = new TrackerChain();
   f.chain.logs = [log()];
   await order(f.db);
-  scanner = new Scanner(f.db, f.chain, options, () => now);
+  scanner = new ScannerService(f.db, f.chain, options, () => now);
   await scanner.scanOnce();
-  progress = new PaymentProgress(f.db, scanner, () => now);
+  progress = new ProgressService(f.db, scanner, () => now);
 });
 it('drops an unsettled payment back when its block hash changes before settlement', async () => {
   f.chain.hashes.set(10n, hash(999n));

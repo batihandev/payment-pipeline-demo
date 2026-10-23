@@ -1,7 +1,7 @@
-import type { PrismaClient } from '../../../libs/db/src';
-import { noticeRetryOptions } from './delivery';
-import { signNotice } from '../../../libs/core/src/notices';
-export class NoticeSender {
+import type { PrismaClient } from '../../../../libs/db/src';
+import { retryOptions } from '../../../../libs/queues/src';
+import { signNotice } from '../../../../libs/core/src/notices';
+export class NoticeSenderService {
   constructor(
     readonly db: PrismaClient,
     readonly config: { url: string; secret: string },
@@ -11,8 +11,7 @@ export class NoticeSender {
     const notice = await this.db.notice.findUniqueOrThrow({
       where: { paymentId },
     });
-    if (notice.deliveredAt || notice.attempts >= noticeRetryOptions.attempts)
-      return;
+    if (notice.deliveredAt || notice.attempts >= retryOptions.attempts) return;
     await this.db.notice.update({
       where: { paymentId },
       data: { attempts: { increment: 1 } },

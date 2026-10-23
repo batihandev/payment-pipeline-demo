@@ -1,4 +1,4 @@
-import { RpcError } from '../../../libs/chain/src/rpc-error';
+import { RpcError } from '../../../../libs/chain/src/rpc-error';
 import {
   fixture,
   clear,
@@ -7,11 +7,11 @@ import {
   now,
   options,
   order,
-} from '../testing/fixtures';
-import { Scanner } from './scanner';
-import { GapRecovery } from './gaps';
+} from '../../testing/fixtures';
+import { ScannerService } from '../scanning/scanner.service';
+import { GapRecoveryService } from './gap-recovery.service';
 let f: Awaited<ReturnType<typeof fixture>>;
-let recovery: GapRecovery;
+let recovery: GapRecoveryService;
 beforeAll(async () => {
   f = await fixture();
 });
@@ -21,9 +21,9 @@ afterAll(async () => {
 beforeEach(async () => {
   await clear(f.db);
   f.chain = new TrackerChain();
-  recovery = new GapRecovery(
+  recovery = new GapRecoveryService(
     f.db,
-    new Scanner(
+    new ScannerService(
       f.db,
       f.chain,
       options,
@@ -73,7 +73,7 @@ it('stops automatic gap retries at the attempt cap while new scans keep progress
     resolvedAt: null,
   });
   f.chain.failure = undefined;
-  await new Scanner(f.db, f.chain, options, () => now).scanOnce();
+  await new ScannerService(f.db, f.chain, options, () => now).scanOnce();
   expect((await f.db.cursor.findFirstOrThrow()).blockNumber).toBe(20n);
 });
 it('leaves future and permanently malformed gaps open without retrying them', async () => {

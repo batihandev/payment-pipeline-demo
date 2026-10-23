@@ -1,9 +1,9 @@
-import type { PrismaClient } from '../../../libs/db/src';
-import type { Scanner } from './scanner';
-export class GapRecovery {
+import type { PrismaClient } from '../../../../libs/db/src';
+import type { ScannerService } from '../scanning/scanner.service';
+export class GapRecoveryService {
   constructor(
     readonly db: PrismaClient,
-    readonly scanner: Scanner,
+    readonly scanner: ScannerService,
     readonly now = () => new Date(),
   ) {}
   async retryOnce(): Promise<void> {

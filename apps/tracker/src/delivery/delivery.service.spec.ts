@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
-import { paymentChannel } from '../../../libs/events/src/publish-payment';
+import { paymentChannel } from '../../../../libs/events/src/publish-payment';
 import {
   fixture,
   clear,
@@ -10,16 +10,16 @@ import {
   now,
   options,
   order,
-} from '../testing/fixtures';
-import { Scanner } from './scanner';
-import { PaymentProgress } from './progress';
-import { PaymentDelivery } from './delivery';
-import { testRedisUrl } from '../../../libs/config/testing/redis';
+} from '../../testing/fixtures';
+import { ScannerService } from '../scanning/scanner.service';
+import { ProgressService } from '../scanning/progress.service';
+import { DeliveryService } from './delivery.service';
+import { testRedisUrl } from '../../../../libs/config/testing/redis';
 let f: Awaited<ReturnType<typeof fixture>>;
 let redis: Redis;
 let queue: Queue<{ paymentId: string }>;
-let scanner: Scanner;
-let progress: PaymentProgress;
+let scanner: ScannerService;
+let progress: ProgressService;
 beforeAll(async () => {
   f = await fixture();
   redis = new Redis(testRedisUrl());
@@ -38,8 +38,8 @@ beforeEach(async () => {
   await queue.obliterate({ force: true });
   f.chain = new TrackerChain();
   f.chain.logs = [log()];
-  scanner = new Scanner(f.db, f.chain, options, () => now);
-  progress = new PaymentProgress(f.db, scanner, () => now);
+  scanner = new ScannerService(f.db, f.chain, options, () => now);
+  progress = new ProgressService(f.db, scanner, () => now);
 });
 it('saves full payment snapshots for every stage change and finality without duplicate events on rescan', async () => {
   await order(f.db);
@@ -82,7 +82,7 @@ it('publishes persisted events over Redis and marks each published snapshot', as
     const received = new Promise<string>((resolve) =>
       subscriber.once('message', (_channel, body: string) => resolve(body)),
     );
-    await new PaymentDelivery(f.db, redis, queue, () => now).flush();
+    await new DeliveryService(f.db, redis, queue, () => now).flush();
     expect((await f.db.paymentEvent.findFirstOrThrow()).publishedAt).toEqual(
       now,
     );
@@ -104,10 +104,10 @@ it('retains an event through publication failure and delivers it after restart',
     },
   };
   await expect(
-    new PaymentDelivery(f.db, unavailable, queue, () => now).flush(),
+    new DeliveryService(f.db, unavailable, queue, () => now).flush(),
   ).rejects.toThrow();
   expect((await f.db.paymentEvent.findFirstOrThrow()).publishedAt).toBeNull();
-  await new PaymentDelivery(f.db, redis, queue, () => now).flush();
+  await new DeliveryService(f.db, redis, queue, () => now).flush();
   expect((await f.db.paymentEvent.findFirstOrThrow()).publishedAt).toEqual(now);
   expect(await f.db.incident.count({ where: { kind: 'event_failed' } })).toBe(
     1,
@@ -118,7 +118,7 @@ it('queues one durable notice per settled payment with bounded exponential retri
   await scanner.scanOnce();
   await progress.advance(20n);
   expect(await f.db.notice.count()).toBe(1);
-  const delivery = new PaymentDelivery(f.db, redis, queue, () => now);
+  const delivery = new DeliveryService(f.db, redis, queue, () => now);
   await delivery.flush();
   await delivery.flush();
   const jobs = await queue.getJobs(['waiting', 'delayed']);
@@ -152,6 +152,6 @@ it('does not restart an exhausted notice after queue data is lost', async () => 
   await scanner.scanOnce();
   await progress.advance(20n);
   await f.db.notice.updateMany({ data: { attempts: 5 } });
-  await new PaymentDelivery(f.db, redis, queue, () => now).flush();
+  await new DeliveryService(f.db, redis, queue, () => now).flush();
   expect(await queue.getJobs(['waiting', 'delayed'])).toHaveLength(0);
 });

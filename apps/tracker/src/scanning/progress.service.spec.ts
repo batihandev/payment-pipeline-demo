@@ -6,11 +6,11 @@ import {
   now,
   options,
   order,
-} from '../testing/fixtures';
-import { Scanner } from './scanner';
-import { PaymentProgress } from './progress';
+} from '../../testing/fixtures';
+import { ScannerService } from './scanner.service';
+import { ProgressService } from './progress.service';
 let f: Awaited<ReturnType<typeof fixture>>;
-let progress: PaymentProgress;
+let progress: ProgressService;
 beforeAll(async () => {
   f = await fixture();
 });
@@ -22,24 +22,24 @@ beforeEach(async () => {
   f.chain = new TrackerChain();
   f.chain.logs = [log()];
   await order(f.db);
-  await new Scanner(f.db, f.chain, options, () => now).scanOnce();
-  progress = new PaymentProgress(
+  await new ScannerService(f.db, f.chain, options, () => now).scanOnce();
+  progress = new ProgressService(
     f.db,
-    new Scanner(f.db, f.chain, options, () => now),
+    new ScannerService(f.db, f.chain, options, () => now),
     () => now,
   );
 });
 it('settles a donation without an order or notice', async () => {
   await clear(f.db);
   f.chain.logs = [{ ...log(), from: `0x${'aa'.repeat(20)}` }];
-  const scanner = new Scanner(f.db, f.chain, options, () => now);
+  const scanner = new ScannerService(f.db, f.chain, options, () => now);
   await scanner.scanOnce();
-  await new PaymentProgress(f.db, scanner, () => now).advance(15n);
+  await new ProgressService(f.db, scanner, () => now).advance(15n);
   expect(await f.db.payment.findFirstOrThrow()).toMatchObject({
     stage: 'confirming',
     donation: true,
   });
-  await new PaymentProgress(f.db, scanner, () => now).advance(20n);
+  await new ProgressService(f.db, scanner, () => now).advance(20n);
   expect(await f.db.payment.findFirstOrThrow()).toMatchObject({
     stage: 'settled',
     settledAt: now,

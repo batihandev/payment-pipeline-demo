@@ -35,7 +35,7 @@ export class SchedulesService implements OnModuleInit {
       {
         name: JOBS.buyer.paceMinute,
         data: {},
-        opts: schedulerJobOptions(5),
+        opts: schedulerJobOptions({ priority: 5 }),
       },
     );
     await this.queue.upsertJobScheduler(
@@ -44,7 +44,7 @@ export class SchedulesService implements OnModuleInit {
       {
         name: JOBS.buyer.retention,
         data: {},
-        opts: schedulerJobOptions(10),
+        opts: schedulerJobOptions({ priority: 10 }),
       },
     );
     for (const id of [
@@ -60,7 +60,7 @@ export class SchedulesService implements OnModuleInit {
       {
         name: JOBS.buyerUpkeep.refillCheck,
         data: {},
-        opts: schedulerJobOptions(3),
+        opts: schedulerJobOptions({ priority: 3 }),
       },
     );
     await this.upkeepQueue.upsertJobScheduler(
@@ -69,7 +69,7 @@ export class SchedulesService implements OnModuleInit {
       {
         name: JOBS.buyerUpkeep.checkUnseen,
         data: {},
-        opts: schedulerJobOptions(4),
+        opts: schedulerJobOptions({ priority: 4 }),
       },
     );
     await this.upkeepQueue.upsertJobScheduler(
@@ -78,7 +78,7 @@ export class SchedulesService implements OnModuleInit {
       {
         name: JOBS.buyerUpkeep.expireOrders,
         data: {},
-        opts: schedulerJobOptions(5),
+        opts: schedulerJobOptions({ priority: 5 }),
       },
     );
     await this.upkeepQueue.upsertJobScheduler(
@@ -87,7 +87,7 @@ export class SchedulesService implements OnModuleInit {
       {
         name: JOBS.buyerUpkeep.nightlySweep,
         data: {},
-        opts: schedulerJobOptions(10),
+        opts: schedulerJobOptions({ priority: 10 }),
       },
     );
     await this.orderQueue.recoverPending();

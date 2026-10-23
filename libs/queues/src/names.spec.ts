@@ -1,7 +1,7 @@
 import { JOBS, QUEUES, schedulerJobOptions } from './names';
 
 it('keeps finished jobs and sets the priority when given', () => {
-  expect(schedulerJobOptions(5)).toMatchObject({
+  expect(schedulerJobOptions({ priority: 5 })).toMatchObject({
     priority: 5,
     removeOnComplete: 100,
     removeOnFail: 100,
@@ -11,7 +11,7 @@ it('keeps finished jobs and sets the priority when given', () => {
 });
 
 it('leaves out retries when asked', () => {
-  expect(schedulerJobOptions(undefined, false)).toEqual({
+  expect(schedulerJobOptions({ retry: false })).toEqual({
     removeOnComplete: 100,
     removeOnFail: 100,
   });

@@ -1,12 +1,12 @@
 import { handlePaymentReorg } from './payment-reorg';
-import { savePaymentEvent } from '../../../libs/events/src/save-payment-event';
-import type { Hex } from '../../../libs/chain/src/chain-client';
-import type { PrismaClient } from '../../../libs/db/src';
-import type { Scanner } from './scanner';
-export class PaymentProgress {
+import { savePaymentEvent } from '../../../../libs/events/src/save-payment-event';
+import type { Hex } from '../../../../libs/chain/src/chain-client';
+import type { PrismaClient } from '../../../../libs/db/src';
+import type { ScannerService } from './scanner.service';
+export class ProgressService {
   constructor(
     readonly db: PrismaClient,
-    readonly scanner: Scanner,
+    readonly scanner: ScannerService,
     readonly now = () => new Date(),
   ) {}
   async advance(head: bigint, finalized = 0n): Promise<void> {

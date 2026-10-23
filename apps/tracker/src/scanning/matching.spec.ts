@@ -7,10 +7,10 @@ import {
   now,
   options,
   order,
-} from '../testing/fixtures';
-import { Scanner } from './scanner';
+} from '../../testing/fixtures';
+import { ScannerService } from './scanner.service';
 let f: Awaited<ReturnType<typeof fixture>>;
-let scanner: Scanner;
+let scanner: ScannerService;
 beforeAll(async () => {
   f = await fixture();
 });
@@ -21,7 +21,7 @@ beforeEach(async () => {
   await clear(f.db);
   f.chain = new TrackerChain();
   f.chain.logs = [log()];
-  scanner = new Scanner(f.db, f.chain, options, () => now);
+  scanner = new ScannerService(f.db, f.chain, options, () => now);
 });
 it('matches a transfer by its integer amount to a recent open order', async () => {
   const row = await order(f.db);
@@ -130,7 +130,7 @@ it('matches buyer transfers whatever the address case', async () => {
   const row = await order(f.db);
   const checksummed = `0x${'1A'.repeat(20)}`;
   f.chain.logs = [{ ...log(), from: `0x${'1a'.repeat(20)}` }];
-  scanner = new Scanner(
+  scanner = new ScannerService(
     f.db,
     f.chain,
     { ...options, buyer: checksummed },
@@ -145,7 +145,7 @@ it('matches buyer transfers whatever the address case', async () => {
 it('matches a checksummed log sender against a lower-case buyer address', async () => {
   const row = await order(f.db);
   f.chain.logs = [{ ...log(), from: `0x${'1A'.repeat(20)}` }];
-  scanner = new Scanner(
+  scanner = new ScannerService(
     f.db,
     f.chain,
     { ...options, buyer: `0x${'1a'.repeat(20)}` },

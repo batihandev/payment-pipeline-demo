@@ -1,7 +1,27 @@
-import { DAY_MS } from '../../../libs/core/src/time';
-import { savePaymentEvent } from '../../../libs/events/src/save-payment-event';
-import type { TransferLog } from '../../../libs/chain/src/chain-client';
-import type { Prisma } from '../../../libs/db/src';
+import { DAY_MS } from '../../../../libs/core/src/time';
+import { savePaymentEvent } from '../../../../libs/events/src/save-payment-event';
+import type { TransferLog } from '../../../../libs/chain/src/chain-client';
+import type { Prisma } from '../../../../libs/db/src';
+/** The unlogged `sent` row that a transfer's transaction hash and amount belong to. */
+function findDroppedPayment(
+  tx: Prisma.TransactionClient,
+  log: TransferLog,
+  chainId: number,
+  donation: boolean,
+) {
+  return tx.payment.findFirst({
+    where: {
+      provider: 'chain',
+      chainId,
+      transactionHash: { equals: log.txHash, mode: 'insensitive' },
+      amount: log.amount,
+      stage: 'sent',
+      logIndex: null,
+      donation,
+    },
+  });
+}
+
 export async function receiveTransfer(
   tx: Prisma.TransactionClient,
   log: TransferLog,
@@ -12,17 +32,7 @@ export async function receiveTransfer(
 ) {
   const fromAddress = log.from.toLowerCase();
   if (fromAddress !== buyer.toLowerCase()) {
-    const dropped = await tx.payment.findFirst({
-      where: {
-        provider: 'chain',
-        chainId,
-        transactionHash: { equals: log.txHash, mode: 'insensitive' },
-        amount: log.amount,
-        stage: 'sent',
-        logIndex: null,
-        donation: true,
-      },
-    });
+    const dropped = await findDroppedPayment(tx, log, chainId, true);
     const donationData = {
       externalKey,
       chainId,
@@ -48,17 +58,7 @@ export async function receiveTransfer(
     await savePaymentEvent(tx, donation);
     return donation;
   }
-  let sent = await tx.payment.findFirst({
-    where: {
-      provider: 'chain',
-      chainId,
-      transactionHash: { equals: log.txHash, mode: 'insensitive' },
-      amount: log.amount,
-      stage: 'sent',
-      logIndex: null,
-      donation: false,
-    },
-  });
+  let sent = await findDroppedPayment(tx, log, chainId, false);
   const order = sent?.orderId
     ? await tx.order.findUnique({ where: { id: sent.orderId } })
     : await tx.order.findFirst({
@@ -70,17 +70,7 @@ export async function receiveTransfer(
       });
   if (order) {
     await tx.$queryRaw`SELECT id FROM orders WHERE id = ${order.id}::uuid FOR UPDATE`;
-    sent = await tx.payment.findFirst({
-      where: {
-        provider: 'chain',
-        chainId,
-        transactionHash: { equals: log.txHash, mode: 'insensitive' },
-        amount: log.amount,
-        stage: 'sent',
-        logIndex: null,
-        donation: false,
-      },
-    });
+    sent = await findDroppedPayment(tx, log, chainId, false);
   }
   const data = {
     externalKey,

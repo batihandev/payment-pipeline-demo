@@ -1,13 +1,9 @@
 import type { Redis } from 'ioredis';
 import type { Queue } from 'bullmq';
-import type { PrismaClient } from '../../../libs/db/src';
-import { JOBS } from '../../../libs/queues/src';
-import { paymentChannel } from '../../../libs/events/src/publish-payment';
-export const noticeRetryOptions = {
-  attempts: 5,
-  backoff: { type: 'exponential', delay: 1000, jitter: 0.5 },
-} as const;
-export class PaymentDelivery {
+import type { PrismaClient } from '../../../../libs/db/src';
+import { JOBS, retryOptions } from '../../../../libs/queues/src';
+import { paymentChannel } from '../../../../libs/events/src/publish-payment';
+export class DeliveryService {
   constructor(
     readonly db: PrismaClient,
     readonly redis: Pick<Redis, 'publish'>,
@@ -43,7 +39,7 @@ export class PaymentDelivery {
     const notices = await this.db.notice.findMany({
       where: {
         deliveredAt: null,
-        attempts: { lt: noticeRetryOptions.attempts },
+        attempts: { lt: retryOptions.attempts },
       },
       take: 100,
       orderBy: { paymentId: 'asc' },
@@ -53,8 +49,8 @@ export class PaymentDelivery {
         JOBS.shopNotices.shopNotice,
         { paymentId: notice.paymentId },
         {
-          ...noticeRetryOptions,
-          attempts: noticeRetryOptions.attempts - notice.attempts,
+          ...retryOptions,
+          attempts: retryOptions.attempts - notice.attempts,
           jobId: `notice-${notice.paymentId}`,
         },
       );

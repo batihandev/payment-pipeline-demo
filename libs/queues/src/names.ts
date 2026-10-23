@@ -34,7 +34,10 @@ export const retryOptions = {
 
 const keepFinished = { removeOnComplete: 100, removeOnFail: 100 } as const;
 
-export function schedulerJobOptions(priority?: number, retry = true) {
+export function schedulerJobOptions({
+  priority,
+  retry = true,
+}: { priority?: number; retry?: boolean } = {}) {
   return {
     ...(retry ? retryOptions : {}),
     ...(priority === undefined ? {} : { priority }),

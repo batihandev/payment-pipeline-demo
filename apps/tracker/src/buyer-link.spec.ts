@@ -13,7 +13,7 @@ import {
   order,
   shop,
 } from '../testing/fixtures';
-import { Scanner } from './scanner';
+import { ScannerService } from './scanning/scanner.service';
 import { testRedisUrl } from '../../../libs/config/testing/redis';
 let f: Awaited<ReturnType<typeof fixture>>;
 let redis: Redis;
@@ -48,7 +48,7 @@ it('keeps one payment when the tracker observes a broadcast before the buyer rec
   });
   const blocks = new TrackerChain();
   blocks.logs = [{ ...log(), txHash: sentOrder.transactionHash as Hex }];
-  await new Scanner(f.db, blocks, options, () => now).scanOnce();
+  await new ScannerService(f.db, blocks, options, () => now).scanOnce();
   const received = await f.db.payment.findFirstOrThrow();
   chain.fail = null;
   await sender.sendForOrder(row.id);

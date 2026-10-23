@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { Queue, Worker } from 'bullmq';
-import { verifyNotice } from '../../../libs/core/src/notices';
+import { verifyNotice } from '../../../../libs/core/src/notices';
 import {
   fixture,
   clear,
@@ -10,12 +10,12 @@ import {
   now,
   options,
   order,
-} from '../testing/fixtures';
-import { Scanner } from './scanner';
-import { PaymentProgress } from './progress';
-import { PaymentDelivery } from './delivery';
-import { NoticeSender } from './notices';
-import { testRedisUrl } from '../../../libs/config/testing/redis';
+} from '../../testing/fixtures';
+import { ScannerService } from '../scanning/scanner.service';
+import { ProgressService } from '../scanning/progress.service';
+import { DeliveryService } from '../delivery/delivery.service';
+import { NoticeSenderService } from './notice-sender.service';
+import { testRedisUrl } from '../../../../libs/config/testing/redis';
 let f: Awaited<ReturnType<typeof fixture>>;
 let server: Server;
 let url: string;
@@ -76,12 +76,12 @@ beforeEach(async () => {
   f.chain = new TrackerChain();
   f.chain.logs = [log()];
   await order(f.db);
-  const scanner = new Scanner(f.db, f.chain, options, () => now);
+  const scanner = new ScannerService(f.db, f.chain, options, () => now);
   await scanner.scanOnce();
-  await new PaymentProgress(f.db, scanner, () => now).advance(20n);
+  await new ProgressService(f.db, scanner, () => now).advance(20n);
 });
 it('posts a verifiable timestamped HMAC notice and records successful delivery once', async () => {
-  const sender = new NoticeSender(f.db, { url, secret }, () => now);
+  const sender = new NoticeSenderService(f.db, { url, secret }, () => now);
   const payment = await f.db.payment.findFirstOrThrow();
   await sender.send(payment.id);
   await sender.send(payment.id);
@@ -95,7 +95,10 @@ it('keeps a rejected notice undelivered with a handling incident', async () => {
   reject = true;
   const payment = await f.db.payment.findFirstOrThrow();
   await expect(
-    new NoticeSender(f.db, { url, secret }, () => now).send(payment.id, true),
+    new NoticeSenderService(f.db, { url, secret }, () => now).send(
+      payment.id,
+      true,
+    ),
   ).rejects.toThrow('Shop notice delivery failed');
   expect(await f.db.notice.findFirstOrThrow()).toMatchObject({
     attempts: 1,
@@ -111,7 +114,7 @@ it('retries a shop outage through BullMQ and delivers the same payment after rec
   const connection = { url: testRedisUrl() };
   const name = `notice-retries-${randomUUID()}`;
   const queue = new Queue<{ paymentId: string }>(name, { connection });
-  const sender = new NoticeSender(f.db, { url, secret }, () => now);
+  const sender = new NoticeSenderService(f.db, { url, secret }, () => now);
   const worker = new Worker<{ paymentId: string }>(
     name,
     (job) =>
@@ -126,7 +129,7 @@ it('retries a shop outage through BullMQ and delivers the same payment after rec
       worker.once('completed', () => resolve());
       worker.once('error', fail);
     });
-    await new PaymentDelivery(
+    await new DeliveryService(
       f.db,
       { publish: async () => 0 },
       queue,

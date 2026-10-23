@@ -1,8 +1,15 @@
-import { RpcError } from '../../../libs/chain/src/rpc-error';
-import { fixture, clear, hash, log, now, options } from '../testing/fixtures';
-import { Scanner } from './scanner';
+import { RpcError } from '../../../../libs/chain/src/rpc-error';
+import {
+  fixture,
+  clear,
+  hash,
+  log,
+  now,
+  options,
+} from '../../testing/fixtures';
+import { ScannerService } from './scanner.service';
 let f: Awaited<ReturnType<typeof fixture>>;
-let scanner: Scanner;
+let scanner: ScannerService;
 beforeAll(async () => {
   f = await fixture();
 });
@@ -12,9 +19,9 @@ afterAll(async () => {
 beforeEach(async () => {
   await clear(f.db);
   f.chain = new (
-    f.chain.constructor as typeof import('../testing/fixtures').TrackerChain
+    f.chain.constructor as typeof import('../../testing/fixtures').TrackerChain
   )();
-  scanner = new Scanner(
+  scanner = new ScannerService(
     f.db,
     f.chain,
     options,
@@ -129,7 +136,7 @@ it('persists a failed minimum range as a gap before moving the cursor past it', 
 });
 it('backs off transient failures and stores an exhausted range as a gap', async () => {
   const waits: number[] = [];
-  scanner = new Scanner(
+  scanner = new ScannerService(
     f.db,
     f.chain,
     options,
@@ -206,9 +213,9 @@ it('retains one open gap when an unchanged head repeats the same failed range', 
   ).toHaveLength(1);
 });
 it('rejects a minimum scan range that cannot advance beyond the configured overlap', () => {
-  expect(() => new Scanner(f.db, f.chain, { ...options, minRange: 5 })).toThrow(
-    'MIN_RANGE',
-  );
+  expect(
+    () => new ScannerService(f.db, f.chain, { ...options, minRange: 5 }),
+  ).toThrow('MIN_RANGE');
 });
 it('stores one payment and one cursor when two scans overlap', async () => {
   f.chain.logs = [log()];
@@ -219,14 +226,20 @@ it('stores one payment and one cursor when two scans overlap', async () => {
 
 it('starts a fresh database near the head and saves the cursor', async () => {
   f.chain.head = 100000n;
-  scanner = new Scanner(f.db, f.chain, { ...options, startBlock: undefined });
+  scanner = new ScannerService(f.db, f.chain, {
+    ...options,
+    startBlock: undefined,
+  });
   await scanner.scanOnce();
   expect(f.chain.ranges).toEqual([[99995n, 100000n]]);
   expect((await f.db.cursor.findFirstOrThrow()).blockNumber).toBe(100000n);
 });
 it('uses START_BLOCK on a fresh database and retains an existing cursor on restart', async () => {
   f.chain.head = 100000n;
-  scanner = new Scanner(f.db, f.chain, { ...options, startBlock: 80000n });
+  scanner = new ScannerService(f.db, f.chain, {
+    ...options,
+    startBlock: 80000n,
+  });
   await scanner.scanOnce();
   expect(f.chain.ranges).toEqual([[80000n, 80499n]]);
   await scanner.scanOnce();

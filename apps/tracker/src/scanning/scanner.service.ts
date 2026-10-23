@@ -1,13 +1,13 @@
 import { handlePaymentReorg } from './payment-reorg';
-import { savePaymentEvent } from '../../../libs/events/src/save-payment-event';
+import { savePaymentEvent } from '../../../../libs/events/src/save-payment-event';
 import { receiveTransfer } from './matching';
 import { setTimeout } from 'node:timers/promises';
 import type {
   ChainClient,
   TransferLog,
-} from '../../../libs/chain/src/chain-client';
-import { RpcError } from '../../../libs/chain/src/rpc-error';
-import type { Prisma, PrismaClient } from '../../../libs/db/src';
+} from '../../../../libs/chain/src/chain-client';
+import { RpcError } from '../../../../libs/chain/src/rpc-error';
+import type { Prisma, PrismaClient } from '../../../../libs/db/src';
 export type TrackerOptions = {
   startBlock?: bigint;
   chainId: number;
@@ -26,7 +26,7 @@ export type TrackerChain = Pick<
 >;
 const max = (a: bigint, b: bigint) => (a > b ? a : b);
 const min = (a: bigint, b: bigint) => (a < b ? a : b);
-export class Scanner {
+export class ScannerService {
   readonly cursorName: string;
   constructor(
     readonly db: PrismaClient,
