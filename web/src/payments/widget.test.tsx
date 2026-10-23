@@ -21,12 +21,27 @@ const data: Dashboard = {
   health: null,
 };
 
+let current: { status: string; data: Dashboard | null } = {
+  status: 'live',
+  data,
+};
 vi.mock('./use-payments', () => ({
-  usePayments: () => ({ status: 'live', data }),
+  usePayments: () => current,
 }));
 
 describe('PaymentsWidget', () => {
+  it('renders nothing before data arrives', async () => {
+    current = { status: 'loading', data: null };
+    const { PaymentsWidget } = await import('./widget');
+    expect(renderToStaticMarkup(<PaymentsWidget apiBaseUrl="/api" />)).toBe('');
+  });
+  it('renders nothing when offline', async () => {
+    current = { status: 'offline', data: null };
+    const { PaymentsWidget } = await import('./widget');
+    expect(renderToStaticMarkup(<PaymentsWidget apiBaseUrl="/api" />)).toBe('');
+  });
   it('shows a donation heading and no note', async () => {
+    current = { status: 'live', data };
     const { PaymentsWidget } = await import('./widget');
     const html = renderToStaticMarkup(<PaymentsWidget apiBaseUrl="/api" />);
     expect(html).toContain('Donation from Teal Otter');

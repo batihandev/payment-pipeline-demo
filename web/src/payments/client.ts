@@ -1,6 +1,7 @@
 import type { Dashboard, Health, Payment, Snapshot } from './types';
 
 export const HEALTH_EVERY_MS = 15000;
+export const STREAM_REOPEN_MS = 30000;
 
 export type EventStream = Pick<
   EventSource,
@@ -14,6 +15,7 @@ export class PaymentsClient {
   private buffered: Payment[] = [];
   private loading = false;
   private retry?: ReturnType<typeof setTimeout>;
+  private reopen?: ReturnType<typeof setTimeout>;
   private health: Health | null = null;
   private healthTimer?: ReturnType<typeof setInterval>;
   readonly baseUrl: string;
@@ -28,7 +30,10 @@ export class PaymentsClient {
   getSnapshot = (): Snapshot => this.snapshot;
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
-    if (this.listeners.size === 1) this.connect();
+    if (this.listeners.size === 1) {
+      this.openStream();
+      this.start();
+    }
     return () => {
       this.listeners.delete(listener);
       if (!this.listeners.size) {
@@ -36,6 +41,7 @@ export class PaymentsClient {
         this.stream?.close();
         this.stream = undefined;
         clearTimeout(this.retry);
+        clearTimeout(this.reopen);
         clearInterval(this.healthTimer);
         this.loading = false;
       }
@@ -45,20 +51,22 @@ export class PaymentsClient {
     this.snapshot = snapshot;
     for (const listener of this.listeners) listener();
   }
-  private connect() {
+  private openStream() {
     this.stream = this.createStream(`${this.baseUrl}/events`);
     this.stream.onopen = () => {
       this.generation++;
       this.loading = false;
       this.buffered = [];
-      this.update({ status: 'loading', data: null });
       void this.refresh();
     };
     this.stream.onerror = () => {
-      this.generation++;
-      this.loading = false;
-      clearTimeout(this.retry);
-      this.update({ status: 'offline', data: null });
+      if (!this.listeners.size) return;
+      this.stream?.close();
+      this.stream = undefined;
+      clearTimeout(this.reopen);
+      this.reopen = setTimeout(() => {
+        this.openStream();
+      }, STREAM_REOPEN_MS);
     };
     this.stream.onmessage = (event) => {
       try {
@@ -79,6 +87,8 @@ export class PaymentsClient {
         void this.refresh();
       }
     };
+  }
+  private start() {
     void this.refresh();
     void this.refreshHealth();
     this.healthTimer = setInterval(() => {
@@ -158,7 +168,7 @@ export class PaymentsClient {
       this.buffered = [];
     } catch {
       if (generation !== this.generation) return;
-      this.update({ status: 'offline', data: null });
+      if (!this.snapshot.data) this.update({ status: 'offline', data: null });
     } finally {
       if (generation === this.generation) {
         this.loading = false;

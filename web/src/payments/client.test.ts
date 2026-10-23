@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { HEALTH_EVERY_MS, PaymentsClient, type EventStream } from './client';
+import {
+  HEALTH_EVERY_MS,
+  PaymentsClient,
+  STREAM_REOPEN_MS,
+  type EventStream,
+} from './client';
 
 class FakeEventSource implements EventStream {
   onopen: (() => void) | null = null;
@@ -39,6 +44,7 @@ function server() {
   const requested: string[] = [];
   let hold: Promise<void> = Promise.resolve();
   const stream = new FakeEventSource();
+  let streamsOpened = 0;
   const client = new PaymentsClient(
     'https://api.example.com',
     async function (this: unknown, url) {
@@ -78,12 +84,16 @@ function server() {
         ),
       );
     },
-    () => stream,
+    () => {
+      streamsOpened++;
+      return stream;
+    },
   );
   return {
     client,
     stream,
     requested,
+    streamsOpened: () => streamsOpened,
     healthOffline: () => {
       healthAvailable = false;
     },
@@ -141,7 +151,8 @@ describe('live payments', () => {
       explorerUrl: undefined,
       confirmations: 3,
     });
-    expect(s.client.getSnapshot().status).toBe('loading');
+    expect(s.client.getSnapshot().status).toBe('live');
+    expect(s.client.getSnapshot().data?.payments[0]?.id).toBe('old');
     release();
     await vi.waitFor(() =>
       expect(s.client.getSnapshot().data?.payments[0]?.confirmations).toBe(3),
@@ -216,15 +227,61 @@ describe('live payments', () => {
     expect(s.client.getSnapshot().data?.health).toBeNull();
     stop();
   });
-  it('shows offline instead of stale data when the API cannot be reached', async () => {
+  it('goes offline only when nothing has loaded', async () => {
     const s = server();
     s.offline();
     const stop = s.client.subscribe(() => {});
-    s.stream.open();
     await vi.waitFor(() =>
       expect(s.client.getSnapshot().status).toBe('offline'),
     );
     expect(s.client.getSnapshot().data).toBeNull();
+    stop();
+  });
+  it('loads over polling when the stream never opens', async () => {
+    const s = server();
+    const stop = s.client.subscribe(() => {});
+    s.stream.disconnect();
+    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    expect(s.client.getSnapshot().data?.payments[0]?.id).toBe('old');
+    stop();
+  });
+  it('keeps the data when the stream errors', async () => {
+    const s = server();
+    const stop = s.client.subscribe(() => {});
+    s.stream.open();
+    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    const before = s.client.getSnapshot();
+    s.stream.disconnect();
+    expect(s.client.getSnapshot()).toBe(before);
+    stop();
+  });
+  it('reopens the stream after 30 s', async () => {
+    vi.useFakeTimers();
+    const s = server();
+    const stop = s.client.subscribe(() => {});
+    expect(s.streamsOpened()).toBe(1);
+    s.stream.disconnect();
+    await vi.advanceTimersByTimeAsync(STREAM_REOPEN_MS - 1);
+    expect(s.streamsOpened()).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.streamsOpened()).toBe(2);
+    stop();
+    s.stream.disconnect();
+    await vi.advanceTimersByTimeAsync(STREAM_REOPEN_MS * 2);
+    expect(s.streamsOpened()).toBe(2);
+  });
+  it('keeps the data when a refresh is refused', async () => {
+    vi.useFakeTimers();
+    const s = server();
+    const stop = s.client.subscribe(() => {});
+    s.stream.open();
+    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    s.offline();
+    const requests = s.requested.length;
+    await vi.advanceTimersByTimeAsync(15000);
+    expect(s.requested.length).toBeGreaterThan(requests);
+    expect(s.client.getSnapshot().status).toBe('live');
+    expect(s.client.getSnapshot().data?.payments[0]?.id).toBe('old');
     stop();
   });
 });
