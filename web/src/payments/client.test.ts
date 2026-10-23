@@ -77,7 +77,7 @@ function server() {
     async function (this: unknown, url) {
       if (this !== undefined) throw new TypeError('Illegal invocation');
       const snapshot = structuredClone({
-        '/payments?limit=100': payments,
+        '/payments?limit=101': payments,
         '/stats': todayStats(settledCount),
         '/stats/daily': [],
         '/health': health({
@@ -509,6 +509,21 @@ describe('receipt window', () => {
     });
     return { counts, stop };
   }
+  it('hides Show more when exactly the window size exists', async () => {
+    const s = windowed(120);
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    for (let shown = 20; shown < 120; shown += 20) {
+      expect(s.data().olderReceipts).toBe('more');
+      await s.showMore();
+    }
+    await vi.waitFor(() => {
+      expect(s.data().olderReceipts).not.toBe('loading');
+    });
+    expect(s.data().receipts).toHaveLength(120);
+    expect(s.data().olderReceipts).toBe('none');
+    stop();
+  });
   it('shows the newest 20 and adds 20 with each Show more', async () => {
     const s = windowed();
     const stop = s.client.subscribe(() => {});
@@ -536,7 +551,7 @@ describe('receipt window', () => {
     const reads = s.reads.length;
     await s.showMore();
     expect(s.data().receipts).toHaveLength(120);
-    expect(s.reads.slice(reads)).toEqual(['?limit=120']);
+    expect(s.reads.slice(reads)).toEqual(['?limit=121']);
     expect(s.reads.every((search) => !search.includes('before='))).toBe(true);
     stop();
   });
@@ -558,7 +573,7 @@ describe('receipt window', () => {
         'settled',
       );
     });
-    expect(s.reads.slice(reads)).toEqual(['?limit=120']);
+    expect(s.reads.slice(reads)).toEqual(['?limit=121']);
     expect(Math.min(...counts.slice(updates))).toBe(120);
     expect(s.data().receipts).toHaveLength(120);
     expect(s.data().olderReceipts).toBe('more');
@@ -701,7 +716,7 @@ describe('receipt window', () => {
     await vi.waitFor(() => {
       expect(s.data().receipts).toHaveLength(140);
     });
-    expect(s.reads.slice(reads)).toEqual(['?limit=140']);
+    expect(s.reads.slice(reads)).toEqual(['?limit=141']);
     stop();
   });
   it('stops offering more at 200 or when the server has no more', async () => {

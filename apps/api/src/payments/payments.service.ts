@@ -48,15 +48,17 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Only first pages whose limit is a multiple of 20 are cached: validation allows limits from
-   * 1 to 200, so the cache holds at most 10 keys. Other limits, and pages before a cursor, are
-   * read when asked for.
+   * Only first pages whose limit is a multiple of 20, or one more than one, are cached: the page
+   * reads one row past its window to learn whether older rows exist. Validation allows limits
+   * from 1 to 200, so the cache holds at most 19 keys. Other limits, and pages before a cursor,
+   * are read when asked for.
    */
   list(
     limit: number,
     before: PaymentCursor | null = null,
   ): Promise<PaymentListItemRecord[]> {
-    if (before || limit % PAYMENT_LIST_STEP !== 0)
+    const step = limit % PAYMENT_LIST_STEP;
+    if (before || !(step === 0 || (step === 1 && limit > PAYMENT_LIST_STEP)))
       return this.query(limit, before);
     let read = this.cached.get(limit);
     if (!read) {

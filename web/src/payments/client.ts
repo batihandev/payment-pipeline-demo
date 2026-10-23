@@ -95,7 +95,7 @@ export class PaymentsClient {
   private stream?: EventStream;
   /** How many receipts the page shows. */
   private windowSize = RECEIPT_PAGE;
-  /** Whether the last read filled its limit, so older payments may exist. */
+  /** Whether the last read returned a row past its limit, so older payments exist. */
   private full = false;
   /**
    * Bumped by each read, reopen and unsubscribe; a read whose epoch has moved on is dropped,
@@ -317,6 +317,8 @@ export class PaymentsClient {
     clearTimeout(this.retry);
     if (more && this.feed) this.publish();
     const limit = readLimit(size);
+    // One row more tells whether older payments exist; a full window has no Show more anyway.
+    const asked = Math.min(limit + 1, PAYMENT_LIST_MAX);
     try {
       const get = async <T>(path: string, schema: z.ZodType<T>) => {
         const request = this.request;
@@ -327,18 +329,18 @@ export class PaymentsClient {
         return readBody(schema, response);
       };
       const [rows, stats, daily] = await Promise.all([
-        get(`/payments?limit=${limit}`, paymentList),
+        get(`/payments?limit=${asked}`, paymentList),
         get('/stats', todayStats),
         get('/stats/daily', dailyStats),
       ]);
       if (epoch !== this.epoch) return;
       const held = new Map(this.feed?.rows.map((p) => [p.id, p]));
       this.windowSize = size;
-      this.full = rows.length >= limit;
+      this.full = rows.length > limit;
       this.feed = {
         // An event that arrived during the read may be newer than the read's copy. Notes come
         // from incidents rather than the row, so they always come from the read.
-        rows: rows.map((p) => {
+        rows: rows.slice(0, limit).map((p) => {
           const known = held.get(p.id);
           return known && isNewer(known, p)
             ? { ...known, noteKinds: p.noteKinds }

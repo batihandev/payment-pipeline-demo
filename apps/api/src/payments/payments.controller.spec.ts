@@ -293,16 +293,19 @@ it('serves /payments from cache for 5 s per limit', async () => {
   state.time += 1;
   expect((await get('/payments')).body).toHaveLength(2);
 });
-it('caches only multiples of 20', async () => {
+it('caches multiples of 20 and the page reads one past them', async () => {
   await payment();
-  for (const limit of [20, 200, 21, 1]) {
+  for (const limit of [20, 200, 101, 181, 21, 22, 1]) {
     expect((await get(`/payments?limit=${limit}`)).body).toHaveLength(1);
   }
   // Added without a payment event, so only the cache window decides what a read sees.
   await payment({ receivedAt: new Date('2026-10-20T13:00:00Z') });
   expect((await get('/payments?limit=20')).body).toHaveLength(1);
   expect((await get('/payments?limit=200')).body).toHaveLength(1);
-  expect((await get('/payments?limit=21')).body).toHaveLength(2);
+  expect((await get('/payments?limit=101')).body).toHaveLength(1);
+  expect((await get('/payments?limit=181')).body).toHaveLength(1);
+  expect((await get('/payments?limit=21')).body).toHaveLength(1);
+  expect((await get('/payments?limit=22')).body).toHaveLength(2);
   expect((await get('/payments?limit=1')).body).toHaveLength(1);
   expect((await list('/payments?limit=1'))[0]?.receivedAt).toBe(
     '2026-10-20T13:00:00.000Z',
