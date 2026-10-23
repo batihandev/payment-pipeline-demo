@@ -104,7 +104,7 @@ Card: `sent → processing → settled → notified`, without a confirmation cou
 - **notified:** the shop accepted the signed notice, as on the chain rail.
 - **failed:** the PaymentIntent was declined or canceled. The payment is `final`, the order is closed unless it already is, one `card_failed` incident is recorded and nothing is credited. It is terminal: a later `processing` or `succeeded` for the payment changes nothing.
 
-A card payment's stage never moves backwards: an event that would move it to an earlier or equal stage is ignored. (A chain payment can move back to `sent` when a reorg replaces its block; see Reorgs.)
+A card payment's stage never moves backwards: an event that would move it to an earlier or equal stage is ignored. (A chain payment can move back to `sent` when a reorg replaces its block; see **Reorgs** under the tracker.)
 
 ## Services
 
