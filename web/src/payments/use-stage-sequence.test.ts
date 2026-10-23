@@ -10,7 +10,8 @@ const frame = (
   stage: StageFrame['stage'],
   confirmations = 0,
   final = false,
-): StageFrame => ({ stage, confirmations, final });
+  provider: StageFrame['provider'] = 'chain',
+): StageFrame => ({ stage, confirmations, final, provider });
 const stages = (frames: StageFrame[]) => frames.map((f) => f.stage);
 
 beforeEach(() => {
@@ -31,7 +32,17 @@ describe('framesBetween', () => {
   it('lists every stage passed between two sightings, ending on the new one', () => {
     expect(
       stages(framesBetween(frame('confirming', 3), frame('notified', 10))),
-    ).toEqual(['processing', 'settled', 'notified']);
+    ).toEqual(['settled', 'notified']);
+  });
+  it('never shows a chain payment as processing', () => {
+    expect(stages(framesBetween(null, frame('notified', 10)))).not.toContain(
+      'processing',
+    );
+  });
+  it('steps a card payment through processing, which it has no confirmations for', () => {
+    expect(
+      stages(framesBetween(null, frame('notified', 0, false, 'stripe'))),
+    ).toEqual(['sent', 'processing', 'settled', 'notified']);
   });
   it('gives a same-stage update as the only frame', () => {
     expect(
@@ -42,7 +53,6 @@ describe('framesBetween', () => {
     const frames = framesBetween(frame('received', 0), frame('notified', 10));
     expect(frames.map((f) => [f.stage, f.confirmations])).toEqual([
       ['confirming', 0],
-      ['processing', 0],
       ['settled', 10],
       ['notified', 10],
     ]);
@@ -75,13 +85,9 @@ describe('stage sequence', () => {
     sequence.push(frame('notified', 10, true));
     expect(stages(shown).at(-1)).toBe('confirming');
     vi.advanceTimersByTime(stageHoldMs);
-    expect(stages(shown).slice(3)).toEqual(['processing']);
-    vi.advanceTimersByTime(stageHoldMs * 2);
-    expect(stages(shown).slice(3)).toEqual([
-      'processing',
-      'settled',
-      'notified',
-    ]);
+    expect(stages(shown).slice(3)).toEqual(['settled']);
+    vi.advanceTimersByTime(stageHoldMs);
+    expect(stages(shown).slice(3)).toEqual(['settled', 'notified']);
     expect(shown.at(-1)).toEqual(frame('notified', 10, true));
   });
 

@@ -2,20 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import type { Payment } from './types';
 
 export const stageHoldMs = 600;
-const order = [
-  'sent',
-  'received',
-  'confirming',
-  'processing',
-  'settled',
-  'notified',
-] as const satisfies readonly Payment['stage'][];
+const orders = {
+  chain: ['sent', 'received', 'confirming', 'settled', 'notified'],
+  stripe: ['sent', 'processing', 'settled', 'notified'],
+} as const satisfies Record<Payment['provider'], readonly Payment['stage'][]>;
 export type StageFrame = {
-  stage: (typeof order)[number];
+  stage: Payment['stage'];
   confirmations: number;
   final: boolean;
+  provider: Payment['provider'];
 };
-const settledAt = order.indexOf('settled');
 
 /**
  * The frames to show after `previous` to reach `next`, one for each stage the payment passed
@@ -26,6 +22,8 @@ export function framesBetween(
   previous: StageFrame | null,
   next: StageFrame,
 ): StageFrame[] {
+  const order: readonly Payment['stage'][] = orders[next.provider];
+  const settledAt = order.indexOf('settled');
   const from = previous ? order.indexOf(previous.stage) : -1;
   const to = order.indexOf(next.stage);
   const frames: StageFrame[] = order.slice(from + 1, to).map((stage, i) => ({
@@ -35,6 +33,7 @@ export function framesBetween(
         ? (previous?.confirmations ?? 0)
         : next.confirmations,
     final: false,
+    provider: next.provider,
   }));
   frames.push(next);
   return frames;
@@ -83,7 +82,8 @@ export function startStageSequence(
 /** The payment as the visitor has watched it: every stage it passed through, in order. */
 export function useStageSequence(
   payment:
-    Pick<Payment, 'id' | 'stage' | 'confirmations' | 'final'> | undefined,
+    | Pick<Payment, 'id' | 'stage' | 'confirmations' | 'final' | 'provider'>
+    | undefined,
 ): StageFrame | null {
   const [shown, setShown] = useState<{ id: string; frame: StageFrame }>();
   const sequence = useRef<ReturnType<typeof startStageSequence>>(undefined);
@@ -100,14 +100,16 @@ export function useStageSequence(
   const stage = payment?.stage;
   const confirmations = payment?.confirmations;
   const final = payment?.final;
+  const provider = payment?.provider;
   useEffect(() => {
     if (
       stage === undefined ||
       confirmations === undefined ||
-      final === undefined
+      final === undefined ||
+      provider === undefined
     )
       return;
-    sequence.current?.push({ stage, confirmations, final });
-  }, [id, stage, confirmations, final]);
+    sequence.current?.push({ stage, confirmations, final, provider });
+  }, [id, stage, confirmations, final, provider]);
   return shown && shown.id === id ? shown.frame : null;
 }
