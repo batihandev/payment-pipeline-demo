@@ -1,3 +1,7 @@
+import {
+  encodePaymentCursor,
+  paymentCursor,
+} from '../../../libs/core/src/payment-cursor';
 import type { Dashboard, Health, Payment, Snapshot } from './types';
 
 export type Rail = 'chain' | 'card';
@@ -17,6 +21,20 @@ export type PurchaseAnswer = {
 };
 
 export const HEALTH_EVERY_MS = 15000;
+/** How many payments the live list holds; the pipeline counts cover these. */
+const LIVE_LIMIT = 100;
+/** How many receipts show at first, and how many each Show more adds. */
+export const RECEIPT_PAGE = 20;
+
+type Feed = Omit<Dashboard, 'receipts' | 'olderReceipts'>;
+
+function newestFirst(a: Payment, b: Payment): number {
+  return (
+    (b.sentAt ?? b.receivedAt ?? '').localeCompare(
+      a.sentAt ?? a.receivedAt ?? '',
+    ) || b.id.localeCompare(a.id)
+  );
+}
 export const STREAM_REOPEN_MS = 30000;
 
 /** A change to a visitor order, or the stream opening, which may mean updates were missed. */
@@ -67,6 +85,11 @@ export class PaymentsClient {
   private reopen?: ReturnType<typeof setTimeout>;
   private health: Health | null = null;
   private healthTimer?: ReturnType<typeof setInterval>;
+  private receiptCount = RECEIPT_PAGE;
+  /** Payments older than the live list: pages read with Show more, and rows it pushed out. */
+  private older = new Map<string, Payment>();
+  private olderLoading = false;
+  private oldestReached = false;
   readonly baseUrl: string;
   constructor(
     baseUrl: string,
@@ -106,9 +129,69 @@ export class PaymentsClient {
   private sendOrderUpdate(update: OrderUpdate) {
     for (const listener of this.orderListeners) listener(update);
   }
-  private update(snapshot: Snapshot) {
-    this.snapshot = snapshot;
+  private update(snapshot: { status: Snapshot['status']; data: Feed | null }) {
+    this.snapshot = {
+      status: snapshot.status,
+      data: snapshot.data && this.withReceipts(snapshot.data),
+    };
     for (const listener of this.listeners) listener();
+  }
+  private withReceipts(feed: Feed): Dashboard {
+    const shown = this.snapshot.data;
+    if (this.receiptCount > RECEIPT_PAGE && shown) {
+      const live = new Set(feed.payments.map((p) => p.id));
+      for (const p of shown.payments)
+        if (!live.has(p.id)) this.older.set(p.id, p);
+    }
+    for (const p of feed.payments) this.older.delete(p.id);
+    const all = [...feed.payments, ...this.older.values()].sort(newestFirst);
+    const canRead = !this.oldestReached && feed.payments.length >= LIVE_LIMIT;
+    return {
+      ...feed,
+      receipts: all.slice(0, this.receiptCount),
+      olderReceipts: this.olderLoading
+        ? 'loading'
+        : all.length > this.receiptCount || canRead
+          ? 'more'
+          : 'none',
+    };
+  }
+  /** Shows the next page of receipts, reading older payments from the API when needed. */
+  showMoreReceipts = (): void => {
+    const data = this.snapshot.data;
+    if (!data || this.olderLoading || data.olderReceipts === 'none') return;
+    this.receiptCount += RECEIPT_PAGE;
+    const known = data.payments.length + this.older.size;
+    if (known >= this.receiptCount) {
+      this.update(this.snapshot);
+      return;
+    }
+    const last = [...data.payments, ...this.older.values()]
+      .sort(newestFirst)
+      .at(-1);
+    if (!last) return;
+    this.olderLoading = true;
+    this.update(this.snapshot);
+    void this.readOlder(encodePaymentCursor(paymentCursor(last)));
+  };
+  private async readOlder(before: string): Promise<void> {
+    const request = this.request;
+    try {
+      const response = await request(
+        `${this.baseUrl}/payments?limit=${RECEIPT_PAGE}&before=${before}`,
+      );
+      if (!response.ok) throw new Error('Demo offline');
+      const rows = (await response.json()) as Payment[];
+      const live = new Set(this.snapshot.data?.payments.map((p) => p.id));
+      for (const p of rows) if (!live.has(p.id)) this.older.set(p.id, p);
+      if (rows.length < RECEIPT_PAGE) this.oldestReached = true;
+    } catch {
+      // A failed read keeps what is shown; Show more stays available to try again.
+      this.receiptCount -= RECEIPT_PAGE;
+    } finally {
+      this.olderLoading = false;
+      this.update(this.snapshot);
+    }
   }
   private openStream() {
     this.stream = this.createStream(`${this.baseUrl}/events`);
@@ -177,11 +260,11 @@ export class PaymentsClient {
       data: { ...this.snapshot.data, health: this.health },
     });
   }
-  private merge(data: Dashboard, events: Payment[]): Dashboard {
+  private merge(data: Feed, events: Payment[]): Feed {
     const rows = new Map(data.payments.map((p) => [p.id, p]));
     for (const event of events) {
-      const previous = rows.get(event.id);
-      rows.set(event.id, {
+      const previous = rows.get(event.id) ?? this.older.get(event.id);
+      const merged: Payment = {
         ...previous,
         ...event,
         order:
@@ -193,18 +276,13 @@ export class PaymentsClient {
           (previous?.transactionHash === event.transactionHash
             ? previous.explorerUrl
             : null),
-      });
+      };
+      rows.set(event.id, merged);
+      if (this.older.has(event.id)) this.older.set(event.id, merged);
     }
     return {
       ...data,
-      payments: [...rows.values()]
-        .sort(
-          (a, b) =>
-            (b.sentAt ?? b.receivedAt ?? '').localeCompare(
-              a.sentAt ?? a.receivedAt ?? '',
-            ) || b.id.localeCompare(a.id),
-        )
-        .slice(0, 100),
+      payments: [...rows.values()].sort(newestFirst).slice(0, LIVE_LIMIT),
     };
   }
   async purchase(rail: Rail): Promise<PurchaseAnswer> {
@@ -227,7 +305,7 @@ export class PaymentsClient {
     clearTimeout(this.retry);
     const generation = this.generation;
     try {
-      const paths = ['/payments?limit=100', '/stats', '/stats/daily'];
+      const paths = [`/payments?limit=${LIVE_LIMIT}`, '/stats', '/stats/daily'];
       const [payments, stats, daily] = await Promise.all(
         paths.map(async (path) => {
           const request = this.request;
@@ -242,7 +320,7 @@ export class PaymentsClient {
         stats,
         daily,
         health: this.health,
-      } as Dashboard;
+      } as Feed;
       this.update({ status: 'live', data: this.merge(data, this.buffered) });
       this.buffered = [];
     } catch {

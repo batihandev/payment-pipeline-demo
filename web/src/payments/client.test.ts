@@ -354,3 +354,83 @@ describe('test purchases', () => {
     });
   });
 });
+describe('receipts', () => {
+  it('loads older receipts with Show more', async () => {
+    const at = (minutes: number) =>
+      new Date(
+        Date.parse('2026-10-20T12:00:00Z') - minutes * 60000,
+      ).toISOString();
+    const rows = Array.from({ length: 130 }, (_, i) => ({
+      ...row(`p${String(i).padStart(3, '0')}`, 'settled'),
+      sentAt: at(i),
+    }));
+    const requested: string[] = [];
+    const stream = new FakeEventSource();
+    const client = new PaymentsClient(
+      'https://api.example.com',
+      async (url) => {
+        const { pathname, searchParams } = new URL(String(url));
+        requested.push(pathname + new URL(String(url)).search);
+        if (pathname === '/payments') {
+          const before = searchParams.get('before');
+          const cursor = before ? decodeTestCursor(before) : null;
+          const index = cursor
+            ? rows.findIndex((r) => r.id === cursor.id) + 1
+            : 0;
+          return Response.json(
+            rows.slice(index, index + Number(searchParams.get('limit'))),
+          );
+        }
+        if (pathname === '/stats/daily') return Response.json([]);
+        return Response.json({});
+      },
+      () => stream,
+    );
+    const snapshot = () => client.getSnapshot().data!;
+    const ids = () => snapshot().receipts.map((p) => p.id);
+    const stop = client.subscribe(() => {});
+    stream.open();
+    await vi.waitFor(() => expect(client.getSnapshot().status).toBe('live'));
+    expect(ids()).toEqual(rows.slice(0, 20).map((r) => r.id));
+    expect(snapshot().olderReceipts).toBe('more');
+
+    for (let page = 0; page < 4; page++) client.showMoreReceipts();
+    expect(ids()).toEqual(rows.slice(0, 100).map((r) => r.id));
+    expect(requested.some((path) => path.includes('before='))).toBe(false);
+
+    client.showMoreReceipts();
+    expect(snapshot().olderReceipts).toBe('loading');
+    await vi.waitFor(() => expect(ids()).toHaveLength(120));
+    expect(ids()).toEqual(rows.slice(0, 120).map((r) => r.id));
+    expect(decodeTestCursor(beforeOf(requested.at(-1)!))).toEqual({
+      at: rows[99]!.sentAt,
+      id: rows[99]!.id,
+    });
+    expect(snapshot().olderReceipts).toBe('more');
+
+    client.showMoreReceipts();
+    await vi.waitFor(() => expect(snapshot().olderReceipts).toBe('none'));
+    expect(ids()).toEqual(rows.map((r) => r.id));
+
+    stream.send({ ...row('fresh', 'received'), sentAt: at(-1) });
+    expect(ids()[0]).toBe('fresh');
+    expect(ids()).toHaveLength(131);
+    stream.send({ ...rows[125]!, stage: 'notified' });
+    await vi.waitFor(() =>
+      expect(snapshot().receipts.find((p) => p.id === 'p125')?.stage).toBe(
+        'notified',
+      ),
+    );
+    expect(ids()[0]).toBe('fresh');
+    stop();
+  });
+});
+function beforeOf(path: string): string {
+  return new URL(path, 'https://api.example.com').searchParams.get('before')!;
+}
+function decodeTestCursor(value: string): { at: string; id: string } {
+  return JSON.parse(atob(value.replaceAll('-', '+').replaceAll('_', '/'))) as {
+    at: string;
+    id: string;
+  };
+}

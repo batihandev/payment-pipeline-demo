@@ -14,7 +14,7 @@ import {
 import './panel.css';
 
 export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
-  const { data, status } = usePayments(apiBaseUrl);
+  const { data, status, showMoreReceipts } = usePayments(apiBaseUrl);
   const [visitorOrders, setVisitorOrders] = useState<ReadonlySet<string>>(
     new Set(),
   );
@@ -122,8 +122,8 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
           <div className="tp-detail-grid">
             <section aria-labelledby="receipts-title" className="tp-feed">
               <h2 id="receipts-title">Receipts</h2>
-              {data.payments.length === 0 && <p>No payments yet.</p>}
-              {data.payments.map((payment) => (
+              {data.receipts.length === 0 && <p>No payments yet.</p>}
+              {data.receipts.map((payment) => (
                 <div id={`payment-${payment.id}`} key={payment.id}>
                   <Receipt
                     payment={payment}
@@ -133,6 +133,18 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
                   />
                 </div>
               ))}
+              {data.olderReceipts !== 'none' && (
+                <button
+                  type="button"
+                  className="tp-show-more"
+                  disabled={data.olderReceipts === 'loading'}
+                  onClick={showMoreReceipts}
+                >
+                  {data.olderReceipts === 'loading'
+                    ? 'Loading older receipts…'
+                    : 'Show more'}
+                </button>
+              )}
             </section>
             <aside className="tp-sidebar">
               <h2 className="tp-stats-title">Today · UTC</h2>

@@ -19,6 +19,10 @@ const data: Dashboard = {
   },
   daily: [],
   health: null,
+  get receipts() {
+    return this.payments;
+  },
+  olderReceipts: 'none',
 };
 
 let current: { status: string; data: Dashboard | null } = {
