@@ -18,12 +18,19 @@ function processors() {
     checkUnseen: done(),
   };
   const buyer = new BuyerProcessor(
-    { payment: { findFirst: jest.fn(async () => null) } } as never,
+    {
+      order: {
+        findUnique: jest.fn(async () => ({ rail: 'chain' })),
+        findUniqueOrThrow: jest.fn(async () => ({ rail: 'chain' })),
+      },
+      payment: { findFirst: jest.fn(async () => null) },
+    } as never,
     {} as never,
     { visitor: jest.fn(async () => null) } as never,
     { recoverPending: done() } as never,
     { pace: done() } as never,
     sender as never,
+    { charge: done() } as never,
     { covers: jest.fn(async () => true) } as never,
     { pruneOlderThan: jest.fn(async () => ({})) } as never,
     { get: (key: keyof BuyerConfig) => settings[key] } as ConfigService<

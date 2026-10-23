@@ -21,6 +21,7 @@ function order(
     sendState?: string;
     status?: 'open' | 'expired';
     signedTransaction?: string;
+    rail?: 'chain' | 'card';
   } = {},
   stage?: 'sent' | 'received',
 ) {
@@ -103,4 +104,19 @@ it('reads the balance once per ttl', async () => {
   clock = 3000;
   await funds.covers(row.id);
   expect(chain.getBalances).toHaveBeenCalledTimes(2);
+});
+
+it('covers a card order without reading the chain', async () => {
+  const row = await order(500_000n, { rail: 'card' });
+  const chain = chainWith(0n);
+  const funds = new FundsService(database.db, chain, buyer);
+  expect(await funds.covers(row.id)).toBe(true);
+  expect(chain.getBalances).not.toHaveBeenCalled();
+});
+
+it('does not subtract card payments from the chain balance', async () => {
+  await order(1_500_000n, { rail: 'card', sendState: 'sent' }, 'sent');
+  const row = await order(1_000_000n);
+  const funds = new FundsService(database.db, chainWith(1_000_000n), buyer);
+  expect(await funds.covers(row.id)).toBe(true);
 });

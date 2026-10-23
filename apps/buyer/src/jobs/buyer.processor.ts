@@ -18,6 +18,7 @@ import {
 import { JOBS, QUEUES, type BuyerJobData } from '../../../../libs/queues/src';
 import { REDIS } from '../../../../libs/redis/src';
 import type { BuyerConfig } from '../buyer-config';
+import { CardSenderService } from '../cards/card-sender.service';
 import { RetentionService } from '../retention/retention.service';
 import { FundsService } from '../sending/funds.service';
 import { OrderSenderService } from '../sending/order-sender.service';
@@ -40,6 +41,7 @@ export class BuyerProcessor
     private readonly orderQueue: OrderQueueService,
     private readonly pacing: PaceService,
     private readonly sender: OrderSenderService,
+    private readonly cards: CardSenderService,
     private readonly funds: FundsService,
     private readonly retention: RetentionService,
     config: ConfigService<BuyerConfig, true>,
@@ -67,9 +69,19 @@ export class BuyerProcessor
       job.name === JOBS.buyer.sendOrder ||
       job.name === JOBS.buyer.visitorPurchase
     ) {
-      await holdWhenFull(job, token, this.sender, this.maxInFlight);
-      if (job.data.orderId)
-        await holdWhenShort(job, token, this.funds, job.data.orderId);
+      const rail = job.data.orderId
+        ? (
+            await this.db.order.findUnique({
+              where: { id: job.data.orderId },
+              select: { rail: true },
+            })
+          )?.rail
+        : undefined;
+      if (rail !== 'card') {
+        await holdWhenFull(job, token, this.sender, this.maxInFlight);
+        if (job.data.orderId)
+          await holdWhenShort(job, token, this.funds, job.data.orderId);
+      }
     }
     const now = new Date();
     const exhausted = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
@@ -111,7 +123,12 @@ export class BuyerProcessor
     orderId: string,
     exhausted: boolean,
   ): Promise<void> {
-    await this.sender.sendForOrder(orderId, exhausted);
+    const order = await this.db.order.findUniqueOrThrow({
+      where: { id: orderId },
+      select: { rail: true },
+    });
+    if (order.rail === 'card') await this.cards.charge(orderId, exhausted);
+    else await this.sender.sendForOrder(orderId, exhausted);
     const payment = await this.db.payment.findFirst({ where: { orderId } });
     if (!payment) return;
     try {

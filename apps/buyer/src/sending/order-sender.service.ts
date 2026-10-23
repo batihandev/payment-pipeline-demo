@@ -47,6 +47,7 @@ export class OrderSenderService {
   inFlight(): Promise<number> {
     return this.db.order.count({
       where: {
+        rail: 'chain',
         sendState: 'sent',
         payments: { some: { stage: 'sent' } },
       },
@@ -65,6 +66,7 @@ export class OrderSenderService {
   async checkUnseen(now = new Date()): Promise<void> {
     const orders = await this.db.order.findMany({
       where: {
+        rail: 'chain',
         sendState: 'sent',
         payments: {
           some: {
