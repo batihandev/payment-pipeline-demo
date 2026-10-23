@@ -159,7 +159,6 @@ body {
 .tp-stats > div:first-child span {
   color: #d4d4d8;
 }
-.tp-incidents,
 .tp-health {
   background: white;
   border: 1px solid #ddd8cc;
@@ -168,25 +167,6 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-.tp-incidents > p {
-  font-size: 13px;
-}
-.tp-incidents article {
-  display: flex;
-  gap: 12px;
-  align-items: baseline;
-  border-top: 1px solid #eeeae0;
-  padding-top: 12px;
-}
-.tp-incidents article p {
-  font-size: 14px;
-  overflow-wrap: anywhere;
-}
-.tp-incidents .tp-handled {
-  color: #15803d;
-  font-size: 13px;
-  margin-top: 4px;
 }
 .tp-health dl {
   margin: 0;

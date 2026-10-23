@@ -48,13 +48,13 @@ export function Receipt({
   threshold,
   highlighted = false,
   compact = false,
-  notes = [],
+  note = null,
 }: {
   payment: Payment;
   threshold: number;
   highlighted?: boolean;
   compact?: boolean;
-  notes?: string[];
+  note?: string | null;
 }) {
   const view = stageView(payment, threshold);
   return (
@@ -66,7 +66,13 @@ export function Receipt({
         <div>
           <h3>
             {payment.order?.item ??
-              (payment.orderId ? 'Order details pending' : 'Unmatched payment')}
+              (payment.donation
+                ? payment.donorName
+                  ? `Donation from ${payment.donorName}`
+                  : 'Donation'
+                : payment.orderId
+                  ? 'Order details pending'
+                  : 'Unmatched payment')}
           </h3>
           <p className="tp-mono tp-muted">
             {payment.orderId
@@ -86,11 +92,7 @@ export function Receipt({
         {view.final && <span className="tp-stage tp-green">Final</span>}
       </div>
       <ConfirmationBar payment={payment} threshold={threshold} />
-      {notes.map((note, i) => (
-        <p className="tp-note" key={i}>
-          {note}
-        </p>
-      ))}
+      {note && <p className="tp-note">{note}</p>}
       <div className="tp-receipt-footer tp-mono tp-muted">
         <span>
           {payment.blockNumber

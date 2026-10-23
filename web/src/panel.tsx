@@ -3,13 +3,13 @@ import { Checkout } from './payments/checkout';
 import { PaymentsWidget } from './payments/widget';
 import { SettledChart } from './payments/chart';
 import { Receipt } from './payments/receipt';
+import { receiptNote } from './payments/notes';
 import { usePayments } from './payments/use-payments';
 import {
   confirmationsNeeded,
   isVisitorOrder,
   shortId,
   steps,
-  utcTime,
 } from './payments/view';
 import './panel.css';
 
@@ -18,7 +18,6 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
   const [visitorOrders, setVisitorOrders] = useState<ReadonlySet<string>>(
     new Set(),
   );
-  const today = new Date().toISOString().slice(0, 10);
   return (
     <main className="tp tp-page">
       <header className="tp-page-header">
@@ -130,9 +129,7 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
                     payment={payment}
                     threshold={confirmationsNeeded(data.health)}
                     highlighted={isVisitorOrder(payment, visitorOrders)}
-                    notes={data.incidents
-                      .filter((i) => i.paymentId === payment.id)
-                      .map((i) => `${i.whatHappened} ${i.howHandled}`)}
+                    note={receiptNote(payment, data.incidents)}
                   />
                 </div>
               ))}
@@ -156,28 +153,6 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
                     <span>{label}</span>
                   </div>
                 ))}
-              </section>
-              <section
-                aria-labelledby="incident-title"
-                className="tp-incidents"
-              >
-                <h2 id="incident-title">What went wrong today</h2>
-                <p className="tp-muted">and how the tracker handled it · UTC</p>
-                {data.incidents.filter((i) => i.createdAt.startsWith(today))
-                  .length === 0 && <p>No incidents reported today.</p>}
-                {data.incidents
-                  .filter((i) => i.createdAt.startsWith(today))
-                  .map((i) => (
-                    <article key={i.id}>
-                      <time className="tp-mono tp-muted" dateTime={i.createdAt}>
-                        {utcTime(i.createdAt)}
-                      </time>
-                      <div>
-                        <p>{i.whatHappened}</p>
-                        <p className="tp-handled">{i.howHandled}</p>
-                      </div>
-                    </article>
-                  ))}
               </section>
               {data.health && (
                 <section className="tp-health" aria-label="Tracker health">

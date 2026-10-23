@@ -9,7 +9,8 @@ type Json<T> = T extends bigint | Date
   : T extends object
     ? { [K in keyof T]: Json<T[K]> }
     : T;
-export type Payment = Json<DatabasePayment> & {
+export type Payment = Json<Omit<DatabasePayment, 'fromAddress'>> & {
+  donorName: string | null;
   order?: Json<Pick<Order, 'id' | 'item' | 'price'>> | null;
   explorerUrl?: string | null;
 };
