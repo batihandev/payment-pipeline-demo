@@ -410,8 +410,8 @@ export class OrderSender {
           howHandled: knownFailure
             ? 'No transaction was broadcast; released the reservation and closed the order.'
             : needsReview
-              ? 'Automatic retries stopped; kept the reservation and the same signed transaction for manual review.'
-              : 'Kept the reservation; retry with backoff using the same signed transaction when present.',
+              ? `Automatic retries stopped; kept the reservation${row.signedTransaction ? ' and the same signed transaction' : ''} for manual review.`
+              : `Kept the reservation; retry with backoff${row.signedTransaction ? ' using the same signed transaction' : ''}.`,
         },
       });
     });

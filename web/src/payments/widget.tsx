@@ -40,7 +40,7 @@ export function PaymentsWidget({ apiBaseUrl }: { apiBaseUrl: string }) {
             <p>No payments yet.</p>
           )}
           <footer className="tp-widget-counts tp-mono">
-            <span>{data.stats.settledCount} settled today</span>
+            <span>{data.stats.settledCount} settled today · UTC</span>
             <span>{data.stats.duplicatesSkipped} duplicates skipped today</span>
             <span>{data.stats.failuresRecovered} recovered today</span>
           </footer>

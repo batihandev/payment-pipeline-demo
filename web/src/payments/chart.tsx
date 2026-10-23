@@ -42,7 +42,9 @@ export function SettledChart({ days }: { days: DailyStat[] }) {
     if (last) last.push(point);
     else segments.push([point]);
   });
-  const labelAt = [0, Math.floor((bars.length - 1) / 2), bars.length - 1];
+  const labelAt = [
+    ...new Set([0, Math.floor((bars.length - 1) / 2), bars.length - 1]),
+  ];
   return (
     <section aria-labelledby="chart-title" className="tp-chart">
       <div className="tp-row tp-between">
@@ -143,7 +145,13 @@ export function SettledChart({ days }: { days: DailyStat[] }) {
               className="tp-chart-text"
               x={x(index)}
               y={height - 8}
-              textAnchor={n === 0 ? 'start' : n === 2 ? 'end' : 'middle'}
+              textAnchor={
+                index === 0
+                  ? 'start'
+                  : index === bars.length - 1
+                    ? 'end'
+                    : 'middle'
+              }
             >
               {bar.key.slice(5)}
             </text>

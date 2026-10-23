@@ -1,6 +1,6 @@
 # testnet-payments: design spec
 
-Date: 2026-10-20, revised 2026-10-22. Status: current.
+Date: 2026-10-20, revised 2026-10-23. Status: current.
 
 ## Purpose
 
@@ -42,7 +42,8 @@ A demo of payment tracking. A bot buys silly items from a demo shop and pays in 
 
 - An order picks a random item from a small catalogue of silly items (for example "Gold rubber duck") priced between $0.10 and $2.00.
 - USDC transfers carry no reference, so orders are matched by **unique amount**: price plus an offset of 1 to 9,999 micro-units, unique among orders of the last 24 hours. Example: $1.40 becomes 1.400731 USDC. The offsets bound orders to 9,999 a day; the visitor daily limit keeps well below it.
-- A transfer to the shop that matches no open order is stored as an **unmatched payment** and logged as an incident. It is never credited to an order.
+- Only transfers whose sender is `BUYER_ADDRESS` (compared case-insensitively) are matched to orders. A buyer transfer that matches no open order is stored with no order and logged as an incident; it is never credited to an order.
+- Any other USDC transfer to the shop is a **donation**. It is stored with its sender (`from_address`, `donation`), settles with a ledger entry like any payment, and has no order, no shop notice and no incident. USDC is the only asset tracked. The API derives a stable two-word name from the sender and never returns the address. Donations below `DONATION_MIN` (default 10,000 micro-units, 0.01 USDC) stay stored but are left out of `/payments`, the event stream, `/stats` and `/stats/daily`.
 - An order not paid within a configured time expires.
 
 ## Pacing and test buys
@@ -93,9 +94,12 @@ Stripe (phase 2): `received → processing → settled → notified`, without a 
 
 - Runs the pacing schedule as a repeatable per-minute BullMQ job that queues purchase jobs with random offsets inside the minute.
 - Each purchase job: reserve the budget, create the order with its unique amount, then send.
+- **Hold before a send:** before an order is sent, the buyer checks that its cached USDC balance (refreshed every few seconds), less the amounts still in flight, covers the order. If not, the job is delayed 2 seconds without using an attempt, so the order can still expire and close.
+- **Upkeep queue:** `check-unseen` and `refill-check` run on their own `buyer-upkeep` queue and worker, so held sends never delay them.
 - **Sending is idempotent per order.** Nonces are allocated one at a time. The signed transaction and its hash are stored on the order before broadcast. A retry rebroadcasts the same signed transaction, or finds that it already landed, and never signs a second transfer for the same order.
 - Nightly sweep as a repeatable job, and the on-demand refill, both using the same send path.
 - A failed send is retried with backoff and recorded as an incident.
+- **Dropped transfers:** every minute the buyer checks transfers the tracker has not seen two minutes after sending. One that reverted, or whose nonce another transaction used, is closed with an incident only after two consecutive checks agree; an order that leaves the unseen list forgets the suspicion.
 
 ### tracker
 
@@ -114,7 +118,7 @@ Stripe (phase 2): `received → processing → settled → notified`, without a 
 
 | Route                     | Purpose                                                                                                                           |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /payments?limit=`    | Recent payments with order, stage, confirmations, block, explorer URL                                                             |
+| `GET /payments?limit=`    | Recent payments with order or donor name, stage, confirmations, block, explorer URL                                               |
 | `GET /stats`              | Today: settled count, average time to settle, duplicates skipped, failures recovered. In-memory cache with a short TTL            |
 | `GET /stats/daily`        | Per UTC day for the retained period: settled count, average time to settle, scheduled and visitor purchases. Cached like `/stats` |
 | `GET /incidents?limit=`   | Recent incidents                                                                                                                  |
@@ -125,7 +129,7 @@ Stripe (phase 2): `received → processing → settled → notified`, without a 
 | `POST /shop/notices`      | Receives the signed notice. Verifies the signature and timestamp, then marks the payment notified                                 |
 | `POST /stripe/webhook`    | Phase 2                                                                                                                           |
 
-CORS is allowed only for the configured web origin. With `TRUST_PROXY` set, client addresses come from the proxy's forwarding header, so per-visitor limits apply to visitors rather than to the proxy.
+Every 4xx answers with a fixed body holding a code for its status (for example `bad_request`, `not_found`, `rate_limited`); bodies never echo messages. CORS is allowed only for the configured web origin. With `TRUST_PROXY` set, client addresses come from the proxy's forwarding header, so per-visitor limits apply to visitors rather than to the proxy.
 
 ### web
 
@@ -135,7 +139,7 @@ One React + Vite page with three parts:
 
 - The checkout shows "Queued · N ahead" while a visitor purchase waits, and each limit's message says which limit applies and when it lifts.
 - **Small widget:** a dark card showing the latest payment as a receipt (item, price, order and block), a confirmation bar filling to the threshold, a PAID stamp when settled, a four-step strip and a footer of counts. It runs without interaction. It can also be shown on its own at `/?view=widget`.
-- **Full panel:** header with a live indicator, test network label, one-line caption; a four-lane pipeline; a receipts feed with notes (for example "Seen again on a rescan. Already credited, skipped."); stats tiles; an incident log titled "What went wrong today", pairing each problem with how it was handled.
+- **Full panel:** header with a live indicator, test network label, one-line caption; a four-lane pipeline; a receipts feed in which a receipt shows at most one note (a reorg, a transfer that did not go through, a payment after its order expired, or a thank-you on a donation; the widget shows none); stats tiles.
 
 Confirmation progress reads "N of 10" until the threshold, then "10+ confirmations". The full panel adds a chart of settled payments per day and per week over the retained period, from `/stats/daily`, with scheduled and visitor purchases stacked and the average time to settle as a line.
 
@@ -146,7 +150,7 @@ Data comes from the REST routes on load and `/events` afterwards. Explorer links
 - `orders`: id, item, price, expected amount (micro-units), status (open, paid, expired), source (schedule, visitor), nonce, signed transaction, transaction hash, send attempts, created and expiry times.
 - `daily_budgets`: UTC day, target count and amount, reserved count and amount.
 - `scan_gaps`: block range, error category, attempts, next retry time, resolved time.
-- `payments`: id, provider (chain, stripe), external key (unique per provider), order id (nullable for unmatched), amount, stage, confirmations, block number and hash, transaction hash, log index, final flag, stage timestamps.
+- `payments`: id, provider (chain, stripe), external key (unique per provider), order id (null for a donation), sender address and donation flag (donations only), amount, stage, confirmations, block number and hash, transaction hash, log index, final flag, stage timestamps.
 - `ledger_entries`: id, payment id (unique), amount, created time.
 - `incidents`: id, kind, what happened, how it was handled, related payment or block range, time.
 - `cursors`: name, block number, block hash.
@@ -184,7 +188,7 @@ The monitor sends one message when a condition starts, one when it clears, and a
 
 ## Testing
 
-- Unit tests: pacing and budget reservation (including concurrent reservations at the cap), visitor limits and queue positions, refill triggering and cooldown, the in-flight cap, unique-amount allocation and matching, idempotent send retries, credit-once under repeated logs, cursor and overlap logic (silent re-reads versus recorded duplicates), range halving and gaps, reorg handling, notice signature verification, retention, and the monitoring signals.
+- Unit tests: pacing and budget reservation (including concurrent reservations at the cap), visitor limits and queue positions, refill triggering and cooldown, the in-flight cap, unique-amount allocation and matching, idempotent send retries, credit-once under repeated logs, the hold before a send, the two-run drop check, buyer-only matching and donations, cursor and overlap logic (silent re-reads versus recorded duplicates), range halving and gaps, reorg handling, notice signature verification, retention, and the monitoring signals.
 - Tracker logic runs against an RPC interface so tests can feed it scripted blocks and logs, including failures and reorgs.
 - One manual smoke run against Base Sepolia, documented in the README.
 

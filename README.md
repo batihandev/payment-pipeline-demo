@@ -14,6 +14,8 @@ flowchart LR
   API --> Web[React dashboard]
 ```
 
+Only transfers from `BUYER_ADDRESS` are matched to orders. Any other USDC transfer to the shop is a donation: it is stored with its sender and settles with a ledger entry, but has no order, no shop notice and no incident. The API shows a donation under a stable two-word name derived from the sender and never returns the address. Donations below `DONATION_MIN` are stored but not listed, streamed or counted.
+
 Chain payments follow `sent → received → confirming → settled → notified` and gain a final flag when the chain finalizes their block. The ledger's unique payment key enforces one credit per payment.
 
 ## Purchases
@@ -47,7 +49,8 @@ The services run on free RPC tiers, so request volume stays inside their rate li
 - Each service has its own request rate (`RPC_REQUESTS_PER_SECOND_TRACKER`, `RPC_REQUESTS_PER_SECOND_BUYER` and `RPC_REQUESTS_PER_SECOND_API`; defaults 2, 2 and 1). Together they stay at or below the provider's rate, and a burst of purchases cannot stall confirmations. A limiter delays a call until its slot instead of refusing it.
 - The buyer makes about one RPC call per send: it signs locally with a nonce allocated in the database, a fixed gas limit and a fee cached for a few seconds. It checks for a receipt only when retrying.
 - At most `MAX_IN_FLIGHT` (default 10) transfers wait unconfirmed at once. A send beyond that returns to its queue for a moment and does not count as a failed attempt.
-- Every minute the buyer checks transfers the tracker has not seen two minutes after sending. One that reverted, or whose nonce another transaction used, can never land: its order is closed with an incident and leaves the in-flight count. Any other is broadcast again.
+- Before an order is sent, the buyer checks that its cached USDC balance, less the amounts in flight, covers the order. If not, the send is delayed 2 seconds and does not count as a failed attempt; the order can still expire and close.
+- Every minute the buyer checks transfers the tracker has not seen two minutes after sending. One that reverted, or whose nonce another transaction used, can never land. It is closed with an incident, and leaves the in-flight count, only after two consecutive checks agree; an order that leaves the unseen list forgets the suspicion. Any other is broadcast again. This check and the refill check run on their own `buyer-upkeep` queue, so held sends never delay them.
 - The tracker reads new payments with one `eth_getLogs` call per pass and takes confirmations from the latest block number.
 
 ## Rescans and duplicates
@@ -67,6 +70,8 @@ Each tracker pass re-reads the last `RESCAN_BLOCKS` blocks. A log re-read inside
 | `POST /test-purchases`    | Visitor test buy                                                                                                    |
 | `GET /test-purchases/:id` | Queue position of a waiting visitor purchase                                                                        |
 | `POST /shop/notices`      | Receives the signed notice, verifies its signature and timestamp, then marks the payment notified                   |
+
+Each 4xx answers with a fixed body holding a code for its status, such as `bad_request` or `rate_limited`; bodies never echo messages.
 
 Set `TRUST_PROXY=true` when the API runs behind exactly one reverse proxy or tunnel. Client addresses then come from the proxy's forwarding header, so per-visitor limits apply to visitors rather than to the proxy. Leave it `false` when clients connect directly.
 
@@ -89,7 +94,7 @@ Head and balances come from one chain reading that the API refreshes at most eve
 
 ## Web views
 
-The dashboard at `/` has a checkout card, a small widget and a full panel. The full panel charts settled payments per day and per week from `/stats/daily`. The widget can also be shown alone at `/?view=widget`.
+The dashboard at `/` has a checkout card, a small widget and a full panel. Each receipt shows at most one note. The full panel charts settled payments per day and per week from `/stats/daily`. The widget can also be shown alone at `/?view=widget`.
 
 ## Run locally
 
@@ -123,40 +128,42 @@ PostgreSQL binds to `127.0.0.1:55432` and Redis to `127.0.0.1:56379`. `pnpm db:m
 
 `.env.example` lists the environment variables; `libs/config/src/index.ts` defines validation and defaults. Money settings use integer micro-units; native balance thresholds use wei. Quiet-window hours and budget days use UTC.
 
-| App          | Required configuration                                             |
-| ------------ | ------------------------------------------------------------------ |
-| All backends | `DATABASE_URL`, `REDIS_URL`, `CHAIN_ID`, `RPC_URL`, `USDC_ADDRESS` |
-| Buyer        | `BUYER_PRIVATE_KEY`, `SHOP_PRIVATE_KEY`                            |
-| Tracker      | `SHOP_ADDRESS`, `NOTICE_SECRET`, `SHOP_NOTICE_URL`                 |
-| API          | `BUYER_ADDRESS`, `SHOP_ADDRESS`, `NOTICE_SECRET`, `WEB_ORIGIN`     |
+| App          | Required configuration                                              |
+| ------------ | ------------------------------------------------------------------- |
+| All backends | `DATABASE_URL`, `REDIS_URL`, `CHAIN_ID`, `RPC_URL`, `USDC_ADDRESS`  |
+| Buyer        | `BUYER_PRIVATE_KEY`, `SHOP_PRIVATE_KEY`                             |
+| Tracker      | `BUYER_ADDRESS`, `SHOP_ADDRESS`, `NOTICE_SECRET`, `SHOP_NOTICE_URL` |
+| API          | `BUYER_ADDRESS`, `SHOP_ADDRESS`, `NOTICE_SECRET`, `WEB_ORIGIN`      |
 
 Optional settings and their defaults:
 
-| Setting                                                                                           | Default                        | Meaning                                                                                         |
-| ------------------------------------------------------------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------- |
-| `API_PORT`                                                                                        | 3000                           | API HTTP port                                                                                   |
-| `BLOCK_EXPLORER_URL`                                                                              | `https://sepolia.basescan.org` | Base URL for explorer links                                                                     |
-| `CONFIRMATIONS`                                                                                   | 10                             | Blocks on top of a payment's block before it settles                                            |
-| `START_BLOCK`                                                                                     | `RESCAN_BLOCKS` below the head | First block the tracker scans when it has no cursor                                             |
-| `RESCAN_BLOCKS`                                                                                   | 5                              | Blocks re-read on each tracker pass                                                             |
-| `MAX_RANGE`, `MIN_RANGE`                                                                          | 500, 10                        | Largest and smallest block range per log query; a rejected range is halved down to the minimum  |
-| `ACTIVE_POLL_MS`, `IDLE_POLL_MS`                                                                  | 2000, 30000                    | Tracker poll interval while payments are open, and otherwise                                    |
-| `RPC_COOLDOWN_MS`                                                                                 | 30000                          | Pause for a service after a rate-limit response                                                 |
-| `RPC_MAX_ATTEMPTS`, `GAP_MAX_ATTEMPTS`                                                            | 3, 5                           | Attempts per RPC call, and attempts per stored scan gap                                         |
-| `ORDER_TTL_MINUTES`                                                                               | 30                             | Minutes before an unpaid order expires                                                          |
-| `QUIET_START_HOUR_UTC`, `QUIET_END_HOUR_UTC`                                                      | 0, 7                           | UTC hours in which scheduled purchases are less likely                                          |
-| `LOW_NATIVE_BALANCE`, `LOW_USDC_BALANCE`                                                          | 1000000000000000, 10000000     | Balances (wei, micro-units) below which the dashboard shows a warning                           |
-| `RPC_REQUESTS_PER_SECOND_TRACKER`, `RPC_REQUESTS_PER_SECOND_BUYER`, `RPC_REQUESTS_PER_SECOND_API` | 2, 2, 1                        | Each service's own RPC request rate; together they stay within the provider's rate              |
-| `DAILY_COUNT_CAP`, `DAILY_AMOUNT_CAP`                                                             | 100, 200000000                 | Scheduled purchases per UTC day and their total in micro-units (200 USDC)                       |
-| `VISITOR_PER_MINUTE`, `VISITOR_PER_DAY`                                                           | 10, 100                        | Visitor purchase limits per client                                                              |
-| `VISITOR_QUEUE_LIMIT`                                                                             | 30                             | Visitor purchases waiting at once                                                               |
-| `VISITOR_DAILY_LIMIT`                                                                             | 2000                           | Visitor purchases per UTC day across all clients                                                |
-| `DONATION_MIN`                                                                                    | 10000                          | Smallest donation in micro-units (0.01 USDC) the API lists, streams and counts                  |
-| `GAS_FLOOR`                                                                                       | 200000000000000                | Native balance floor in wei (0.0002 ETH)                                                        |
-| `REFILL_BELOW`, `REFILL_COOLDOWN_SECONDS`                                                         | 5000000, 20                    | Buyer USDC balance in micro-units (5 USDC) that triggers a refill, and the wait between refills |
-| `MAX_IN_FLIGHT`                                                                                   | 10                             | Buyer purchases in flight at once                                                               |
-| `RETENTION_DAYS`                                                                                  | 30                             | Days that records are kept                                                                      |
-| `TRUST_PROXY`                                                                                     | `false`                        | Set `true` to read the client address from proxy headers                                        |
+| Setting                                      | Default                        | Meaning                                                                                         |
+| -------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `API_PORT`                                   | 3000                           | API HTTP port                                                                                   |
+| `BLOCK_EXPLORER_URL`                         | `https://sepolia.basescan.org` | Base URL for explorer links                                                                     |
+| `CONFIRMATIONS`                              | 10                             | Blocks on top of a payment's block before it settles                                            |
+| `START_BLOCK`                                | `RESCAN_BLOCKS` below the head | First block the tracker scans when it has no cursor                                             |
+| `RESCAN_BLOCKS`                              | 5                              | Blocks re-read on each tracker pass                                                             |
+| `MAX_RANGE`, `MIN_RANGE`                     | 500, 10                        | Largest and smallest block range per log query; a rejected range is halved down to the minimum  |
+| `ACTIVE_POLL_MS`, `IDLE_POLL_MS`             | 2000, 30000                    | Tracker poll interval while payments are open, and otherwise                                    |
+| `RPC_COOLDOWN_MS`                            | 30000                          | Pause for a service after a rate-limit response                                                 |
+| `RPC_MAX_ATTEMPTS`, `GAP_MAX_ATTEMPTS`       | 3, 5                           | Attempts per RPC call, and attempts per stored scan gap                                         |
+| `ORDER_TTL_MINUTES`                          | 30                             | Minutes before an unpaid order expires                                                          |
+| `QUIET_START_HOUR_UTC`, `QUIET_END_HOUR_UTC` | 0, 7                           | UTC hours in which scheduled purchases are less likely                                          |
+| `LOW_NATIVE_BALANCE`, `LOW_USDC_BALANCE`     | 1000000000000000, 10000000     | Balances (wei, micro-units) below which the dashboard shows a warning                           |
+| `RPC_REQUESTS_PER_SECOND_TRACKER`            | 2                              | Tracker's RPC request rate                                                                      |
+| `RPC_REQUESTS_PER_SECOND_BUYER`              | 2                              | Buyer's RPC request rate                                                                        |
+| `RPC_REQUESTS_PER_SECOND_API`                | 1                              | API's RPC request rate; the three together stay within the provider's rate                      |
+| `DAILY_COUNT_CAP`, `DAILY_AMOUNT_CAP`        | 100, 200000000                 | Scheduled purchases per UTC day and their total in micro-units (200 USDC)                       |
+| `VISITOR_PER_MINUTE`, `VISITOR_PER_DAY`      | 10, 100                        | Visitor purchase limits per client                                                              |
+| `VISITOR_QUEUE_LIMIT`                        | 30                             | Visitor purchases waiting at once                                                               |
+| `VISITOR_DAILY_LIMIT`                        | 2000                           | Visitor purchases per UTC day across all clients                                                |
+| `DONATION_MIN`                               | 10000                          | Smallest donation in micro-units (0.01 USDC) the API lists, streams and counts                  |
+| `GAS_FLOOR`                                  | 200000000000000                | Native balance floor in wei (0.0002 ETH)                                                        |
+| `REFILL_BELOW`, `REFILL_COOLDOWN_SECONDS`    | 5000000, 20                    | Buyer USDC balance in micro-units (5 USDC) that triggers a refill, and the wait between refills |
+| `MAX_IN_FLIGHT`                              | 10                             | Buyer purchases in flight at once                                                               |
+| `RETENTION_DAYS`                             | 30                             | Days that records are kept                                                                      |
+| `TRUST_PROXY`                                | `false`                        | Set `true` to read the client address from proxy headers                                        |
 
 `NOTICE_SECRET` must contain at least 32 characters. Missing or invalid variables are reported together by name without printing their values. `TEST_DATABASE_URL` points database tests at the local PostgreSQL instance; tests needing isolation create and reset their own schema. `TEST_REDIS_URL` points Redis and queue tests at a Redis database separate from `REDIS_URL`, because they clear their queues. `VITE_API_URL` supplies the web app's API origin and `VITE_REPO_URL` the repository link in the "How this works" text.
 
@@ -182,4 +189,4 @@ A Redis lock serializes each sender. A database nonce row preserves allocations 
 
 A broadcast purchase creates a `sent` payment keyed by `sent:<order id>`. Its log index is empty until chain observation; the tracker correlates the transaction hash with this payment when recording its transfer log.
 
-Buyer tests use a scripted chain client, isolated PostgreSQL schemas and local Redis queues. They cover both crash windows around broadcast, durable nonce allocation, budget races and restart recovery, priority and pacing, expiry, sweep retries and failure incidents. Chain adapter tests use a local scripted transport; no automated test contacts a live chain.
+Buyer tests use a scripted chain client, isolated PostgreSQL schemas and local Redis queues. They cover the hold on a short balance, the two-run drop check, both crash windows around broadcast, durable nonce allocation, budget races and restart recovery, priority and pacing, expiry, sweep retries and failure incidents. Chain adapter tests use a local scripted transport; no automated test contacts a live chain.
