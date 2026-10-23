@@ -153,6 +153,15 @@ it('queues an immediate priority-one visitor job without taking scheduled budget
   expect(job?.opts).toMatchObject({ priority: 1, delay: 0 });
 });
 
+it('rejects a test-purchase body over 4 KB', async () => {
+  const response = await buy()
+    .set('content-type', 'application/json')
+    .send(JSON.stringify({ rail: 'chain', note: 'x'.repeat(5000) }));
+  expect(response.statusCode).toBe(413);
+  expect(response.body).toEqual({ error: 'payload_too_large' });
+  expect(await database.db.order.count()).toBe(0);
+});
+
 it('admits back-to-back clicks from different visitors', async () => {
   const first = await buy('192.0.2.1');
   const second = await buy('192.0.2.2');

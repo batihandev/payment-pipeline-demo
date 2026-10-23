@@ -61,6 +61,7 @@ it('shows a card payment with its receipt link and only the card brand and last 
   await payment({
     provider: 'stripe',
     orderId: order.id,
+    externalKey: 'pi_private',
     transactionHash: null,
     receiptUrl: 'https://pay.stripe.com/receipts/1',
   });
@@ -77,6 +78,7 @@ it('shows a card payment with its receipt link and only the card brand and last 
     }),
   ]);
   expect(response.text).not.toContain('pm_private');
+  expect(response.text).not.toContain('pi_private');
   expect(response.text).not.toContain(customer.stripeCustomerId);
   expect(response.text).not.toContain('Demo customer');
   await state.database.db.order.deleteMany();

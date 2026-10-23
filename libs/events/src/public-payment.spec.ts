@@ -1,6 +1,7 @@
 import type { Payment } from '../../db/generated/client';
 import { donorName } from '../../core/src/donor-name';
 import { publicPayment } from './public-payment';
+import { serializePayment } from './publish-payment';
 
 const sender = `0x${'Ab'.repeat(20)}`;
 const payment = (data: Partial<Payment>) =>
@@ -63,4 +64,12 @@ it('leaves an order without a customer with a null customer', () => {
     order: { id: 'o1', customer: null },
   });
   expect(result.order).toEqual({ id: 'o1', customer: null });
+});
+it('omits the PaymentIntent id from a card payment', () => {
+  const card = payment({ provider: 'stripe', externalKey: 'pi_secret' });
+  expect(publicPayment(card)).not.toHaveProperty('externalKey');
+  expect(serializePayment(card)).not.toContain('pi_secret');
+  expect(
+    publicPayment(payment({ provider: 'chain', externalKey: '84532:0x1:0' })),
+  ).toMatchObject({ externalKey: '84532:0x1:0' });
 });
