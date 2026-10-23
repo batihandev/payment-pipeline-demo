@@ -139,3 +139,16 @@ it('answers 400 bad_request for an unknown or out-of-range limit', async () => {
     expect(response.body).toEqual({ error: 'bad_request' });
   }
 });
+
+it('serves /payments from cache for 5 s per limit', async () => {
+  await payment();
+  expect((await get('/payments')).body).toHaveLength(1);
+  expect((await get('/payments?limit=1')).body).toHaveLength(1);
+  await payment({ receivedAt: new Date('2026-10-20T13:00:00Z') });
+  state.time += 4999;
+  expect((await get('/payments')).body).toHaveLength(1);
+  expect((await get('/payments?limit=2')).body).toHaveLength(2);
+  expect((await get('/payments?limit=1')).body).toHaveLength(1);
+  state.time += 1;
+  expect((await get('/payments')).body).toHaveLength(2);
+});

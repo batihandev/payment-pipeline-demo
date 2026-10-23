@@ -1,4 +1,5 @@
-import { Controller, Get, HttpCode, Ip, Param, Post } from '@nestjs/common';
+import { Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
+import { ClientIp } from '../common/client-ip';
 import { TestPurchasesService } from './purchases.service';
 
 @Controller('test-purchases')
@@ -7,7 +8,7 @@ export class TestPurchasesController {
 
   @Post()
   @HttpCode(202)
-  buy(@Ip() ip: string) {
+  buy(@ClientIp() ip: string) {
     return this.purchases.buy(ip);
   }
 

@@ -1,3 +1,4 @@
+import { SkipThrottle } from '@nestjs/throttler';
 import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { NoticeDto } from './dto/notice.dto';
 import { NoticeSignatureGuard } from './notice-signature.guard';
@@ -8,6 +9,7 @@ export class NoticesController {
   constructor(private readonly notices: NoticesService) {}
 
   @Post()
+  @SkipThrottle()
   @HttpCode(200)
   @UseGuards(NoticeSignatureGuard)
   async accept(@Body() body: NoticeDto): Promise<{ ok: true }> {

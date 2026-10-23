@@ -140,6 +140,7 @@ Optional settings and their defaults:
 | Setting                                      | Default                        | Meaning                                                                                         |
 | -------------------------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------- |
 | `API_PORT`                                   | 3000                           | API HTTP port                                                                                   |
+| `API_REQUESTS_PER_MINUTE`                    | 300                            | Requests one client address may make per minute, except signed shop notices                     |
 | `BLOCK_EXPLORER_URL`                         | `https://sepolia.basescan.org` | Base URL for explorer links                                                                     |
 | `CONFIRMATIONS`                              | 10                             | Blocks on top of a payment's block before it settles                                            |
 | `START_BLOCK`                                | `RESCAN_BLOCKS` below the head | First block the tracker scans when it has no cursor                                             |
@@ -163,6 +164,8 @@ Optional settings and their defaults:
 | `REFILL_BELOW`, `REFILL_COOLDOWN_SECONDS`    | 5000000, 20                    | Buyer USDC balance in micro-units (5 USDC) that triggers a refill, and the wait between refills |
 | `MAX_IN_FLIGHT`                              | 10                             | Buyer purchases in flight at once                                                               |
 | `RETENTION_DAYS`                             | 30                             | Days that records are kept                                                                      |
+| `STREAMS_PER_IP`                             | 5                              | Open live-stream connections allowed per client address                                         |
+| `STREAMS_TOTAL`                              | 500                            | Open live-stream connections allowed in all                                                     |
 | `TRUST_PROXY`                                | `false`                        | Set `true` to read the client address from proxy headers                                        |
 
 `NOTICE_SECRET` must contain at least 32 characters. Missing or invalid variables are reported together by name without printing their values. `TEST_DATABASE_URL` points database tests at the local PostgreSQL instance; tests needing isolation create and reset their own schema. `TEST_REDIS_URL` points Redis and queue tests at a Redis database separate from `REDIS_URL`, because they clear their queues. `VITE_API_URL` supplies the web app's API origin and `VITE_REPO_URL` the repository link in the "How this works" text.

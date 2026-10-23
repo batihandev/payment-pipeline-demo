@@ -1,5 +1,6 @@
 import { Module, ValidationPipe, type DynamicModule } from '@nestjs/common';
-import { APP_FILTER, APP_PIPE } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_PIPE } from '@nestjs/core';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { appConfig } from '../../../libs/config/src/config.module';
@@ -8,6 +9,7 @@ import { DatabaseModule } from '../../../libs/db/src';
 import { RedisModule } from '../../../libs/redis/src';
 import type { ApiConfig } from './common/api-config';
 import { ClockModule } from './common/clock.module';
+import { ClientThrottlerGuard } from './common/client-throttler.guard';
 import { GenericErrorFilter } from './common/generic-error.filter';
 import { validationFailure } from './common/validation';
 import { EventsModule } from './events/events.module';
@@ -35,6 +37,19 @@ export class AppModule {
             connection: { url: config.get('REDIS_URL', { infer: true }) },
           }),
         }),
+        ThrottlerModule.forRootAsync({
+          inject: [ConfigService],
+          useFactory: (config: ConfigService<ApiConfig, true>) => ({
+            throttlers: [
+              {
+                ttl: 60_000,
+                limit: config.get('API_REQUESTS_PER_MINUTE', { infer: true }),
+              },
+            ],
+            // One budget per address across all routes.
+            generateKey: (_context, tracker, name) => `${name}:${tracker}`,
+          }),
+        }),
         PaymentsModule,
         IncidentsModule,
         StatsModule,
@@ -44,6 +59,7 @@ export class AppModule {
         NoticesModule,
       ],
       providers: [
+        { provide: APP_GUARD, useClass: ClientThrottlerGuard },
         { provide: APP_FILTER, useClass: GenericErrorFilter },
         {
           provide: APP_PIPE,

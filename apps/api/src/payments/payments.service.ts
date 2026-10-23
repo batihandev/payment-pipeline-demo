@@ -4,15 +4,36 @@ import { PrismaService } from '../../../../libs/db/src';
 import { publicPayment } from '../../../../libs/events/src/public-payment';
 import { receiptNoteKinds } from '../../../../libs/core/src/receipt-notes';
 import type { ApiConfig } from '../common/api-config';
+import { InjectNow, type Now } from '../common/clock.module';
+import { ttlCache } from '../common/ttl-cache';
+
+const CACHE_MS = 5000;
 
 @Injectable()
 export class PaymentsService {
   constructor(
     private readonly db: PrismaService,
     private readonly config: ConfigService<ApiConfig, true>,
+    @InjectNow() private readonly now: Now,
   ) {}
 
-  async list(limit: number): Promise<unknown> {
+  private readonly cached = new Map<number, () => Promise<unknown>>();
+
+  /** At most 100 distinct limits pass validation, so the cache stays small. */
+  list(limit: number): Promise<unknown> {
+    let read = this.cached.get(limit);
+    if (!read) {
+      read = ttlCache(
+        CACHE_MS,
+        () => this.query(limit),
+        () => this.now().getTime(),
+      );
+      this.cached.set(limit, read);
+    }
+    return read();
+  }
+
+  private async query(limit: number): Promise<unknown> {
     const donationMin = this.config.get('DONATION_MIN', { infer: true });
     const explorer = this.config.get('BLOCK_EXPLORER_URL', { infer: true });
     const ids = await this.db.$queryRaw<

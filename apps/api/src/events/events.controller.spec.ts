@@ -1,4 +1,5 @@
 import { once } from 'node:events';
+import type { IncomingMessage } from 'node:http';
 import { Logger, type MessageEvent } from '@nestjs/common';
 import { Subject } from 'rxjs';
 import { testDatabase } from '../../../../libs/db/testing/database';
@@ -48,4 +49,75 @@ it('drops a client that stops reading as soon as one event is left unsent', asyn
     warn.mockRestore();
     await app.close();
   }
+});
+
+describe('stream cap', () => {
+  const idle = new Subject<MessageEvent>();
+  const start = (environment: Record<string, string>) =>
+    createTestApp({
+      environment: { TRUST_PROXY: 'true', ...environment },
+      override: (builder) =>
+        builder
+          .overrideProvider(EventsService)
+          .useValue({ stream: () => idle.asObservable() }),
+    });
+  const body = (response: IncomingMessage) =>
+    new Promise<string>((resolve) => {
+      let text = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk: string) => (text += chunk));
+      response.on('end', () => resolve(text));
+    });
+  const from = (address: string) => ({ 'X-Forwarded-For': address });
+
+  it('caps open streams per address and in total', async () => {
+    const app = await start({ STREAMS_PER_IP: '5', STREAMS_TOTAL: '7' });
+    const open: IncomingMessage[] = [];
+    try {
+      for (let count = 0; count < 5; count++) {
+        const stream = await openEventStream(app, from('7.7.7.7'));
+        expect(stream.statusCode).toBe(200);
+        open.push(stream);
+      }
+      const refused = await openEventStream(app, from('7.7.7.7'));
+      expect(refused.statusCode).toBe(429);
+      expect(Number(refused.headers['retry-after'])).toBeGreaterThan(0);
+      expect(JSON.parse(await body(refused))).toEqual({
+        error: 'rate_limited',
+      });
+      for (const address of ['7.7.7.8', '7.7.7.9']) {
+        const stream = await openEventStream(app, from(address));
+        expect(stream.statusCode).toBe(200);
+        open.push(stream);
+      }
+      const full = await openEventStream(app, from('7.7.7.10'));
+      expect(full.statusCode).toBe(429);
+      full.resume();
+    } finally {
+      for (const stream of open) stream.destroy();
+      await app.close();
+    }
+  });
+
+  it('frees a stream slot when the client disconnects', async () => {
+    const app = await start({ STREAMS_PER_IP: '1', STREAMS_TOTAL: '5' });
+    try {
+      const first = await openEventStream(app, from('7.7.7.7'));
+      expect(first.statusCode).toBe(200);
+      const refused = await openEventStream(app, from('7.7.7.7'));
+      expect(refused.statusCode).toBe(429);
+      refused.resume();
+      first.destroy();
+      let status = 429;
+      for (let attempt = 0; attempt < 50 && status === 429; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        const next = await openEventStream(app, from('7.7.7.7'));
+        status = next.statusCode ?? 0;
+        next.destroy();
+      }
+      expect(status).toBe(200);
+    } finally {
+      await app.close();
+    }
+  });
 });
