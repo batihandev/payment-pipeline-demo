@@ -71,6 +71,7 @@ export const apiSchema = z.object({
   ...connection,
   ...chain,
   ...retention,
+  API_HOST: z.union([z.ipv4(), z.ipv6()]).default('127.0.0.1'),
   API_PORT: positiveInteger.max(65535).default(3000),
   BUYER_ADDRESS: address,
   SHOP_ADDRESS: address,

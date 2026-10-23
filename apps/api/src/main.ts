@@ -5,10 +5,11 @@ import type { ApiConfig } from './common/api-config';
 async function bootstrap(): Promise<void> {
   const app = await createApp();
   app.enableShutdownHooks();
-  const port = app
-    .get<ConfigService<ApiConfig, true>>(ConfigService)
-    .get('API_PORT', { infer: true });
-  await app.listen(port, '127.0.0.1');
+  const config = app.get<ConfigService<ApiConfig, true>>(ConfigService);
+  await app.listen(
+    config.get('API_PORT', { infer: true }),
+    config.get('API_HOST', { infer: true }),
+  );
 }
 
 bootstrap().catch((error: unknown) => {

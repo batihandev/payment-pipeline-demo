@@ -110,6 +110,19 @@ describe('visitor, refill and retention settings', () => {
     expect(tracker.RPC_REQUESTS_PER_SECOND_TRACKER).toBe(2);
   });
 
+  it('binds the API to loopback unless API_HOST says otherwise', () => {
+    expect(validateConfig(apiSchema, minimal).API_HOST).toBe('127.0.0.1');
+    expect(
+      validateConfig(apiSchema, { ...minimal, API_HOST: '0.0.0.0' }).API_HOST,
+    ).toBe('0.0.0.0');
+    expect(
+      validateConfig(apiSchema, { ...minimal, API_HOST: '::' }).API_HOST,
+    ).toBe('::');
+    expect(() =>
+      validateConfig(apiSchema, { ...minimal, API_HOST: 'not a host' }),
+    ).toThrow('API_HOST');
+  });
+
   it('reads TRUST_PROXY=true', () => {
     expect(
       validateConfig(apiSchema, { ...minimal, TRUST_PROXY: 'true' })

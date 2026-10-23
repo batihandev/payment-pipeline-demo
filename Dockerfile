@@ -31,9 +31,23 @@ FROM deps AS prod-deps
 COPY package.json ./
 COPY web/package.json web/
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm install --offline --frozen-lockfile --prod --filter .
-COPY scripts/prune-modules.mjs scripts/
-RUN node scripts/prune-modules.mjs node_modules
+    pnpm install --offline --frozen-lockfile --prod --no-optional --filter .
+# The generated client imports only the PostgreSQL query compiler, so the
+# other databases' copies are dead weight. Declarations, maps and docs are
+# never read at run time.
+RUN find node_modules/.pnpm \( -name '*.d.ts' -o -name '*.d.mts' -o -name '*.d.cts' \
+        -o -name '*.map' -o -name '*.md' \) -type f -delete \
+    && find node_modules/.pnpm -path '*/@prisma/client/runtime/*' -type f \
+        -regex '.*\(mysql\|sqlite\|sqlserver\|cockroachdb\|mongodb\).*' -delete
+
+FROM deps AS migrate-deps
+COPY package.json /tmp/package.json
+WORKDIR /migrate
+COPY pnpm-workspace.yaml ./
+RUN node -e "const v=require('/tmp/package.json').devDependencies.prisma; \
+      require('fs').writeFileSync('package.json', JSON.stringify({private:true,dependencies:{prisma:v}}))"
+RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
+    pnpm install --prod
 
 FROM base AS node-binary
 RUN apk add --no-cache binutils \
@@ -48,9 +62,14 @@ ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=prod-deps --chown=node:node /app/node_modules node_modules
 COPY --from=prod-deps --chown=node:node /app/package.json ./
-COPY --chown=node:node prisma.config.ts ./
-COPY --chown=node:node libs/db/prisma libs/db/prisma
 COPY --from=build --chown=node:node /app/dist dist
 USER node
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "dist/apps/api/apps/api/src/main.js"]
+
+FROM runtime AS migrate
+WORKDIR /migrate
+COPY --from=migrate-deps --chown=node:node /migrate/node_modules node_modules
+COPY --chown=node:node prisma.config.ts ./
+COPY --chown=node:node libs/db/prisma libs/db/prisma
+CMD ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
