@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../db/src';
 import type { Queue } from 'bullmq';
 import { QUEUES, QUEUE_ERROR_MESSAGE, logQueueErrors } from '../../queues/src';
+import { CustomersService } from './customers.service';
 import { OrderQueueService } from './order-queue.service';
 import { PurchasesService, purchaseOptions } from './purchases.service';
 
@@ -14,10 +15,11 @@ const BUYER_QUEUE_ERRORS = Symbol('BUYER_QUEUE_ERRORS');
   providers: [
     {
       provide: PurchasesService,
-      inject: [PrismaService, ConfigService],
+      inject: [PrismaService, ConfigService, CustomersService],
       useFactory: (
         db: PrismaService,
         config: ConfigService<Parameters<typeof purchaseOptions>[0], true>,
+        customers: CustomersService,
       ) =>
         new PurchasesService(
           db,
@@ -32,9 +34,13 @@ const BUYER_QUEUE_ERRORS = Symbol('BUYER_QUEUE_ERRORS');
             QUIET_END_HOUR_UTC: config.get('QUIET_END_HOUR_UTC', {
               infer: true,
             }),
+            STRIPE_SECRET_KEY: config.get('STRIPE_SECRET_KEY', { infer: true }),
           }),
+          Math.random,
+          customers,
         ),
     },
+    CustomersService,
     OrderQueueService,
     {
       provide: BUYER_QUEUE_ERRORS,
@@ -43,6 +49,6 @@ const BUYER_QUEUE_ERRORS = Symbol('BUYER_QUEUE_ERRORS');
         logQueueErrors([queue], message),
     },
   ],
-  exports: [PurchasesService, OrderQueueService, BullModule],
+  exports: [PurchasesService, CustomersService, OrderQueueService, BullModule],
 })
 export class OrdersModule {}

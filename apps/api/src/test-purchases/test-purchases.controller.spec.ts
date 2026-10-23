@@ -8,11 +8,17 @@ import { testDatabase } from '../../../../libs/db/testing/database';
 import { PrismaService } from '../../../../libs/db/src';
 import {
   OrderQueueService,
+  CustomersService,
   PurchasesService,
 } from '../../../../libs/orders/src';
 import type { BuyerJobData } from '../../../../libs/queues/src';
 import { testRedisUrl } from '../../../../libs/config/testing/redis';
+import {
+  orderChannel,
+  serializeOrder,
+} from '../../../../libs/events/src/order-events';
 import { createTestApp } from '../../testing/app';
+import { openEventStream } from '../../testing/event-stream';
 import { NOW } from '../common/clock.module';
 import {
   ChainSnapshotService,
@@ -51,7 +57,10 @@ async function build(
 ) {
   await app?.close();
   app = await createTestApp({
-    environment: { TRUST_PROXY: String(trustProxy) },
+    environment: {
+      TRUST_PROXY: String(trustProxy),
+      STRIPE_WEBHOOK_SECRET: 'whsec_test',
+    },
     queuePrefix,
     override: (builder) => {
       builder
@@ -85,7 +94,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await database.db.$executeRawUnsafe(
-    'TRUNCATE payments, orders, daily_budgets CASCADE',
+    'TRUNCATE payments, orders, customers, daily_budgets CASCADE',
   );
   await queue.drain(true);
   prefix = `api-limit-test:${randomUUID()}`;
@@ -97,8 +106,10 @@ beforeEach(async () => {
       ttlMinutes: 30,
       quietStart: 0,
       quietEnd: 7,
+      cardRail: true,
     },
     () => 0,
+    new CustomersService(database.db),
   );
   limits = {
     perMinute: 10,
@@ -151,6 +162,24 @@ it('queues an immediate priority-one visitor job without taking scheduled budget
   const job = await queue.getJob(`visitor-${orderId}`);
   expect(job?.name).toBe('visitor-purchase');
   expect(job?.opts).toMatchObject({ priority: 1, delay: 0 });
+});
+
+it('rejects a test-purchase body over 4 KB', async () => {
+  const response = await buy()
+    .set('content-type', 'application/json')
+    .send(JSON.stringify({ rail: 'chain', note: 'x'.repeat(5000) }));
+  expect(response.statusCode).toBe(413);
+  expect(response.body).toEqual({ error: 'payload_too_large' });
+  expect(await database.db.order.count()).toBe(0);
+});
+
+it('rejects a urlencoded body over 4 KB', async () => {
+  const response = await buy()
+    .set('content-type', 'application/x-www-form-urlencoded')
+    .send(`rail=chain&note=${'x'.repeat(5000)}`);
+  expect(response.statusCode).toBe(413);
+  expect(response.body).toEqual({ error: 'payload_too_large' });
+  expect(await database.db.order.count()).toBe(0);
 });
 
 it('admits back-to-back clicks from different visitors', async () => {
@@ -235,8 +264,14 @@ it('admits when the gas reading is missing or stale', async () => {
 it('reports queue position', async () => {
   const first = (await buy('192.0.2.1')).body;
   const second = (await buy('192.0.2.2')).body;
-  expect((await position(first.orderId)).body).toEqual({ position: 1 });
-  expect((await position(second.orderId)).body).toEqual({ position: 2 });
+  expect((await position(first.orderId)).body).toEqual({
+    position: 1,
+    closed: false,
+  });
+  expect((await position(second.orderId)).body).toEqual({
+    position: 2,
+    closed: false,
+  });
   await database.db.order.update({
     where: { id: second.orderId },
     data: { sendState: 'sent' },
@@ -245,9 +280,39 @@ it('reports queue position', async () => {
     const response = await position(id);
     expect([response.statusCode, response.body]).toEqual([
       200,
-      { position: 0 },
+      { position: 0, closed: false },
     ]);
   }
+});
+
+it('reports an order that closed without a payment being sent', async () => {
+  const declined = (await buy('192.0.2.1')).body;
+  const failed = (await buy('192.0.2.2')).body;
+  const late = (await buy('192.0.2.3')).body;
+  await database.db.order.update({
+    where: { id: declined.orderId },
+    data: { sendState: 'failed', status: 'expired' },
+  });
+  await database.db.order.update({
+    where: { id: failed.orderId },
+    data: { sendState: 'review', status: 'expired' },
+  });
+  await database.db.order.update({
+    where: { id: late.orderId },
+    data: { sendState: 'sent', status: 'expired' },
+  });
+  expect((await position(declined.orderId)).body).toEqual({
+    position: 0,
+    closed: true,
+  });
+  expect((await position(failed.orderId)).body).toEqual({
+    position: 0,
+    closed: true,
+  });
+  expect((await position(late.orderId)).body).toEqual({
+    position: 0,
+    closed: false,
+  });
 });
 
 it('uses the forwarded client address when TRUST_PROXY is on', async () => {
@@ -357,6 +422,7 @@ it('answers with the item and price of the order it created', async () => {
     position: 1,
     item: order.item,
     price: order.price.toString(),
+    expiresAt: order.expiresAt.toISOString(),
   });
 });
 
@@ -372,5 +438,102 @@ it('keeps the item and price when sending could not be queued', async () => {
     orderId: order.id,
     item: order.item,
     price: order.price.toString(),
+    expiresAt: order.expiresAt.toISOString(),
   });
+});
+
+const saveCard = () =>
+  database.db.customer.create({
+    data: {
+      name: 'Demo customer',
+      stripeCustomerId: 'cus_demo',
+      stripePaymentMethodId: 'pm_demo',
+      cardBrand: 'visa',
+      cardLast4: '4242',
+    },
+  });
+const buyBy = (rail: unknown, ip = '127.0.0.1') => buy(ip).send({ rail });
+
+it('admits a card test purchase', async () => {
+  const customer = await saveCard();
+  const response = await buyBy('card');
+  expect(response.statusCode).toBe(202);
+  const order = await database.db.order.findUniqueOrThrow({
+    where: { id: response.body.orderId },
+  });
+  expect(order).toMatchObject({
+    rail: 'card',
+    customerId: customer.id,
+    expectedAmount: order.price,
+  });
+  expect((await queue.getJob(`visitor-${order.id}`))?.name).toBe(
+    'visitor-purchase',
+  );
+});
+it('answers card_unavailable without a saved card', async () => {
+  const response = await buyBy('card');
+  expect(response.statusCode).toBe(503);
+  expect(response.body).toEqual({ error: 'card_unavailable' });
+  expect(await database.db.order.count()).toBe(0);
+});
+it('admits a card purchase while chain purchases are paused', async () => {
+  await saveCard();
+  gas = { native: limits.gasFloor - 1n, at: now.getTime() };
+  expect((await buyBy('card')).statusCode).toBe(202);
+  expect((await buyBy('chain', '192.0.2.5')).statusCode).toBe(503);
+});
+it('defaults to the chain rail and accepts an explicit chain rail', async () => {
+  await saveCard();
+  const plain = await buy('192.0.2.1');
+  const explicit = await buyBy('chain', '192.0.2.2');
+  const rails = await database.db.order.findMany({
+    where: { id: { in: [plain.body.orderId, explicit.body.orderId] } },
+  });
+  expect(rails.map((order) => order.rail)).toEqual(['chain', 'chain']);
+});
+it('rejects an unknown rail and unknown fields', async () => {
+  expect((await buyBy('crypto')).statusCode).toBe(400);
+  const extra = await buy().send({ rail: 'chain', amount: 1 });
+  expect(extra.statusCode).toBe(400);
+  expect(await database.db.order.count()).toBe(0);
+});
+it('counts card and chain purchases against one visitor limit', async () => {
+  await saveCard();
+  limits.dailyLimit = 2;
+  expect((await buyBy('card', '192.0.2.1')).statusCode).toBe(202);
+  expect((await buyBy('chain', '192.0.2.2')).statusCode).toBe(202);
+  const denied = await buyBy('card', '192.0.2.3');
+  expect([denied.statusCode, denied.body]).toEqual([
+    409,
+    { error: 'daily_limit' },
+  ]);
+});
+it('publishes the waiting queue on the stream when it changes', async () => {
+  const stream = await openEventStream(app);
+  let body = '';
+  stream.on('data', (chunk) => (body += String(chunk)));
+  const queues = () =>
+    [...body.matchAll(/event: queue\n(?:id: \d+\n)?data: (.*)\n/g)].map(
+      ([, data]) => JSON.parse(data ?? '') as unknown,
+    );
+  const until = async (count: number) => {
+    while (queues().length < count)
+      await new Promise((resolve) => setTimeout(resolve, 20));
+  };
+  const first = (await buy('192.0.2.1')).body.orderId as string;
+  const second = (await buy('192.0.2.2')).body.orderId as string;
+  await until(2);
+  expect(queues().at(-1)).toEqual({ type: 'queue', waiting: [first, second] });
+  const sent = await database.db.order.update({
+    where: { id: first },
+    data: { sendState: 'sent' },
+  });
+  await redis.publish(orderChannel, serializeOrder(sent));
+  await until(3);
+  expect(queues().at(-1)).toEqual({ type: 'queue', waiting: [second] });
+  await redis.publish(orderChannel, serializeOrder(sent));
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  expect(queues()).toHaveLength(3);
+  expect(body).not.toMatch(/"(item|price|expectedAmount)"/);
+  stream.destroy();
 });

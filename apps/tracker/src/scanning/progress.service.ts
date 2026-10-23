@@ -1,4 +1,5 @@
 import { handlePaymentReorg } from './payment-reorg';
+import { settlePayment } from '../../../../libs/orders/src/settle-payment';
 import { savePaymentEvent } from '../../../../libs/events/src/save-payment-event';
 import type { Hex } from '../../../../libs/chain/src/chain-client';
 import { Injectable, Optional } from '@nestjs/common';
@@ -67,25 +68,7 @@ export class ProgressService {
           });
           if (changed) await savePaymentEvent(tx, current);
           if (confirmations >= this.scanner.options.confirmations) {
-            await tx.ledgerEntry.create({
-              data: { paymentId: current.id, amount: current.amount },
-            });
-            current = await tx.payment.update({
-              where: { id: current.id },
-              data: { stage: 'settled', settledAt: this.now() },
-            });
-            await savePaymentEvent(tx, current);
-            if (current.orderId) {
-              await tx.notice.upsert({
-                where: { paymentId: current.id },
-                create: { paymentId: current.id },
-                update: {},
-              });
-              await tx.order.update({
-                where: { id: current.orderId },
-                data: { status: 'paid' },
-              });
-            }
+            current = await settlePayment(tx, current, this.now());
           }
         } else if (
           current.confirmations < this.scanner.options.confirmations &&

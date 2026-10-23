@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { Queue, Worker, type Job } from 'bullmq';
 import { testDatabase } from '../../../../libs/db/testing/database';
-import { PurchasesService } from '../../../../libs/orders/src';
+import {
+  CustomersService,
+  PurchasesService,
+} from '../../../../libs/orders/src';
 import type { BuyerJobData } from '../../../../libs/queues/src';
 import { ExpiryService } from '../expiry/expiry.service';
 import { holdWhenFull, holdWhenShort } from './holds';
@@ -34,8 +37,10 @@ beforeEach(async () => {
       ttlMinutes: 30,
       quietStart: 0,
       quietEnd: 7,
+      cardRail: true,
     },
     () => 0,
+    new CustomersService(database.db),
   );
 });
 afterEach(async () => {
@@ -115,7 +120,7 @@ it('delays a send while 10 are in flight without using an attempt', async () => 
 });
 
 it('delays a short send without using an attempt', async () => {
-  const row = await purchases.visitor(randomUUID(), now);
+  const row = await purchases.visitor(randomUUID(), 'chain', now);
   if (!row) throw new Error('Expected order');
   await queue.add('send-order', { orderId: row.id }, { attempts: 1 });
   const covers = jest.fn(async () => false);

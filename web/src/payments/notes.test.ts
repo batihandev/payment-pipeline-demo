@@ -16,7 +16,7 @@ describe('receiptNote', () => {
       expect(receiptNote(payment({ noteKinds: [kind] }))).toBe(reorgNote);
     },
   );
-  it.each(['send_reverted', 'send_dropped'] as const)(
+  it.each(['send_reverted', 'send_dropped', 'card_failed'] as const)(
     'explains a %s',
     (kind) => {
       expect(receiptNote(payment({ noteKinds: [kind] }))).toBe(failedNote);

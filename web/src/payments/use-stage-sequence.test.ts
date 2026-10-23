@@ -44,6 +44,19 @@ describe('framesBetween', () => {
       stages(framesBetween(null, frame('notified', 0, false, 'stripe'))),
     ).toEqual(['sent', 'processing', 'settled', 'notified']);
   });
+  it('goes straight to failed without passing through settlement', () => {
+    expect(
+      stages(
+        framesBetween(
+          frame('processing', 0, false, 'stripe'),
+          frame('failed', 0, true, 'stripe'),
+        ),
+      ),
+    ).toEqual(['failed']);
+    expect(
+      stages(framesBetween(null, frame('failed', 0, true, 'stripe'))),
+    ).toEqual(['failed']);
+  });
   it('gives a same-stage update as the only frame', () => {
     expect(
       framesBetween(frame('confirming', 3), frame('confirming', 4)),

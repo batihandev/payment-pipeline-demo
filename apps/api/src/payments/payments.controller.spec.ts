@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { payment as createPayment } from '../../testing/read-api';
 import { useReadApi } from '../../testing/read-api';
@@ -35,6 +36,53 @@ it('returns recent payments with safe order details, exact amounts and explorer 
     }),
   ]);
   expect(response.text).not.toContain('signedTransaction');
+});
+it('shows a card payment with its receipt link and only the card brand and last 4', async () => {
+  const customer = await state.database.db.customer.create({
+    data: {
+      name: 'Demo customer',
+      stripeCustomerId: `cus_${randomUUID()}`,
+      stripePaymentMethodId: 'pm_private',
+      cardBrand: 'visa',
+      cardLast4: '4242',
+    },
+  });
+  const order = await state.database.db.order.create({
+    data: {
+      item: 'Duck',
+      price: 50n,
+      expectedAmount: 500000n,
+      source: 'visitor',
+      rail: 'card',
+      customerId: customer.id,
+      expiresAt: new Date(),
+    },
+  });
+  await payment({
+    provider: 'stripe',
+    orderId: order.id,
+    externalKey: 'pi_private',
+    transactionHash: null,
+    receiptUrl: 'https://pay.stripe.com/receipts/1',
+  });
+  const response = await get('/payments');
+  expect(response.body).toEqual([
+    expect.objectContaining({
+      provider: 'stripe',
+      receiptUrl: 'https://pay.stripe.com/receipts/1',
+      explorerUrl: null,
+      order: expect.objectContaining({
+        id: order.id,
+        customer: { cardBrand: 'visa', cardLast4: '4242' },
+      }),
+    }),
+  ]);
+  expect(response.text).not.toContain('pm_private');
+  expect(response.text).not.toContain('pi_private');
+  expect(response.text).not.toContain(customer.stripeCustomerId);
+  expect(response.text).not.toContain('Demo customer');
+  await state.database.db.order.deleteMany();
+  await state.database.db.customer.deleteMany();
 });
 it('lists note kinds on each payment', async () => {
   const noted = await payment();

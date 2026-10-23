@@ -13,6 +13,8 @@ import {
   PrismaService,
   type Prisma,
 } from '../../../../libs/db/src';
+import { saveOrderEvents } from '../../../../libs/events/src/order-events';
+import { closeOrder } from '../../../../libs/orders/src/close-order';
 import type { BuyerConfig } from '../buyer-config';
 import { RedisLock } from './redis-lock';
 import {
@@ -47,6 +49,7 @@ export class OrderSenderService {
   inFlight(): Promise<number> {
     return this.db.order.count({
       where: {
+        rail: 'chain',
         sendState: 'sent',
         payments: { some: { stage: 'sent' } },
       },
@@ -65,6 +68,7 @@ export class OrderSenderService {
   async checkUnseen(now = new Date()): Promise<void> {
     const orders = await this.db.order.findMany({
       where: {
+        rail: 'chain',
         sendState: 'sent',
         payments: {
           some: {
@@ -120,15 +124,7 @@ export class OrderSenderService {
       const payment = order.payments.find((p) => p.stage === 'sent');
       // The tracker may have seen the transfer since the check began.
       if (order.sendState !== 'sent' || !payment) return;
-      await tx.order.update({
-        where: { id: orderId },
-        data: { sendState: 'failed', status: 'expired' },
-      });
-      if (order.source === 'schedule')
-        await new BudgetReservation(tx).release(
-          order.createdAt,
-          order.expectedAmount,
-        );
+      await closeOrder(tx, order);
       await tx.incident.create({
         data: {
           ...incident,
@@ -165,9 +161,10 @@ export class OrderSenderService {
       | 'sendState'
     >,
   ) {
-    if (target.kind === 'order')
+    if (target.kind === 'order') {
       await tx.order.update({ where: { id: target.id }, data });
-    else await tx.sweep.update({ where: { id: target.id }, data });
+      if (data.sendState !== undefined) await saveOrderEvents(tx, [target.id]);
+    } else await tx.sweep.update({ where: { id: target.id }, data });
   }
   private async lockRow(
     tx: Prisma.TransactionClient,

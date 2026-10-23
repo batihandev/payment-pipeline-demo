@@ -6,6 +6,10 @@ import { PrismaService } from '../../../../libs/db/src';
 import { JOBS, QUEUES } from '../../../../libs/queues/src';
 import { InjectRedis } from '../../../../libs/redis/src';
 import { noticeRetryOptions } from '../notices/notice-retry';
+import {
+  orderChannel,
+  serializeOrder,
+} from '../../../../libs/events/src/order-events';
 import { paymentChannel } from '../../../../libs/events/src/publish-payment';
 @Injectable()
 export class DeliveryService {
@@ -42,6 +46,7 @@ export class DeliveryService {
         data: { publishedAt: this.now() },
       });
     }
+    await this.flushOrders();
     const notices = await this.db.notice.findMany({
       where: {
         deliveredAt: null,
@@ -60,5 +65,41 @@ export class DeliveryService {
           jobId: `notice-${notice.paymentId}`,
         },
       );
+  }
+
+  /** Publishes each changed order's current state once, however many changes it had. */
+  private async flushOrders(): Promise<void> {
+    const events = await this.db.orderEvent.findMany({
+      where: { publishedAt: null },
+      orderBy: { id: 'asc' },
+      take: 100,
+      include: {
+        order: { select: { id: true, status: true, sendState: true } },
+      },
+    });
+    const orders = new Map(events.map((event) => [event.orderId, event.order]));
+    for (const order of orders.values()) {
+      try {
+        await this.redis.publish(orderChannel, serializeOrder(order));
+      } catch {
+        await this.db.incident.create({
+          data: {
+            kind: 'event_failed',
+            whatHappened: 'Order event publication failed.',
+            howHandled:
+              'Retained the persisted event for the next delivery pass.',
+          },
+        });
+        throw new Error('Order event publication failed');
+      }
+      await this.db.orderEvent.updateMany({
+        where: {
+          orderId: order.id,
+          id: { lte: events.at(-1)?.id },
+          publishedAt: null,
+        },
+        data: { publishedAt: this.now() },
+      });
+    }
   }
 }

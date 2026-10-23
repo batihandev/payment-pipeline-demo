@@ -3,6 +3,7 @@ import { BullModule, getQueueToken } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
 import { OrdersModule } from '../../../../libs/orders/src';
 import { QUEUES, logQueueErrors } from '../../../../libs/queues/src';
+import { CardsModule } from '../cards/cards.module';
 import { ExpiryModule } from '../expiry/expiry.module';
 import { RefillModule } from '../refill/refill.module';
 import { RetentionModule } from '../retention/retention.module';
@@ -20,6 +21,7 @@ const UPKEEP_QUEUE_ERRORS = Symbol('UPKEEP_QUEUE_ERRORS');
     OrdersModule,
     BullModule.registerQueue({ name: QUEUES.buyerUpkeep }),
     SendingModule,
+    CardsModule,
     RefillModule,
     SweepModule,
     RetentionModule,

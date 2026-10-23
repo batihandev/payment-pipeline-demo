@@ -12,12 +12,14 @@ export class RetentionService {
           // Incidents newer than the cutoff still reference their payment.
           incidents: { none: { createdAt: { gte: cutoff } } },
           OR: [
-            // Final payments: settled ones by settle time, unmatched ones by receive time.
+            // Final payments: settled ones by settle time, unmatched ones by receive time, and
+            // failed ones by the time they became final.
             {
               final: true,
               OR: [
                 { settledAt: { lt: cutoff } },
                 { orderId: null, receivedAt: { lt: cutoff } },
+                { settledAt: null, finalAt: { lt: cutoff } },
               ],
             },
             // Transfers closed because they reverted or were replaced; they can never land.
@@ -58,8 +60,15 @@ export class RetentionService {
       const sweeps = await tx.sweep.deleteMany({
         where: { sendState: 'sent', createdAt: { lt: cutoff } },
       });
+      const stripeEvents = await tx.stripeEvent.deleteMany({
+        where: { receivedAt: { lt: cutoff } },
+      });
+      const orderEvents = await tx.orderEvent.deleteMany({
+        where: { publishedAt: { lt: cutoff } },
+      });
       return {
         events: events.count,
+        orderEvents: orderEvents.count,
         notices: notices.count,
         ledgerEntries: ledgerEntries.count,
         incidents: incidents.count,
@@ -68,6 +77,7 @@ export class RetentionService {
         scanGaps: scanGaps.count,
         dailyBudgets: dailyBudgets.count,
         sweeps: sweeps.count,
+        stripeEvents: stripeEvents.count,
       };
     });
   }

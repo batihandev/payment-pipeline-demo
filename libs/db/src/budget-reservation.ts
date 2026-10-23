@@ -21,6 +21,21 @@ export class BudgetReservation {
     return rows.length === 1;
   }
 
+  /**
+   * Takes a released reservation back without checking the targets, for a payment that went
+   * through after its order was closed: the money is spent either way.
+   */
+  async restore(day: Date, amount: bigint): Promise<void> {
+    if (amount <= 0n) throw new RangeError('Restore amount must be positive');
+    await this.db.$queryRaw`
+      UPDATE daily_budgets
+      SET reserved_count = reserved_count + 1,
+          reserved_amount = reserved_amount + ${amount}
+      WHERE day = ${utcDateKey(day)}::date
+      RETURNING day
+    `;
+  }
+
   async release(day: Date, amount: bigint): Promise<void> {
     if (amount <= 0n) throw new RangeError('Release amount must be positive');
     await this.db.$queryRaw`

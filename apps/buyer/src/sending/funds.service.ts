@@ -20,12 +20,14 @@ export class FundsService {
 
   /**
    * Whether the buyer's USDC, less transfers still in flight, can pay the order.
+   * A card order needs no chain funds.
    * A failed balance read counts as not covered, so the send is held and retried.
    */
   async covers(orderId: string): Promise<boolean> {
     const order = await this.db.order.findUnique({ where: { id: orderId } });
     if (
       !order ||
+      order.rail === 'card' ||
       order.sendState !== 'pending' ||
       order.signedTransaction !== null ||
       order.status === 'expired'
@@ -35,7 +37,11 @@ export class FundsService {
       this.balance().catch(() => null),
       this.db.order.aggregate({
         _sum: { expectedAmount: true },
-        where: { sendState: 'sent', payments: { some: { stage: 'sent' } } },
+        where: {
+          rail: 'chain',
+          sendState: 'sent',
+          payments: { some: { stage: 'sent' } },
+        },
       }),
     ]);
     if (usdc === null) return false;

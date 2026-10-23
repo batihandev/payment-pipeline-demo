@@ -1,15 +1,64 @@
 import type { Dashboard, Health, Payment, Snapshot } from './types';
 
+export type Rail = 'chain' | 'card';
+export type PurchaseAnswer = {
+  ok: boolean;
+  status: number;
+  retryAfter: string | null;
+  body: {
+    orderId?: string;
+    position?: number;
+    item?: string;
+    price?: string;
+    /** When the order expires, as an ISO timestamp. */
+    expiresAt?: string;
+    error?: string;
+  };
+};
+
 export const HEALTH_EVERY_MS = 15000;
 export const STREAM_REOPEN_MS = 30000;
+
+/** A change to a visitor order, or the stream opening, which may mean updates were missed. */
+export type OrderUpdate =
+  | { type: 'order'; id: string; closed: boolean }
+  | { type: 'queue'; waiting: string[] }
+  | { type: 'opened' };
 
 export type EventStream = Pick<
   EventSource,
   'onopen' | 'onerror' | 'onmessage' | 'close'
->;
+> & {
+  addEventListener(
+    type: 'order' | 'queue',
+    listener: (event: { data: string }) => void,
+  ): void;
+};
+
+function readOrderUpdate(data: string): OrderUpdate | undefined {
+  try {
+    const update = JSON.parse(data) as Record<string, unknown>;
+    if (
+      update.type === 'order' &&
+      typeof update.id === 'string' &&
+      typeof update.closed === 'boolean'
+    )
+      return { type: 'order', id: update.id, closed: update.closed };
+    if (
+      update.type === 'queue' &&
+      Array.isArray(update.waiting) &&
+      update.waiting.every((id) => typeof id === 'string')
+    )
+      return { type: 'queue', waiting: update.waiting as string[] };
+  } catch {
+    // an unreadable update is skipped
+  }
+  return undefined;
+}
 export class PaymentsClient {
   private snapshot: Snapshot = { status: 'loading', data: null };
   private listeners = new Set<() => void>();
+  private orderListeners = new Set<(update: OrderUpdate) => void>();
   private stream?: EventStream;
   private generation = 0;
   private buffered: Payment[] = [];
@@ -47,6 +96,16 @@ export class PaymentsClient {
       }
     };
   };
+  /** Follows visitor order changes on the event stream; the stream itself follows `subscribe`. */
+  onOrderUpdate = (listener: (update: OrderUpdate) => void): (() => void) => {
+    this.orderListeners.add(listener);
+    return () => {
+      this.orderListeners.delete(listener);
+    };
+  };
+  private sendOrderUpdate(update: OrderUpdate) {
+    for (const listener of this.orderListeners) listener(update);
+  }
   private update(snapshot: Snapshot) {
     this.snapshot = snapshot;
     for (const listener of this.listeners) listener();
@@ -58,7 +117,13 @@ export class PaymentsClient {
       this.loading = false;
       this.buffered = [];
       void this.refresh();
+      this.sendOrderUpdate({ type: 'opened' });
     };
+    for (const type of ['order', 'queue'] as const)
+      this.stream.addEventListener(type, (event) => {
+        const update = readOrderUpdate(event.data);
+        if (update) this.sendOrderUpdate(update);
+      });
     this.stream.onerror = () => {
       if (!this.listeners.size) return;
       this.stream?.close();
@@ -140,6 +205,20 @@ export class PaymentsClient {
             ) || b.id.localeCompare(a.id),
         )
         .slice(0, 100),
+    };
+  }
+  async purchase(rail: Rail): Promise<PurchaseAnswer> {
+    const request = this.request;
+    const response = await request(`${this.baseUrl}/test-purchases`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ rail }),
+    });
+    return {
+      ok: response.ok,
+      status: response.status,
+      retryAfter: response.headers.get('retry-after'),
+      body: (await response.json()) as PurchaseAnswer['body'],
     };
   }
   async refresh(): Promise<void> {

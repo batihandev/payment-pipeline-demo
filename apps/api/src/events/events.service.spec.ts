@@ -7,6 +7,10 @@ import {
   publishPayment,
   serializePayment,
 } from '../../../../libs/events/src/publish-payment';
+import {
+  orderChannel,
+  serializeOrder,
+} from '../../../../libs/events/src/order-events';
 import { testDatabase } from '../../../../libs/db/testing/database';
 import { testRedisUrl } from '../../../../libs/config/testing/redis';
 import { createTestApp } from '../../testing/app';
@@ -121,5 +125,20 @@ it('keeps the stream open past 15 s with a heartbeat', async () => {
   jest.advanceTimersByTime(15000);
   const [chunk] = await received;
   expect(String(chunk)).toContain('event: heartbeat\n');
+  stream.destroy();
+});
+it('relays order events to the stream as named order events', async () => {
+  const stream = await connect();
+  const received = once(stream, 'data');
+  const id = '6f1c4a52-3a43-4c38-9a71-0c2b8f1d2e3a';
+  await redis.publish(
+    orderChannel,
+    serializeOrder({ id, status: 'expired', sendState: 'failed' }),
+  );
+  const [chunk] = await received;
+  expect(String(chunk)).toMatch(/^event: order\n(id: \d+\n)?data: (.*)\n\n$/m);
+  expect(String(chunk)).toContain(
+    `data: {"type":"order","id":"${id}","closed":true}\n\n`,
+  );
   stream.destroy();
 });

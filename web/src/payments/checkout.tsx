@@ -1,53 +1,35 @@
 import { useEffect, useRef, useState } from 'react';
+import { CardTerminal } from './card-terminal';
+import { ChainTerminal } from './chain-terminal';
+import { checkoutDeadline, checkoutState } from './checkout-state';
+import type { Rail } from './client';
+import { RailChoice } from './rail-choice';
+import { Receipt } from './receipt';
 import { paymentsClient, usePayments } from './use-payments';
-import { useQueuePosition } from './use-queue-position';
-import { ConfirmationBar, Receipt } from './receipt';
+import { useOrderStatus } from './use-order-status';
 import { useStageSequence } from './use-stage-sequence';
-import { confirmationsNeeded, money, purchaseMessage, stageView } from './view';
+import {
+  cardRail,
+  confirmationsNeeded,
+  money,
+  purchaseMessage,
+  stageView,
+} from './view';
 import './styles.css';
 import './checkout.css';
 
-const labelSwapMs = 250;
-
-/** Slides the old label out and the new one in; the first label appears without a transition. */
-function StateLabel({ label }: { label: string }) {
-  const [shown, setShown] = useState({
-    current: label,
-    previous: '',
-    swaps: 0,
-  });
-  if (shown.current !== label)
-    setShown({
-      current: label,
-      previous: shown.current,
-      swaps: shown.swaps + 1,
-    });
+/** The current time, read again just after `deadline` so a render can tell it has passed. */
+function useTimeAfter(deadline: number | null): number {
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!shown.swaps) return;
+    if (deadline === null) return;
     const timer = setTimeout(
-      () => setShown((state) => ({ ...state, previous: '' })),
-      labelSwapMs,
+      () => setNow(Math.max(Date.now(), deadline + 1)),
+      Math.max(0, deadline + 1 - Date.now()),
     );
     return () => clearTimeout(timer);
-  }, [shown.swaps]);
-  return (
-    <span className="tp-terminal-label">
-      <strong
-        key={shown.swaps}
-        className={`tp-terminal-state ${shown.swaps ? 'tp-terminal-state-in' : ''}`}
-      >
-        {shown.current}
-      </strong>
-      {shown.previous && (
-        <strong
-          className="tp-terminal-state tp-terminal-state-out"
-          aria-hidden="true"
-        >
-          {shown.previous}
-        </strong>
-      )}
-    </span>
-  );
+  }, [deadline]);
+  return now;
 }
 
 export function Checkout({
@@ -63,46 +45,47 @@ export function Checkout({
   const [opened, setOpened] = useState(false);
   const [sending, setSending] = useState(false);
   const [orderId, setOrderId] = useState<string>();
+  const [rail, setRail] = useState<Rail>();
   const [message, setMessage] = useState('');
   const [accepted, setAccepted] = useState(0);
   const inFlight = useRef(false);
   const [ordered, setOrdered] = useState<{ item: string; price: string }>();
+  const [expiresAt, setExpiresAt] = useState<string>();
   const latest = data?.payments.find((p) => p.orderId === orderId);
   const frame = useStageSequence(latest);
   const payment = latest && frame ? { ...latest, ...frame } : undefined;
-  const view =
-    payment && data
-      ? stageView(payment, confirmationsNeeded(data.health))
-      : null;
+  const threshold = confirmationsNeeded(data?.health ?? null);
+  const view = payment ? stageView(payment) : null;
   const item = ordered?.item ?? latest?.order?.item;
   const price = ordered?.price ?? latest?.order?.price ?? latest?.amount;
-  const position = useQueuePosition(
-    apiBaseUrl,
-    orderId ?? null,
-    accepted,
-    Boolean(payment),
-  );
-  const active = Boolean(orderId && !view?.paid);
+  const paid = view?.paid ?? false;
+  const order = useOrderStatus(apiBaseUrl, orderId ?? null, accepted, paid);
+  const now = useTimeAfter(checkoutDeadline({ payment, expiresAt }));
+  const checkout = checkoutState({
+    status,
+    orderId,
+    expiresAt,
+    payment,
+    paid,
+    order,
+    sending,
+    message,
+    now,
+  });
 
-  async function purchase() {
+  async function purchase(chosen: Rail) {
     if (inFlight.current) return;
     inFlight.current = true;
+    setRail(chosen);
     setSending(true);
     setMessage('');
     try {
       const client = paymentsClient(apiBaseUrl);
-      const response = await fetch(`${client.baseUrl}/test-purchases`, {
-        method: 'POST',
-      });
-      const body = (await response.json()) as {
-        orderId?: string;
-        position?: number;
-        item?: string;
-        price?: string;
-        error?: string;
-      };
+      const response = await client.purchase(chosen);
+      const { body } = response;
       if (body.orderId) {
         setOrderId(body.orderId);
+        setExpiresAt(body.expiresAt);
         setOrdered(
           body.item && body.price
             ? { item: body.item, price: body.price }
@@ -118,11 +101,7 @@ export function Checkout({
         await client.refresh();
       } else if (!response.ok)
         setMessage(
-          purchaseMessage(
-            response.status,
-            body.error,
-            response.headers.get('retry-after'),
-          ),
+          purchaseMessage(response.status, body.error, response.retryAfter),
         );
       else setMessage('Demo offline');
     } catch {
@@ -153,39 +132,21 @@ export function Checkout({
         </button>
       ) : (
         <div className="tp-drawer">
-          <div className="tp-row tp-between">
-            <h3>How would you like to pay?</h3>
-            <span className="tp-network">Test network</span>
-          </div>
+          <h3>How would you like to pay?</h3>
           <p className="tp-muted">
             The shop chooses an item when your order is accepted.
           </p>
-          <button
-            type="button"
-            disabled={sending || active || status !== 'live'}
-            onClick={() => {
-              void purchase();
+          <RailChoice
+            card={cardRail(data?.health ?? null)}
+            disabled={checkout.busy || status !== 'live'}
+            chosen={rail}
+            busyLabel={checkout.busyLabel}
+            onChoose={(chosen) => {
+              void purchase(chosen);
             }}
-          >
-            {sending
-              ? 'Placing your order…'
-              : active
-                ? 'Your purchase is in progress'
-                : 'Pay with Test network'}
-          </button>
+          />
           <div role="status" className="tp-purchase-status">
-            {status === 'offline'
-              ? 'Demo offline'
-              : message ||
-                (position > 1 && !payment
-                  ? `Queued · ${position - 1} ahead`
-                  : sending
-                    ? 'Requesting a test purchase…'
-                    : orderId && !payment
-                      ? 'Order accepted. Waiting for the payment to be sent.'
-                      : status === 'loading'
-                        ? 'Connecting to the demo…'
-                        : '')}
+            {checkout.statusText}
           </div>
           {item && price && (
             <div className="tp-item" key={orderId}>
@@ -194,53 +155,18 @@ export function Checkout({
               <span className="tp-price">{money(price)}</span>
             </div>
           )}
-          {payment && data && view && (
+          {payment && view && (
             <>
-              <div className="tp-terminal" aria-label="Payment terminal">
-                <div className="tp-terminal-screen">
-                  <span className="tp-mono">TEST NETWORK</span>
-                  <StateLabel label={view.label} />
-                  <div
-                    className="tp-block-stack"
-                    aria-hidden="true"
-                    style={{
-                      gridTemplateColumns: `repeat(${confirmationsNeeded(data.health)}, minmax(0, 1fr))`,
-                    }}
-                  >
-                    {Array.from(
-                      { length: confirmationsNeeded(data.health) },
-                      (_, index) => (
-                        <span
-                          key={index}
-                          className={
-                            index < payment.confirmations
-                              ? 'tp-block-confirmed'
-                              : ''
-                          }
-                        />
-                      ),
-                    )}
-                  </div>
-                  <ConfirmationBar
-                    payment={payment}
-                    threshold={confirmationsNeeded(data.health)}
-                  />
-                  {view.final && <span>Final</span>}
-                </div>
-                <div className="tp-terminal-keys" aria-hidden="true">
-                  <i />
-                  <i />
-                  <i />
-                  <i />
-                  <i />
-                  <i />
-                </div>
-              </div>
+              {payment.provider === 'stripe' ? (
+                <CardTerminal payment={payment} />
+              ) : (
+                <ChainTerminal payment={payment} threshold={threshold} />
+              )}
               {view.paid && (
                 <div className="tp-printed-receipt">
                   <Receipt
                     payment={payment}
-                    threshold={confirmationsNeeded(data.health)}
+                    threshold={threshold}
                     highlighted
                   />
                 </div>

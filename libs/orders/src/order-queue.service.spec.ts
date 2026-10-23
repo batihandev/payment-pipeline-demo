@@ -4,6 +4,7 @@ import { testDatabase } from '../../db/testing/database';
 import { testRedisUrl } from '../../config/testing/redis';
 import type { BuyerJobData } from '../../queues/src';
 import { OrderQueueService } from './order-queue.service';
+import { CustomersService } from './customers.service';
 import { PurchasesService } from './purchases.service';
 
 let database: Awaited<ReturnType<typeof testDatabase>>;
@@ -31,8 +32,10 @@ beforeEach(async () => {
       ttlMinutes: 30,
       quietStart: 0,
       quietEnd: 7,
+      cardRail: true,
     },
     () => 0,
+    new CustomersService(database.db),
   );
   orderQueue = new OrderQueueService(database.db, queue);
 });
@@ -41,7 +44,7 @@ afterEach(async () => {
   await queue.close();
 });
 it('runs a visitor purchase ahead of queued scheduled sends without pacing or a second reservation', async () => {
-  const order = await purchases.visitor(randomUUID(), now);
+  const order = await purchases.visitor(randomUUID(), 'chain', now);
   if (!order) throw new Error('Expected order');
   await orderQueue.queueSend(order.id, 'schedule');
   await orderQueue.queueSend(order.id, 'visitor');
@@ -56,7 +59,7 @@ it('runs a visitor purchase ahead of queued scheduled sends without pacing or a 
       if (job.data.orderId) {
         const row =
           job.name === 'visitor-purchase'
-            ? await purchases.visitor(job.data.orderId, now)
+            ? await purchases.visitor(job.data.orderId, 'chain', now)
             : await database.db.order.findUnique({
                 where: { id: job.data.orderId },
               });
@@ -88,7 +91,7 @@ it('runs a visitor purchase ahead of queued scheduled sends without pacing or a 
   }
 });
 it('recovers an order whose process stopped after reservation and before enqueueing', async () => {
-  const row = await purchases.visitor(randomUUID(), now);
+  const row = await purchases.visitor(randomUUID(), 'chain', now);
   await orderQueue.recoverPending();
   expect((await queue.getJob(`visitor-${row?.id}`))?.data.orderId).toBe(
     row?.id,

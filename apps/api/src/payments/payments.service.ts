@@ -76,6 +76,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
             source: true,
             createdAt: true,
             expiresAt: true,
+            customer: { select: { cardBrand: true, cardLast4: true } },
           },
         },
       },
@@ -89,7 +90,6 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
       .map(({ incidents, ...row }) => ({
         ...publicPayment(row),
         noteKinds: incidents.map((incident) => incident.kind),
-        order: row.order,
         explorerUrl: row.transactionHash
           ? `${explorer.replace(/\/$/, '')}/tx/${row.transactionHash}`
           : null,

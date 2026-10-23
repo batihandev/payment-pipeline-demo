@@ -56,7 +56,7 @@ it('reports head, scoped cursor lag, open gaps, queued work and live balance war
         lowUsdc: true,
       },
     },
-    cooldowns: { buyer: 0, tracker: 0, api: 0 },
+    cooldowns: { buyer: 0, tracker: 0, api: 0, stripe: 0 },
   });
   await queue.obliterate({ force: true });
   await queue.close();
@@ -83,6 +83,29 @@ it('reports an unknown cursor and lag before the tracker initializes', async () 
     lag: null,
     openGaps: 0,
   });
+});
+const savedCard = {
+  name: 'Demo customer',
+  stripeCustomerId: 'cus_health',
+  stripePaymentMethodId: 'pm_health',
+  cardBrand: 'visa',
+  cardLast4: '4242',
+};
+it('reports the card rail available once the demo customer has a saved card', async () => {
+  process.env.STRIPE_WEBHOOK_SECRET = 'whsec_health';
+  await state.rebuild();
+  await state.database.db.customer.deleteMany();
+  expect((await get('/health')).body.cardAvailable).toBe(false);
+  await state.database.db.customer.create({ data: savedCard });
+  expect((await get('/health')).body.cardAvailable).toBe(true);
+  await state.database.db.customer.deleteMany();
+});
+it('reports the card rail unavailable without a webhook secret', async () => {
+  delete process.env.STRIPE_WEBHOOK_SECRET;
+  await state.rebuild();
+  await state.database.db.customer.create({ data: savedCard });
+  expect((await get('/health')).body.cardAvailable).toBe(false);
+  await state.database.db.customer.deleteMany();
 });
 it('reports monitoring timestamps in /health', async () => {
   expect((await get('/health')).body.monitoring).toEqual({
@@ -177,6 +200,30 @@ it('leaves settled donations out of the unnotified signal', async () => {
   });
   expect((await get('/health')).body.monitoring.oldestUnnotifiedAt).toBeNull();
 });
+it('reports a processing card payment as unsettled', async () => {
+  const order = await state.database.db.order.create({
+    data: {
+      item: 'Duck',
+      price: 500000n,
+      expectedAmount: 500000n,
+      source: 'visitor',
+      rail: 'card',
+      sendState: 'sent',
+      expiresAt: new Date(),
+    },
+  });
+  await payment({
+    provider: 'stripe',
+    orderId: order.id,
+    stage: 'processing',
+    receivedAt: null,
+    sentAt: new Date('2026-10-22T08:00:00Z'),
+    processingAt: new Date('2026-10-22T08:00:01Z'),
+  });
+  expect((await get('/health')).body.monitoring.oldestUnsettledAt).toBe(
+    '2026-10-22T08:00:01.000Z',
+  );
+});
 it('answers /health from a fresh chain snapshot without RPC calls', async () => {
   const calls = state.chainCalls.length;
   const response = await get('/health');
@@ -205,7 +252,7 @@ it('returns monitoring with null chain fields when the chain read fails', async 
     balances: null,
     chainError: 'timeout',
     openGaps: 0,
-    cooldowns: { buyer: 0, tracker: 0, api: 0 },
+    cooldowns: { buyer: 0, tracker: 0, api: 0, stripe: 0 },
     monitoring: expect.objectContaining({ oldestUnsettledAt: null }),
   });
 });

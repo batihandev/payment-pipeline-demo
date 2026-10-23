@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
+import { orderChannel } from '../../../../libs/events/src/order-events';
 import { paymentChannel } from '../../../../libs/events/src/publish-payment';
+import { closeOrder } from '../../../../libs/orders/src/close-order';
 import {
   fixture,
   clear,
@@ -67,7 +69,7 @@ it('saves full payment snapshots for every stage change and finality without dup
   expect(Object.keys(bodies[0] ?? {}).sort()).toEqual(
     [
       ...Object.keys(await f.db.payment.findFirstOrThrow()).filter(
-        (key) => key !== 'fromAddress',
+        (key) => key !== 'fromAddress' && key !== 'reconciledAt',
       ),
       'donorName',
     ].sort(),
@@ -154,4 +156,26 @@ it('does not restart an exhausted notice after queue data is lost', async () => 
   await f.db.notice.updateMany({ data: { attempts: 5 } });
   await new DeliveryService(f.db, redis, queue, () => now).flush();
   expect(await queue.getJobs(['waiting', 'delayed'])).toHaveLength(0);
+});
+it('publishes an order event when an order closes', async () => {
+  const closing = await order(f.db);
+  await f.db.$transaction((tx) => closeOrder(tx, closing));
+  const subscriber = new Redis(testRedisUrl());
+  try {
+    await subscriber.subscribe(orderChannel);
+    const received = new Promise<string>((resolve) =>
+      subscriber.once('message', (_channel, body: string) => resolve(body)),
+    );
+    await new DeliveryService(f.db, redis, queue, () => now).flush();
+    expect(JSON.parse(await received)).toEqual({
+      type: 'order',
+      id: closing.id,
+      closed: true,
+    });
+    expect(await f.db.orderEvent.count({ where: { publishedAt: now } })).toBe(
+      1,
+    );
+  } finally {
+    await subscriber.quit();
+  }
 });

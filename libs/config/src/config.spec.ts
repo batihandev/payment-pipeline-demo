@@ -1,4 +1,10 @@
-import { apiSchema, buyerSchema, trackerSchema, validateConfig } from './index';
+import {
+  apiSchema,
+  buyerSchema,
+  stripeSetupSchema,
+  trackerSchema,
+  validateConfig,
+} from './index';
 
 const shared = ['DATABASE_URL', 'REDIS_URL'];
 const chain = ['CHAIN_ID', 'RPC_URL', 'USDC_ADDRESS'];
@@ -109,5 +115,59 @@ describe('visitor, refill and retention settings', () => {
       validateConfig(apiSchema, { ...minimal, TRUST_PROXY: 'true' })
         .TRUST_PROXY,
     ).toBe(true);
+  });
+
+  it('accepts only sandbox Stripe keys', () => {
+    expect(validateConfig(buyerSchema, minimal).STRIPE_SECRET_KEY).toBe(
+      undefined,
+    );
+    expect(
+      validateConfig(buyerSchema, {
+        ...minimal,
+        STRIPE_SECRET_KEY: 'sk_test_abc',
+      }).STRIPE_SECRET_KEY,
+    ).toBe('sk_test_abc');
+    expect(() =>
+      validateConfig(buyerSchema, {
+        ...minimal,
+        STRIPE_SECRET_KEY: 'sk_live_abc',
+      }),
+    ).toThrow('STRIPE_SECRET_KEY');
+  });
+
+  it('accepts only whsec_ webhook secrets', () => {
+    expect(() =>
+      validateConfig(apiSchema, { ...minimal, STRIPE_WEBHOOK_SECRET: 'abc' }),
+    ).toThrow('STRIPE_WEBHOOK_SECRET');
+    expect(
+      validateConfig(apiSchema, {
+        ...minimal,
+        STRIPE_WEBHOOK_SECRET: 'whsec_abc',
+      }).STRIPE_WEBHOOK_SECRET,
+    ).toBe('whsec_abc');
+  });
+
+  it('refuses a live key in the setup script', () => {
+    expect(() =>
+      validateConfig(stripeSetupSchema, { STRIPE_SECRET_KEY: 'sk_live_abc' }),
+    ).toThrow('STRIPE_SECRET_KEY');
+    expect(() => validateConfig(stripeSetupSchema, {})).toThrow(
+      'STRIPE_SECRET_KEY',
+    );
+  });
+
+  it('defaults the Stripe limiter to 5 a second', () => {
+    expect(
+      validateConfig(buyerSchema, minimal).STRIPE_REQUESTS_PER_SECOND,
+    ).toBe(5);
+  });
+
+  it('defaults the setup payment method to the Visa test card', () => {
+    expect(
+      validateConfig(stripeSetupSchema, { STRIPE_SECRET_KEY: 'sk_test_abc' }),
+    ).toEqual({
+      STRIPE_SECRET_KEY: 'sk_test_abc',
+      STRIPE_PAYMENT_METHOD: 'pm_card_visa',
+    });
   });
 });

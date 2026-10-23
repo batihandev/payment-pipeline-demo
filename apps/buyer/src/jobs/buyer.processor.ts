@@ -9,7 +9,7 @@ import { UnrecoverableError, type Job } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { RpcError } from '../../../../libs/chain/src/rpc-error';
 import { DAY_MS } from '../../../../libs/core/src/time';
-import { PrismaService } from '../../../../libs/db/src';
+import { PrismaService, type PaymentRail } from '../../../../libs/db/src';
 import { publishPayment } from '../../../../libs/events/src/publish-payment';
 import {
   OrderQueueService,
@@ -18,6 +18,7 @@ import {
 import { JOBS, QUEUES, type BuyerJobData } from '../../../../libs/queues/src';
 import { REDIS } from '../../../../libs/redis/src';
 import type { BuyerConfig } from '../buyer-config';
+import { CardSenderService } from '../cards/card-sender.service';
 import { RetentionService } from '../retention/retention.service';
 import { FundsService } from '../sending/funds.service';
 import { OrderSenderService } from '../sending/order-sender.service';
@@ -40,6 +41,7 @@ export class BuyerProcessor
     private readonly orderQueue: OrderQueueService,
     private readonly pacing: PaceService,
     private readonly sender: OrderSenderService,
+    private readonly cards: CardSenderService,
     private readonly funds: FundsService,
     private readonly retention: RetentionService,
     config: ConfigService<BuyerConfig, true>,
@@ -63,10 +65,20 @@ export class BuyerProcessor
   }
 
   async process(job: Job<BuyerJobData>, token?: string): Promise<void> {
-    if (
+    const sends =
       job.name === JOBS.buyer.sendOrder ||
-      job.name === JOBS.buyer.visitorPurchase
-    ) {
+      job.name === JOBS.buyer.visitorPurchase;
+    // A visitor purchase whose order the API has not written yet is a chain purchase.
+    const rail: PaymentRail =
+      sends && job.data.orderId
+        ? ((
+            await this.db.order.findUnique({
+              where: { id: job.data.orderId },
+              select: { rail: true },
+            })
+          )?.rail ?? 'chain')
+        : 'chain';
+    if (sends && rail !== 'card') {
       await holdWhenFull(job, token, this.sender, this.maxInFlight);
       if (job.data.orderId)
         await holdWhenShort(job, token, this.funds, job.data.orderId);
@@ -89,15 +101,19 @@ export class BuyerProcessor
         case JOBS.buyer.visitorPurchase: {
           if (!job.data.orderId)
             throw new UnrecoverableError('Missing purchase order id');
-          const order = await this.purchases.visitor(job.data.orderId, now);
+          const order = await this.purchases.visitor(
+            job.data.orderId,
+            rail,
+            now,
+          );
           if (!order) return;
-          await this.sendPurchase(order.id, exhausted);
+          await this.sendPurchase(order.id, order.rail, exhausted);
           return;
         }
         case JOBS.buyer.sendOrder:
           if (!job.data.orderId)
             throw new UnrecoverableError('Missing purchase order id');
-          await this.sendPurchase(job.data.orderId, exhausted);
+          await this.sendPurchase(job.data.orderId, rail, exhausted);
           return;
         default:
           throw new UnrecoverableError('Unknown buyer job');
@@ -109,9 +125,11 @@ export class BuyerProcessor
 
   private async sendPurchase(
     orderId: string,
+    rail: PaymentRail,
     exhausted: boolean,
   ): Promise<void> {
-    await this.sender.sendForOrder(orderId, exhausted);
+    if (rail === 'card') await this.cards.charge(orderId, exhausted);
+    else await this.sender.sendForOrder(orderId, exhausted);
     const payment = await this.db.payment.findFirst({ where: { orderId } });
     if (!payment) return;
     try {

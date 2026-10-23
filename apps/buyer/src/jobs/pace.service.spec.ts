@@ -3,6 +3,7 @@ import { Queue } from 'bullmq';
 import { testDatabase } from '../../../../libs/db/testing/database';
 import {
   OrderQueueService,
+  CustomersService,
   PurchasesService,
 } from '../../../../libs/orders/src';
 import type { BuyerJobData } from '../../../../libs/queues/src';
@@ -34,8 +35,10 @@ beforeEach(async () => {
         ttlMinutes: 30,
         quietStart: 0,
         quietEnd: 7,
+        cardRail: true,
       },
       () => 0,
+      new CustomersService(database.db),
     ),
     new OrderQueueService(database.db, queue),
     () => 0.25,

@@ -1,6 +1,31 @@
 import type { Payment } from './types';
-import { money, shortId, stageView, utcTime, steps } from './view';
+import {
+  money,
+  railBadgeParts,
+  shortId,
+  failedStep,
+  paymentFailed,
+  stageView,
+  stepsFor,
+  utcTime,
+} from './view';
 import './styles.css';
+
+/** The rail and card; only the name shortens, so the last four digits stay visible. */
+function RailBadge({ payment }: { payment: Payment }) {
+  const { name, last4 } = railBadgeParts(payment);
+  return (
+    <span className="tp-network tp-rail">
+      <span className="tp-rail-brand">{name}</span>
+      {last4 && (
+        <>
+          {' '}
+          <span className="tp-rail-last4">{last4}</span>
+        </>
+      )}
+    </span>
+  );
+}
 
 export function ConfirmationBar({
   payment,
@@ -28,13 +53,33 @@ export function ConfirmationBar({
   );
 }
 export function StepStrip({ payment }: { payment: Payment }) {
-  const step = steps.findIndex((s) => s.stage === payment.stage);
+  const failed = paymentFailed(payment);
+  // A failed payment ends on Failed in place of the stages it never reached.
+  const steps = failed
+    ? [
+        ...stepsFor(payment.provider).filter(
+          (s) => s.stage !== 'settled' && s.stage !== 'notified',
+        ),
+        failedStep,
+      ]
+    : stepsFor(payment.provider);
+  const step = failed
+    ? steps.length - 1
+    : steps.findIndex((s) => s.stage === payment.stage);
   return (
     <ol className="tp-strip" aria-label="Payment stages">
       {steps.map((s, i) => (
         <li
           key={s.stage}
-          className={i <= step ? 'tp-reached' : ''}
+          className={
+            failed
+              ? i === step
+                ? 'tp-reached tp-failed'
+                : ''
+              : i <= step
+                ? 'tp-reached'
+                : ''
+          }
           aria-current={i === step ? 'step' : undefined}
         >
           {s.label === 'Shop notified' ? 'Notified' : s.label}
@@ -56,7 +101,8 @@ export function Receipt({
   compact?: boolean;
   note?: string | null;
 }) {
-  const view = stageView(payment, threshold);
+  const view = stageView(payment);
+  const card = payment.provider === 'stripe';
   return (
     <article
       className={`tp-receipt ${highlighted ? 'tp-yours' : ''} ${compact ? 'tp-compact' : ''}`}
@@ -90,19 +136,30 @@ export function Receipt({
       <div className="tp-row">
         <span className={`tp-stage tp-${view.color}`}>{view.label}</span>
         {view.final && <span className="tp-stage tp-green">Final</span>}
+        <RailBadge payment={payment} />
       </div>
-      <ConfirmationBar payment={payment} threshold={threshold} />
+      {!card && <ConfirmationBar payment={payment} threshold={threshold} />}
       {note && <p className="tp-note">{note}</p>}
       <div className="tp-receipt-footer tp-mono tp-muted">
-        <span>
-          {payment.blockNumber
-            ? `block ${payment.blockNumber}`
-            : 'Awaiting a block'}
-        </span>
-        {payment.explorerUrl && (
-          <a href={payment.explorerUrl} target="_blank" rel="noreferrer">
-            View on explorer
-          </a>
+        {card ? (
+          payment.receiptUrl?.startsWith('https://') && (
+            <a href={payment.receiptUrl} target="_blank" rel="noreferrer">
+              View Stripe receipt
+            </a>
+          )
+        ) : (
+          <>
+            <span>
+              {payment.blockNumber
+                ? `block ${payment.blockNumber}`
+                : 'Awaiting a block'}
+            </span>
+            {payment.explorerUrl && (
+              <a href={payment.explorerUrl} target="_blank" rel="noreferrer">
+                View on explorer
+              </a>
+            )}
+          </>
         )}
       </div>
       {view.paid && <span className="tp-paid">PAID</span>}

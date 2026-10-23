@@ -8,8 +8,11 @@ export type RpcErrorKind =
   | 'transient'
   | 'permanent';
 export class RpcError extends Error {
-  constructor(readonly kind: RpcErrorKind) {
-    super(`RPC request failed: ${kind}`);
+  constructor(
+    readonly kind: RpcErrorKind,
+    detail?: string,
+  ) {
+    super(`RPC request failed: ${kind}${detail ? ` (${detail})` : ''}`);
   }
 }
 

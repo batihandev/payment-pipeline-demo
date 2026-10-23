@@ -22,7 +22,8 @@
     "dev:web": "pnpm --filter web dev",
     "prisma": "node --env-file-if-exists=.env node_modules/prisma/build/index.js",
     "db:migrate": "docker compose up -d --wait && pnpm prisma migrate dev",
-    "wallets:new": "tsx scripts/wallets-new.ts"
+    "wallets:new": "tsx scripts/wallets-new.ts",
+    "stripe:setup": "tsx --env-file-if-exists=.env scripts/stripe-setup.ts"
   },
   "dependencies": {
     "@nestjs/bullmq": "12.0.0",
@@ -39,6 +40,7 @@
     "ioredis": "^6.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
+    "stripe": "23.0.1",
     "viem": "2.57.10",
     "zod": "^4.6.7"
   },

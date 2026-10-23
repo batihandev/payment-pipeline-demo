@@ -8,6 +8,7 @@ import { VISITOR_PAUSED_SINCE } from '../../../../libs/core/src/redis-keys';
 import { InjectRedis } from '../../../../libs/redis/src';
 import { ApiError } from '../common/api-error';
 import type { ApiConfig } from '../common/api-config';
+import { CardRailService } from './card-rail.service';
 import {
   ChainSnapshotService,
   type Balance,
@@ -24,13 +25,14 @@ export class HealthService {
     @InjectRedis() private readonly redis: Redis,
     @Inject(HEALTH_QUEUES) private readonly queues: Queue[],
     private readonly snapshot: ChainSnapshotService,
+    private readonly cardRail: CardRailService,
   ) {}
 
   private async readMonitoring() {
     const [unsettled, unnotified, scheduled] = await Promise.all([
       this.db.$queryRaw<
         { at: Date | null }[]
-      >`SELECT MIN(COALESCE(p.sent_at, p.received_at)) AS at FROM payments p JOIN orders o ON o.id = p.order_id WHERE o.send_state <> 'failed' AND p.stage IN ('sent', 'received', 'confirming')`,
+      >`SELECT MIN(COALESCE(p.processing_at, p.sent_at, p.received_at)) AS at FROM payments p JOIN orders o ON o.id = p.order_id WHERE o.send_state <> 'failed' AND p.stage IN ('sent', 'received', 'confirming', 'processing')`,
       this.db.payment.aggregate({
         where: { stage: 'settled', donation: false },
         _min: { settledAt: true },
@@ -65,7 +67,7 @@ export class HealthService {
         }),
       ),
       Promise.all(
-        ['buyer', 'tracker', 'api'].map(
+        ['buyer', 'tracker', 'api', 'stripe'].map(
           async (name) =>
             [
               name,
@@ -91,12 +93,13 @@ export class HealthService {
         }),
         this.db.scanGap.count({ where: { resolvedAt: null } }),
         this.readMonitoring(),
+        this.cardRail.available(),
       ]),
       this.readRedis(),
     ]);
     if (database.status === 'rejected')
       throw new ApiError(503, 'Live health state is unavailable');
-    const [cursor, openGaps, monitoring] = database.value;
+    const [cursor, openGaps, monitoring, cardAvailable] = database.value;
     const [depths, cooldowns, pausedSince] =
       live.status === 'fulfilled' ? live.value : [null, null, null];
     const { reading, error } = this.snapshot.current();
@@ -128,6 +131,7 @@ export class HealthService {
           }
         : null,
       chainError,
+      cardAvailable,
       redisError: live.status === 'rejected' ? 'unavailable' : null,
       monitoring: {
         ...monitoring,

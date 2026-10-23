@@ -5,7 +5,12 @@ import {
   purchaseMessage,
   money,
   confirmationLabel,
+  railBadge,
+  stepsFor,
+  cardRail,
+  cardBrandName,
 } from './view';
+import { payment } from './test-fixtures';
 
 describe('payment views', () => {
   it.each([
@@ -80,5 +85,104 @@ describe('payment views', () => {
   it('formats large micro-unit prices without floating-point rounding', () => {
     expect(money('14000000')).toBe('$14.00');
     expect(money('9007199254740991000000')).toBe('$9007199254740991.00');
+  });
+  it.each([
+    ['sent', 'Sent', 0, 'blue'],
+    ['processing', 'Processing', 1, 'orange'],
+    ['settled', 'Settled', 2, 'green'],
+    ['notified', 'Shop notified', 3, 'purple'],
+  ] as const)(
+    'maps a card payment at %s to its stage',
+    (stage, label, step, color) => {
+      expect(
+        stageView(
+          { stage, confirmations: 0, final: false, provider: 'stripe' },
+          7,
+        ),
+      ).toMatchObject({ label, step, color });
+    },
+  );
+  it('reads the card stages as Sent, Processing, Settled, Notified', () => {
+    expect(stepsFor('stripe').map((s) => s.stage)).toEqual([
+      'sent',
+      'processing',
+      'settled',
+      'notified',
+    ]);
+    expect(stepsFor('chain').map((s) => s.stage)).toEqual([
+      'received',
+      'confirming',
+      'settled',
+      'notified',
+    ]);
+  });
+  it('labels a payment that did not go through Failed', () => {
+    expect(
+      stageView(payment({ provider: 'stripe', stage: 'failed', final: true })),
+    ).toMatchObject({
+      label: 'Failed',
+      color: 'red',
+      paid: false,
+      final: false,
+    });
+    expect(
+      stageView(payment({ stage: 'sent', noteKinds: ['send_dropped'] })),
+    ).toMatchObject({ label: 'Failed', color: 'red' });
+  });
+  it('shows underscores in an unknown card brand as spaces', () => {
+    expect(cardBrandName('cartes_bancaires')).toBe('Cartes bancaires');
+  });
+  it('names the rail on a receipt', () => {
+    expect(railBadge(payment())).toBe('Test network');
+    expect(
+      railBadge(
+        payment({
+          provider: 'stripe',
+          order: {
+            id: 'o1',
+            item: 'Duck',
+            price: '500000',
+            customer: { cardBrand: 'visa', cardLast4: '4242' },
+          },
+        }),
+      ),
+    ).toBe('Test card · Visa ····4242');
+    expect(
+      railBadge(
+        payment({
+          provider: 'stripe',
+          order: {
+            id: 'o1',
+            item: 'Duck',
+            price: '500000',
+            customer: { cardBrand: 'amex', cardLast4: '0005' },
+          },
+        }),
+      ),
+    ).toBe('Test card · American Express ····0005');
+    expect(railBadge(payment({ provider: 'stripe', order: null }))).toBe(
+      'Test card',
+    );
+  });
+  it('offers the card only once /health says a card is saved', () => {
+    expect(cardRail(null)).toBe('checking');
+    expect(cardRail({ cardAvailable: false })).toBe('unavailable');
+    expect(cardRail({ cardAvailable: true })).toBe('available');
+  });
+  it('maps a card payment without a confirmation threshold', () => {
+    const view = stageView({
+      stage: 'processing',
+      confirmations: 0,
+      final: false,
+      provider: 'stripe',
+    });
+    expect(view).toMatchObject({ label: 'Processing', step: 1, paid: false });
+    expect(view).not.toHaveProperty('progress');
+    expect(view).not.toHaveProperty('confirmationLabel');
+  });
+  it('says when the test card is unavailable', () => {
+    expect(purchaseMessage(503, 'card_unavailable', null)).toBe(
+      'Test card payments are unavailable right now. Try the test network.',
+    );
   });
 });

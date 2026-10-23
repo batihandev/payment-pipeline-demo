@@ -23,6 +23,7 @@ beforeEach(async () => {
   await db.scanGap.deleteMany();
   await db.dailyBudget.deleteMany();
   await db.sweep.deleteMany();
+  await db.stripeEvent.deleteMany();
 });
 function order(status: 'open' | 'paid' | 'expired', createdAt: Date) {
   return database.db.order.create({
@@ -121,6 +122,8 @@ it('deletes month-old settled history', async () => {
     scanGaps: 1,
     dailyBudgets: 1,
     sweeps: 1,
+    stripeEvents: 0,
+    orderEvents: 0,
   });
   expect(await db.payment.findUnique({ where: { id: unmatched.id } })).toBe(
     null,
@@ -313,4 +316,89 @@ it('keeps an old transfer that is still in flight', async () => {
   });
   await new RetentionService(db).pruneOlderThan(cutoff);
   expect(await db.payment.count()).toBe(1);
+});
+it('prunes failed card payments', async () => {
+  const { db } = database;
+  const o = await db.order.create({
+    data: {
+      item: 'Item',
+      status: 'expired',
+      sendState: 'failed',
+      rail: 'card',
+      createdAt: old,
+      expiresAt: old,
+      price: 100n,
+      expectedAmount: 100n,
+      source: 'visitor',
+    },
+  });
+  const failed = await db.payment.create({
+    data: {
+      provider: 'stripe',
+      externalKey: 'pi_failed',
+      orderId: o.id,
+      amount: 100n,
+      stage: 'failed',
+      final: true,
+      sentAt: old,
+      finalAt: old,
+    },
+  });
+  await db.paymentEvent.create({ data: { paymentId: failed.id, body: '{}' } });
+  await db.payment.create({
+    data: {
+      provider: 'stripe',
+      externalKey: 'pi_recent',
+      amount: 100n,
+      stage: 'failed',
+      final: true,
+      sentAt: old,
+      finalAt: recent,
+    },
+  });
+  await expect(
+    new RetentionService(db).pruneOlderThan(cutoff),
+  ).resolves.toMatchObject({ events: 1, payments: 1, orders: 1 });
+  expect(
+    (await db.payment.findMany()).map(({ externalKey }) => externalKey),
+  ).toEqual(['pi_recent']);
+});
+
+it('prunes Stripe events older than the cutoff', async () => {
+  const { db } = database;
+  await db.stripeEvent.createMany({
+    data: [
+      { id: 'evt_old', type: 'payment_intent.succeeded', receivedAt: old },
+      {
+        id: 'evt_recent',
+        type: 'payment_intent.succeeded',
+        receivedAt: recent,
+      },
+    ],
+  });
+  await expect(
+    new RetentionService(db).pruneOlderThan(cutoff),
+  ).resolves.toMatchObject({ stripeEvents: 1 });
+  expect((await db.stripeEvent.findMany()).map(({ id }) => id)).toEqual([
+    'evt_recent',
+  ]);
+});
+it('prunes published order events older than the cutoff', async () => {
+  const { db } = database;
+  const open = await order('open', recent);
+  await db.orderEvent.createMany({
+    data: [
+      { orderId: open.id, publishedAt: old },
+      { orderId: open.id, publishedAt: recent },
+      { orderId: open.id, createdAt: old },
+    ],
+  });
+  await expect(
+    new RetentionService(db).pruneOlderThan(cutoff),
+  ).resolves.toMatchObject({ orderEvents: 1 });
+  expect(
+    (await db.orderEvent.findMany({ orderBy: { id: 'asc' } })).map(
+      ({ publishedAt }) => publishedAt,
+    ),
+  ).toEqual([recent, null]);
 });

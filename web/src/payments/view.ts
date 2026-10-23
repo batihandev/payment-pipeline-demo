@@ -1,3 +1,4 @@
+import { didNotGoThrough } from './notes';
 import type { Health, Payment } from './types';
 
 /** The spec's default confirmation count, used until the first /health read arrives. */
@@ -32,6 +33,98 @@ export const steps = [
     color: 'purple',
   },
 ] as const;
+export const cardSteps = [
+  {
+    stage: 'sent',
+    label: 'Sent',
+    hint: 'Charge sent to the test card',
+    color: 'blue',
+  },
+  {
+    stage: 'processing',
+    label: 'Processing',
+    hint: 'Stripe is processing the charge',
+    color: 'orange',
+  },
+  steps[2],
+  steps[3],
+] as const;
+export const failedStep = {
+  stage: 'failed',
+  label: 'Failed',
+  hint: 'Nothing was credited',
+  color: 'red',
+} as const;
+/** A card payment that failed, or a payment noted as one that did not go through. */
+export function paymentFailed(
+  payment: Pick<Payment, 'stage'> & Partial<Pick<Payment, 'noteKinds'>>,
+): boolean {
+  return (
+    payment.stage === 'failed' ||
+    (payment.noteKinds !== undefined &&
+      didNotGoThrough({ noteKinds: payment.noteKinds }))
+  );
+}
+export type Step = {
+  stage: Payment['stage'];
+  label: string;
+  hint: string;
+  color: string;
+};
+export function stepsFor(provider: Payment['provider']): readonly Step[] {
+  return provider === 'stripe' ? cardSteps : steps;
+}
+export type CardRail = 'checking' | 'available' | 'unavailable';
+/** Whether the card rail can be offered; "checking" until the first /health read arrives. */
+export function cardRail(
+  health: Pick<Health, 'cardAvailable'> | null,
+): CardRail {
+  if (!health) return 'checking';
+  return health.cardAvailable === true ? 'available' : 'unavailable';
+}
+const brandNames: Record<string, string> = {
+  amex: 'American Express',
+  diners: 'Diners Club',
+  jcb: 'JCB',
+  mastercard: 'Mastercard',
+  unionpay: 'UnionPay',
+};
+export function cardBrandName(brand: string): string {
+  const name = brand.replaceAll('_', ' ');
+  return brandNames[brand] ?? name.charAt(0).toUpperCase() + name.slice(1);
+}
+/** The saved card as its brand name and masked last four digits, or null while it is unknown. */
+function cardParts(
+  payment: Pick<Payment, 'order'>,
+): { brand: string; last4: string } | null {
+  const card = payment.order?.customer;
+  return card?.cardBrand && card.cardLast4
+    ? { brand: cardBrandName(card.cardBrand), last4: `····${card.cardLast4}` }
+    : null;
+}
+/** "Visa ····4242", or null while the order's card is unknown. */
+export function cardLabel(payment: Pick<Payment, 'order'>): string | null {
+  const card = cardParts(payment);
+  return card && `${card.brand} ${card.last4}`;
+}
+/** The receipt badge in two parts, so a long name can shorten without hiding the digits. */
+export function railBadgeParts(payment: Pick<Payment, 'provider' | 'order'>): {
+  name: string;
+  last4: string | null;
+} {
+  if (payment.provider !== 'stripe')
+    return { name: 'Test network', last4: null };
+  const card = cardParts(payment);
+  return card
+    ? { name: `Test card · ${card.brand}`, last4: card.last4 }
+    : { name: 'Test card', last4: null };
+}
+export function railBadge(
+  payment: Pick<Payment, 'provider' | 'order'>,
+): string {
+  const { name, last4 } = railBadgeParts(payment);
+  return last4 ? `${name} ${last4}` : name;
+}
 export function confirmationLabel(
   confirmations: number,
   threshold: number,
@@ -40,22 +133,55 @@ export function confirmationLabel(
     ? `${confirmations} of ${threshold}`
     : `${threshold}+ confirmations`;
 }
+/** Every stage step a payment on either rail can reach, in order, for the pipeline lanes. */
+export const pipelineSteps: readonly Step[] = [
+  steps[0],
+  steps[1],
+  cardSteps[1],
+  steps[2],
+  steps[3],
+];
+type StagePayment = Pick<Payment, 'stage' | 'confirmations' | 'final'> &
+  Partial<Pick<Payment, 'provider' | 'noteKinds'>>;
+type StageView = {
+  label: string;
+  step: number;
+  color: string;
+  paid: boolean;
+  final: boolean;
+};
+/** The stage of a payment; with a confirmation threshold, also its confirmation progress. */
+export function stageView(payment: StagePayment): StageView;
 export function stageView(
-  payment: Pick<Payment, 'stage' | 'confirmations' | 'final'>,
+  payment: StagePayment,
   threshold: number,
-) {
-  const step = steps.findIndex((s) => s.stage === payment.stage);
+): StageView & { progress: number; confirmationLabel: string };
+export function stageView(payment: StagePayment, threshold?: number) {
+  const stages = stepsFor(payment.provider ?? 'chain');
+  const step = stages.findIndex((s) => s.stage === payment.stage);
+  const view: StageView = paymentFailed(payment)
+    ? {
+        label: failedStep.label,
+        step: -1,
+        color: failedStep.color,
+        paid: false,
+        final: false,
+      }
+    : {
+        label:
+          payment.stage === 'sent'
+            ? 'Sent'
+            : payment.stage === 'processing'
+              ? 'Processing'
+              : (stages[step]?.label ?? payment.stage),
+        step,
+        color: stages[step]?.color ?? 'blue',
+        paid: payment.stage === 'settled' || payment.stage === 'notified',
+        final: payment.final,
+      };
+  if (threshold === undefined) return view;
   return {
-    label:
-      payment.stage === 'sent'
-        ? 'Sent'
-        : payment.stage === 'processing'
-          ? 'Processing'
-          : (steps[step]?.label ?? payment.stage),
-    step,
-    color: steps[step]?.color ?? 'blue',
-    paid: payment.stage === 'settled' || payment.stage === 'notified',
-    final: payment.final,
+    ...view,
     progress: Math.min(1, Math.max(0, payment.confirmations / threshold)),
     confirmationLabel: confirmationLabel(payment.confirmations, threshold),
   };
@@ -87,6 +213,8 @@ export function purchaseMessage(
     return "Today's test purchases are used up. Back at 00:00 UTC.";
   if (status === 503 && error === 'paused')
     return 'The demo account is being topped up. Try again soon.';
+  if (status === 503 && error === 'card_unavailable')
+    return 'Test card payments are unavailable right now. Try the test network.';
   return 'Demo offline';
 }
 export function shortId(id: string): string {

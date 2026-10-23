@@ -1,15 +1,24 @@
 import { randomUUID, createHash } from 'node:crypto';
-import { Inject, Injectable } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
 import type { Redis } from 'ioredis';
-import { PrismaService } from '../../../../libs/db/src';
+import type { Subscription } from 'rxjs';
+import { PrismaService, type PaymentRail } from '../../../../libs/db/src';
 import {
   OrderQueueService,
   PurchasesService,
 } from '../../../../libs/orders/src';
+import { orderClosed } from '../../../../libs/events/src/order-events';
 import { utcDateKey } from '../../../../libs/core/src/time';
 import { InjectRedis } from '../../../../libs/redis/src';
 import { ApiError } from '../common/api-error';
 import { InjectNow, type Now } from '../common/clock.module';
+import { EventsService } from '../events/events.service';
+import { CardRailService } from '../health/card-rail.service';
 import { ChainSnapshotService } from '../health/chain-snapshot.service';
 import {
   VISITOR_LIMITS,
@@ -27,20 +36,61 @@ const waiting = {
 } as const;
 
 @Injectable()
-export class TestPurchasesService {
+export class TestPurchasesService implements OnModuleInit, OnModuleDestroy {
   // Admissions run one at a time so the queue check and the new position stay exact.
   private turn: Promise<unknown> = Promise.resolve();
+  private queueReading?: Promise<void>;
+  private queueStale = false;
+  private subscription?: Subscription;
 
   constructor(
     private readonly db: PrismaService,
     @InjectRedis() private readonly redis: Redis,
     private readonly purchases: PurchasesService,
     private readonly orderQueue: OrderQueueService,
+    private readonly cardRail: CardRailService,
     private readonly snapshot: ChainSnapshotService,
     @Inject(VISITOR_LIMITS) private readonly limits: VisitorLimits,
     @Inject(VISITOR_PREFIX) private readonly prefix: string,
     @InjectNow() private readonly now: Now,
+    private readonly events: EventsService,
   ) {}
+
+  onModuleInit(): void {
+    this.subscription = this.events.orderChanged.subscribe(
+      () => void this.refreshQueue(),
+    );
+  }
+
+  onModuleDestroy(): void {
+    this.subscription?.unsubscribe();
+  }
+
+  /**
+   * Reads the waiting visitor orders and sends them to the streams. A change that arrives during
+   * a read starts one more read after it, so the last snapshot sent is never older than a change.
+   */
+  private refreshQueue(): Promise<void> {
+    this.queueStale = true;
+    this.queueReading ??= (async () => {
+      while (this.queueStale) {
+        this.queueStale = false;
+        try {
+          const orders = await this.db.order.findMany({
+            where: waiting,
+            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+            take: this.limits.queueLimit,
+            select: { id: true },
+          });
+          this.events.publishQueue(orders.map(({ id }) => id));
+        } catch {
+          console.error('Could not read the visitor queue.');
+        }
+      }
+      this.queueReading = undefined;
+    })();
+    return this.queueReading;
+  }
 
   private exclusive<T>(task: () => Promise<T>): Promise<T> {
     const result = this.turn.then(task);
@@ -103,17 +153,26 @@ export class TestPurchasesService {
     );
   }
 
-  buy(address: string): Promise<{
+  buy(
+    address: string,
+    rail: PaymentRail,
+  ): Promise<{
     orderId: string;
     position: number;
     item: string;
     price: string;
+    expiresAt: string;
   }> {
     return this.exclusive(async () => {
       const now = this.now();
-      let created: { orderId: string; item: string; price: string } | undefined;
+      let created:
+        | { orderId: string; item: string; price: string; expiresAt: string }
+        | undefined;
       try {
-        if (await this.paused(now)) throw new ApiError(503, 'paused');
+        if (rail === 'card') {
+          if (!(await this.cardRail.available()))
+            throw new ApiError(503, 'card_unavailable');
+        } else if (await this.paused(now)) throw new ApiError(503, 'paused');
         if (
           (await this.db.order.count({ where: waiting })) >=
           this.limits.queueLimit
@@ -122,6 +181,7 @@ export class TestPurchasesService {
         await this.admitVisitor(address, now);
         const order = await this.purchases.visitor(
           randomUUID(),
+          rail,
           now,
           this.limits.dailyLimit,
         );
@@ -130,8 +190,10 @@ export class TestPurchasesService {
           orderId: order.id,
           item: order.item,
           price: order.price.toString(),
+          expiresAt: order.expiresAt.toISOString(),
         };
         await this.orderQueue.queueSend(order.id, 'visitor');
+        void this.refreshQueue();
         return { ...created, position: await this.position(order) };
       } catch (error) {
         if (error instanceof ApiError) throw error;
@@ -142,9 +204,19 @@ export class TestPurchasesService {
     });
   }
 
-  async positionOf(id: string): Promise<{ position: number }> {
-    if (!uuid.test(id)) return { position: 0 };
-    const order = await this.db.order.findFirst({ where: { id, ...waiting } });
-    return { position: order ? await this.position(order) : 0 };
+  /** The queue position of a waiting order, and whether it closed without a payment being sent. */
+  async positionOf(id: string): Promise<{ position: number; closed: boolean }> {
+    const unknown = { position: 0, closed: false };
+    if (!uuid.test(id)) return unknown;
+    const order = await this.db.order.findUnique({ where: { id } });
+    if (!order) return unknown;
+    const isWaiting =
+      order.source === waiting.source &&
+      order.sendState === waiting.sendState &&
+      order.status === waiting.status;
+    return {
+      position: isWaiting ? await this.position(order) : 0,
+      closed: orderClosed(order),
+    };
   }
 }
