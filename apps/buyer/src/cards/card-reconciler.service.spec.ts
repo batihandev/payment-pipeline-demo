@@ -7,6 +7,12 @@ import {
   FakeStripe,
   paymentIntent,
 } from '../../../../libs/stripe/testing/fake-stripe';
+import { RpcLimiter } from '../../../../libs/chain/src/rpc-limiter';
+import {
+  SdkStripeClient,
+  StripeAccessError,
+} from '../../../../libs/stripe/src/stripe-client';
+import { applyIntent } from '../../../../libs/stripe/src';
 import { CardReconcilerService } from './card-reconciler.service';
 
 const now = new Date('2026-10-23T12:00:00Z');
@@ -213,6 +219,33 @@ it('records one incident for an order whose search Stripe refuses', async () => 
   expect(incidents[0]?.whatHappened).toContain(refused.id);
 });
 
+it('stops the run without incidents when Stripe rejects the API key', async () => {
+  const first = await order();
+  await payment(first.id, 'processing', minutesAgo(6), 'pi_first');
+  const second = await order();
+  await payment(second.id, 'processing', minutesAgo(5), 'pi_second');
+  stripe.failures.set('pi_first', new StripeAccessError('401'));
+  stripe.failures.set('pi_second', new StripeAccessError('401'));
+  await expect(reconciler.run(now)).rejects.toBeInstanceOf(StripeAccessError);
+  expect(stripe.lookups).toHaveLength(1);
+  expect(await db().incident.count()).toBe(0);
+});
+
+it('stops the run without incidents when no Stripe key is set', async () => {
+  const noop = async () => undefined;
+  const keyless = new SdkStripeClient(
+    undefined,
+    new RpcLimiter(1000, 1000, Date.now, noop, noop),
+  );
+  reconciler = new CardReconcilerService(database.db, keyless, redis);
+  const first = await order();
+  await payment(first.id, 'processing', minutesAgo(6), 'pi_first');
+  const second = await order();
+  await payment(second.id, 'processing', minutesAgo(5), 'pi_second');
+  await expect(reconciler.run(now)).rejects.toBeInstanceOf(StripeAccessError);
+  expect(await db().incident.count()).toBe(0);
+});
+
 it('stops the run on a transient Stripe error', async () => {
   const first = await order();
   await payment(first.id, 'processing', minutesAgo(6), 'pi_first');
@@ -292,6 +325,28 @@ it('counts a late settle of a scheduled order against the daily budget', async (
     paymentIntent({ id: 'pi_late', status: 'succeeded', orderId: closed.id }),
   );
   await reconciler.run(now);
+  expect(
+    await db().dailyBudget.findUniqueOrThrow({ where: { day } }),
+  ).toMatchObject({ reservedCount: 1, reservedAmount: 500000n });
+});
+
+it("restores a scheduled order's budget once when the same success is applied twice", async () => {
+  const day = new Date('2026-10-23T00:00:00Z');
+  await db().dailyBudget.create({
+    data: { day, targetCount: 10, targetAmount: 10_000_000n },
+  });
+  const closed = await order({
+    sendState: 'failed',
+    status: 'expired',
+    source: 'schedule',
+  });
+  const succeeded = paymentIntent({
+    id: 'pi_late',
+    status: 'succeeded',
+    orderId: closed.id,
+  });
+  await db().$transaction((tx) => applyIntent(tx, succeeded, now));
+  await db().$transaction((tx) => applyIntent(tx, succeeded, now));
   expect(
     await db().dailyBudget.findUniqueOrThrow({ where: { day } }),
   ).toMatchObject({ reservedCount: 1, reservedAmount: 500000n });

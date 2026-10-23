@@ -7,6 +7,7 @@ import { DAY_MS } from '../../../../libs/core/src/time';
 import { PrismaService, type Prisma } from '../../../../libs/db/src';
 import { REDIS } from '../../../../libs/redis/src';
 import { StripeClient, applyIntent } from '../../../../libs/stripe/src';
+import { StripeAccessError } from '../../../../libs/stripe/src/stripe-client';
 
 const STALE_AFTER_MS = 3 * 60_000;
 const RECHECK_AFTER_MS = 5 * 60_000;
@@ -18,7 +19,8 @@ const LOOKUPS_PER_RUN = 20;
  * were tried but have no payment row, then applies each PaymentIntent as the webhook would.
  * Each row is checked at most once every few minutes, least recently checked first, so rows
  * Stripe keeps reporting unchanged take turns with newer ones. A lookup Stripe refuses is
- * recorded once and skipped; a transient error or rate limit ends the run.
+ * recorded once and skipped; an access error (a bad or missing key), a transient error or a
+ * rate limit ends the run.
  */
 @Injectable()
 export class CardReconcilerService {
@@ -109,13 +111,15 @@ export class CardReconcilerService {
     }
   }
 
-  /** The PaymentIntents found, or null when Stripe refused the lookup for good. */
+  /** The PaymentIntents found, or null when Stripe refused the lookup for good. An access error is
+   * about the key, not the row, so it ends the run. */
   private async lookUp(
     read: () => Promise<Stripe.PaymentIntent[]>,
   ): Promise<Stripe.PaymentIntent[] | null> {
     try {
       return await read();
     } catch (error) {
+      if (error instanceof StripeAccessError) throw error;
       if (error instanceof RpcError && error.kind === 'permanent') return null;
       throw error;
     }

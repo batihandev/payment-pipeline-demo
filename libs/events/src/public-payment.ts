@@ -33,7 +33,6 @@ function publicOrder<O extends OrderWithCustomer>({
 export function publicPayment<O extends OrderWithCustomer>(
   payment: Payment & { order?: O | null },
 ): PublicPayment<O> {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- left out of the payload
   const { fromAddress, externalKey, reconciledAt, order, ...rest } = payment;
   return {
     ...rest,

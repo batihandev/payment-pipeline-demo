@@ -16,6 +16,10 @@ export default tseslint.config(
   prettier,
   {
     rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { ignoreRestSiblings: true },
+      ],
       '@typescript-eslint/no-extraneous-class': [
         'error',
         { allowWithDecorator: true },

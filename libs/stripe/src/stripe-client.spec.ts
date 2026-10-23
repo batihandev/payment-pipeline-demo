@@ -1,7 +1,11 @@
 import Stripe from 'stripe';
 import { RpcError } from '../../chain/src/rpc-error';
 import { RpcLimiter } from '../../chain/src/rpc-limiter';
-import { CardDeclinedError, SdkStripeClient } from './stripe-client';
+import {
+  CardDeclinedError,
+  SdkStripeClient,
+  StripeAccessError,
+} from './stripe-client';
 
 const input = {
   amountCents: 52,
@@ -145,6 +149,29 @@ it('fails a card payment as permanent without a secret key', async () => {
   expect(error).toBeInstanceOf(RpcError);
   expect(error).toMatchObject({ kind: 'permanent' });
   expect((error as Error).message).toMatch(/STRIPE_SECRET_KEY/);
+});
+
+it('classifies an authentication or permission error as an access error', async () => {
+  for (const [failure, statusCode] of [
+    [Stripe.errors.StripeAuthenticationError, 401],
+    [Stripe.errors.StripePermissionError, 403],
+  ] as const) {
+    const create = jest.fn(async () => {
+      throw new failure({ type: 'invalid_request_error', statusCode });
+    });
+    const client = new SdkStripeClient(
+      fakeStripe(create),
+      limiterWith().limiter,
+    );
+    const error = await client.createPayment(input).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(StripeAccessError);
+    expect(error).toBeInstanceOf(RpcError);
+    expect(error).toMatchObject({ kind: 'permanent' });
+  }
+  const noKey = new SdkStripeClient(undefined, limiterWith().limiter);
+  await expect(noKey.retrieve('pi_1')).rejects.toBeInstanceOf(
+    StripeAccessError,
+  );
 });
 
 it('treats an idempotency conflict as transient', async () => {

@@ -23,6 +23,13 @@ export class CardDeclinedError extends Error {
   }
 }
 
+/** Stripe refused the API key (401, 403) or none is set; every call fails the same way. */
+export class StripeAccessError extends RpcError {
+  constructor(detail?: string) {
+    super('permanent', detail);
+  }
+}
+
 export abstract class StripeClient {
   abstract createPayment(input: CardPaymentInput): Promise<CardPayment>;
   /** The PaymentIntent with its latest charge expanded. */
@@ -38,6 +45,11 @@ function classifyStripeError(error: unknown): RpcError | CardDeclinedError {
       error.decline_code ?? error.code ?? null,
       error.payment_intent?.id ?? null,
     );
+  if (
+    error instanceof Stripe.errors.StripeAuthenticationError ||
+    error instanceof Stripe.errors.StripePermissionError
+  )
+    return new StripeAccessError(error.code ?? String(error.statusCode));
   if (error instanceof Stripe.errors.StripeRateLimitError)
     return new RpcError('rate_limit');
   if (
@@ -102,7 +114,7 @@ export class SdkStripeClient implements StripeClient {
 
   private sdk(): Stripe {
     if (!this.stripe)
-      throw new RpcError('permanent', 'STRIPE_SECRET_KEY is not set');
+      throw new StripeAccessError('STRIPE_SECRET_KEY is not set');
     return this.stripe;
   }
 
