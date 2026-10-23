@@ -25,7 +25,8 @@ COPY tsconfig*.json nest-cli.json prisma.config.ts ./
 RUN pnpm prisma generate \
     && pnpm nest build api \
     && pnpm nest build buyer \
-    && pnpm nest build tracker
+    && pnpm nest build tracker \
+    && pnpm tsc -p tsconfig.scripts.json
 
 FROM deps AS prod-deps
 COPY package.json ./

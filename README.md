@@ -168,6 +168,57 @@ Until step 2 is done the API answers every webhook with `400`, so a card payment
 
 Card orders cost their price in cents, in USD. A declined card moves the payment to `failed`, closes the order with a `card_failed` incident and credits nothing. A Stripe error that retries cannot fix, such as a missing key or no saved card, closes the order with a `send_failed` incident; a transient error is retried with backoff and, once retries run out, the order goes to `review` with its reservation kept.
 
+## Deploy
+
+`deploy/` runs the demo on the server as its own compose project, `payment-pipeline-demo-deploy`, apart from any development services. It holds `compose.yaml`, `deploy.sh` and `.env.example`; the real settings live in `deploy/.env` on the server only.
+
+The stack has its own PostgreSQL and Redis with named volumes, a one-shot `migrate` service, the `api`, `tracker` and `buyer` services and a `cloudflared` connector. The three apps run from one image, `ghcr.io/batihandev/payment-pipeline-demo:<commit>`, and `migrate` from `<commit>-migrate`; CI pushes both from `main`. Nothing publishes a port: public traffic reaches the API only through the Cloudflare Tunnel, at `http://api:3000` on the stack's network. The API reads client addresses from `CF-Connecting-IP`. Each service gets only the settings it needs; only the buyer holds the private keys and the Stripe secret key. Every container runs with a read-only root file system, all capabilities dropped and `no-new-privileges`, restarts unless stopped, and keeps at most three 10 MB log files.
+
+| Service       | Memory limit | Notes                                                                    |
+| ------------- | ------------ | ------------------------------------------------------------------------ |
+| `api`         | 256 MB       | Health check on `/health`; 30 s to drain on stop                         |
+| `tracker`     | 256 MB       | 60 s to finish its pass on stop                                          |
+| `buyer`       | 256 MB       | 60 s to finish its active job on stop                                    |
+| `postgres`    | 256 MB       | `shared_buffers=64MB`                                                    |
+| `redis`       | 64 MB        | `maxmemory 48mb` with `noeviction`, so BullMQ keys are never evicted     |
+| `cloudflared` | 64 MB        | Runs `tunnel run` with `TUNNEL_TOKEN`; on only with the `tunnel` profile |
+
+The limits add up to about 1.1 GB; the stack uses about 350 MB after start-up.
+
+### One-time setup
+
+1. Create a remote-managed Cloudflare Tunnel for the demo and give it a public hostname whose service is `http://api:3000`. Its token goes in `TUNNEL_TOKEN`.
+2. Copy `deploy/` to the server, then `cp .env.example .env`, `chmod 600 .env`, and replace every placeholder. Use the deploy's own buyer and shop wallets (`pnpm wallets:new`), not the development ones, and list the pages that call the API in `WEB_ORIGIN`.
+3. Create a Stripe sandbox for the deploy and put its test secret key in `STRIPE_SECRET_KEY`. In its Dashboard, add a webhook endpoint at `https://<public hostname>/stripe/webhooks` subscribed to `payment_intent.processing`, `payment_intent.succeeded` and `payment_intent.payment_failed`, and put its signing secret in `STRIPE_WEBHOOK_SECRET`.
+4. Run the first deploy (below), then set up the demo customer against the deploy database:
+
+   ```sh
+   docker compose -f deploy/compose.yaml --env-file deploy/.env run --rm --no-deps -T buyer node dist/scripts/scripts/stripe-setup.js
+   ```
+
+### Deploy and roll back
+
+```sh
+deploy/deploy.sh <commit>
+```
+
+The script works from any directory and prints one line per step, never a setting's value:
+
+1. It pulls both images while the running stack keeps serving.
+2. It runs `migrate`. Migrations only add columns and tables, and drop them in a later release, so the running code works on the new schema. If the migration fails, the script stops and the running stack is unchanged.
+3. It starts a second API on the new tag beside the running one and waits up to 90 seconds for its health check. If the new API never turns healthy, the script removes it and exits non-zero, and the previous API keeps serving. Otherwise it stops the previous API, which drains for up to 30 seconds; open event streams reconnect on their own.
+4. It recreates the tracker, then the buyer, each stopped before the new one starts, so neither ever runs twice. Jobs wait in Redis meanwhile.
+5. It records the deployed and previous tags in `deploy/.deploy-state` and sets `IMAGE_TAG` in `deploy/.env`.
+6. It removes this image's tags other than the current and previous ones.
+
+PostgreSQL, Redis and `cloudflared` are recreated only when their own configuration changes. To roll back, deploy the previous tag listed in `deploy/.deploy-state`; the older code runs on the newer schema. `DEPLOY_ENV_FILE` points the script at another settings file; with `COMPOSE_PROFILES` empty there, the stack runs without `cloudflared`.
+
+A failed migration stays recorded, and Prisma refuses later migrations until it is resolved. After fixing the cause, mark it rolled back with the running tag's migrate image:
+
+```sh
+docker compose -f deploy/compose.yaml --env-file deploy/.env run --rm -T migrate node node_modules/prisma/build/index.js migrate resolve --rolled-back <migration name>
+```
+
 ## Configuration
 
 `.env.example` lists the environment variables; `libs/config/src/index.ts` defines validation and defaults. Money settings use integer micro-units; native balance thresholds use wei. Quiet-window hours and budget days use UTC.
