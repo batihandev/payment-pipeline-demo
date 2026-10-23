@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   HEALTH_EVERY_MS,
   PaymentsClient,
+  READ_TIMEOUT_MS,
+  REFRESH_EVERY_MS,
   STREAM_REOPEN_MS,
   type EventStream,
 } from './client';
@@ -428,7 +430,10 @@ describe('receipt window', () => {
       Date.parse('2026-10-20T12:00:00Z') - minutes * 60000,
     ).toISOString();
   /** A client over `count` payments whose `/payments` reads can be held or failed. */
-  function windowed(count = 250) {
+  function windowed(
+    count = 250,
+    readTimeout?: ConstructorParameters<typeof PaymentsClient>[3],
+  ) {
     const rows = Array.from({ length: count }, (_, i) => ({
       ...row(`p${String(i).padStart(3, '0')}`, 'received'),
       sentAt: at(i),
@@ -447,7 +452,7 @@ describe('receipt window', () => {
         if (pathname === '/payments') {
           reads.push(search);
           signals.push(init?.signal ?? undefined);
-          await server.hold;
+          await Promise.race([server.hold, aborted(init?.signal)]);
           if (server.fail) return new Response('{}', { status: 503 });
           return Response.json(
             rows.slice(0, Number(searchParams.get('limit'))),
@@ -458,6 +463,7 @@ describe('receipt window', () => {
         return Response.json(health());
       },
       () => stream,
+      readTimeout,
     );
     const data = () => {
       const current = client.getSnapshot().data;
@@ -500,6 +506,36 @@ describe('receipt window', () => {
       load,
     };
   }
+  /** Rejects when `signal` aborts, as fetch does. */
+  const aborted = (signal?: AbortSignal | null) =>
+    new Promise<never>((_, reject) => {
+      signal?.addEventListener('abort', () => {
+        reject(new Error('aborted'));
+      });
+    });
+  /** A timeout signal on the faked timers, which AbortSignal.timeout does not use. */
+  const fakeTimeout = (ms: number) => {
+    const controller = new AbortController();
+    setTimeout(() => {
+      controller.abort();
+    }, ms);
+    return controller.signal;
+  };
+  it('starts the next refresh after a stalled read times out', async () => {
+    vi.useFakeTimers();
+    const s = windowed(30, fakeTimeout);
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    s.holdReads();
+    const reads = s.reads.length;
+    s.stream.send(row('fresh'));
+    await vi.waitFor(() => {
+      expect(s.reads).toHaveLength(reads + 1);
+    });
+    await vi.advanceTimersByTimeAsync(READ_TIMEOUT_MS + REFRESH_EVERY_MS);
+    expect(s.reads).toHaveLength(reads + 2);
+    stop();
+  });
   /** Counts of the shown receipts at every update, to catch a collapse that a later update hides. */
   function watchCounts(s: ReturnType<typeof windowed>) {
     const counts: number[] = [];

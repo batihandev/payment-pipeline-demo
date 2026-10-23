@@ -26,7 +26,9 @@ export type PurchaseAnswer = {
 };
 
 export const HEALTH_EVERY_MS = 15000;
-const REFRESH_EVERY_MS = 15000;
+export const REFRESH_EVERY_MS = 15000;
+/** How long one window read may take before it is dropped and retried. */
+export const READ_TIMEOUT_MS = 10000;
 /** How many of the newest payments the pipeline counts cover. */
 const PIPELINE_LIMIT = 100;
 /** How many receipts show at first, and how many each Show more adds. */
@@ -123,6 +125,8 @@ export class PaymentsClient {
     private request: typeof fetch = fetch,
     private createStream: (url: string) => EventStream = (url) =>
       new EventSource(url),
+    private readTimeout: (ms: number) => AbortSignal = (ms) =>
+      AbortSignal.timeout(ms),
   ) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
   }
@@ -319,12 +323,15 @@ export class PaymentsClient {
     const limit = readLimit(size);
     // One row more tells whether older payments exist; a full window has no Show more anyway.
     const asked = Math.min(limit + 1, PAYMENT_LIST_MAX);
+    // A stalled request is dropped after the timeout, so it cannot hold back later refreshes.
+    const signal = AbortSignal.any([
+      abort.signal,
+      this.readTimeout(READ_TIMEOUT_MS),
+    ]);
     try {
       const get = async <T>(path: string, schema: z.ZodType<T>) => {
         const request = this.request;
-        const response = await request(`${this.baseUrl}${path}`, {
-          signal: abort.signal,
-        });
+        const response = await request(`${this.baseUrl}${path}`, { signal });
         if (!response.ok) throw new Error('Demo offline');
         return readBody(schema, response);
       };
