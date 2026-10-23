@@ -6,7 +6,7 @@ import {
   validateConfig,
 } from '../libs/config/src';
 import { PrismaClient } from '../libs/db/src';
-import { setupDemoCustomer } from '../libs/stripe/src';
+import { setupDemoCustomer } from '../libs/stripe/src/setup-demo-customer';
 
 const setupSchema = stripeSetupSchema.extend(
   buyerSchema.pick({ DATABASE_URL: true, BUYER_PRIVATE_KEY: true }).shape,

@@ -23,7 +23,6 @@ export class CardDeclinedError extends Error {
 
 export abstract class StripeClient {
   abstract createPayment(input: CardPaymentInput): Promise<CardPayment>;
-  abstract verifyEvent(rawBody: Buffer, signature: string): Stripe.Event;
 }
 
 function classifyStripeError(error: unknown): RpcError | CardDeclinedError {
@@ -34,9 +33,10 @@ function classifyStripeError(error: unknown): RpcError | CardDeclinedError {
     return new RpcError('rate_limit');
   if (
     error instanceof Stripe.errors.StripeConnectionError ||
+    error instanceof Stripe.errors.StripeIdempotencyError ||
     (error instanceof Stripe.errors.StripeError &&
       error.statusCode !== undefined &&
-      error.statusCode >= 500)
+      (error.statusCode >= 500 || error.statusCode === 409))
   )
     return new RpcError('transient');
   return new RpcError('permanent');
@@ -44,14 +44,16 @@ function classifyStripeError(error: unknown): RpcError | CardDeclinedError {
 
 export class SdkStripeClient implements StripeClient {
   constructor(
-    private readonly stripe: Stripe,
-    private readonly webhookSecret: string | undefined,
+    private readonly stripe: Stripe | undefined,
     private readonly limiter: RpcLimiter,
   ) {}
 
   async createPayment(input: CardPaymentInput): Promise<CardPayment> {
+    const stripe = this.stripe;
+    if (!stripe)
+      throw new RpcError('permanent', 'STRIPE_SECRET_KEY is not set');
     const intent = await this.call(() =>
-      this.stripe.paymentIntents.create(
+      stripe.paymentIntents.create(
         {
           amount: input.amountCents,
           currency: 'usd',
@@ -72,16 +74,6 @@ export class SdkStripeClient implements StripeClient {
       receiptUrl:
         typeof charge === 'object' && charge ? charge.receipt_url : null,
     };
-  }
-
-  verifyEvent(rawBody: Buffer, signature: string): Stripe.Event {
-    if (!this.webhookSecret)
-      throw new Error('Stripe webhook secret is not configured');
-    return this.stripe.webhooks.constructEvent(
-      rawBody,
-      signature,
-      this.webhookSecret,
-    );
   }
 
   private async call<T>(operation: () => Promise<T>): Promise<T> {

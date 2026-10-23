@@ -4,7 +4,7 @@ import type { PrismaClient } from '../../db/src';
 
 type Config = { STRIPE_PAYMENT_METHOD: string; BUYER_PRIVATE_KEY: string };
 
-/** Creates the demo customer and its saved test card; a repeat run changes nothing. */
+/** Creates the demo customer and its saved test card; a repeat run changes nothing and a run that failed part-way reuses the card already attached. */
 export async function setupDemoCustomer(
   db: PrismaClient,
   stripe: Pick<Stripe, 'customers' | 'paymentMethods'>,
@@ -15,7 +15,10 @@ export async function setupDemoCustomer(
     (await db.customer.create({ data: { name: 'Demo buyer' } }));
 
   if (!customer.stripeCustomerId) {
-    const created = await stripe.customers.create({ name: customer.name });
+    const created = await stripe.customers.create(
+      { name: customer.name },
+      { idempotencyKey: `customer-${customer.id}` },
+    );
     customer = await db.customer.update({
       where: { id: customer.id },
       data: { stripeCustomerId: created.id },
@@ -23,10 +26,15 @@ export async function setupDemoCustomer(
   }
 
   if (!customer.stripePaymentMethodId && customer.stripeCustomerId) {
-    const method = await stripe.paymentMethods.attach(
-      config.STRIPE_PAYMENT_METHOD,
-      { customer: customer.stripeCustomerId },
-    );
+    const saved = await stripe.paymentMethods.list({
+      customer: customer.stripeCustomerId,
+      type: 'card',
+    });
+    const method =
+      saved.data[0] ??
+      (await stripe.paymentMethods.attach(config.STRIPE_PAYMENT_METHOD, {
+        customer: customer.stripeCustomerId,
+      }));
     await stripe.customers.update(customer.stripeCustomerId, {
       invoice_settings: { default_payment_method: method.id },
     });

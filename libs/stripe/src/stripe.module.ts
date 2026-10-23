@@ -5,6 +5,10 @@ import type { Redis } from 'ioredis';
 import { serviceLimiter } from '../../chain/src/service-limiter';
 import { REDIS } from '../../redis/src';
 import { SdkStripeClient, StripeClient } from './stripe-client';
+import {
+  SdkStripeEventVerifier,
+  StripeEventVerifier,
+} from './stripe-event-verifier';
 
 type Settings = {
   STRIPE_SECRET_KEY?: string;
@@ -20,10 +24,8 @@ type Settings = {
       inject: [ConfigService, REDIS],
       useFactory: (config: ConfigService<Settings, true>, redis: Redis) => {
         const key = config.get('STRIPE_SECRET_KEY', { infer: true });
-        if (!key) throw new Error('STRIPE_SECRET_KEY is required');
         return new SdkStripeClient(
-          new Stripe(key, { maxNetworkRetries: 0 }),
-          config.get('STRIPE_WEBHOOK_SECRET', { infer: true }),
+          key ? new Stripe(key, { maxNetworkRetries: 0 }) : undefined,
           serviceLimiter(
             redis,
             'stripe',
@@ -33,7 +35,15 @@ type Settings = {
         );
       },
     },
+    {
+      provide: StripeEventVerifier,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Settings, true>) =>
+        new SdkStripeEventVerifier(
+          config.get('STRIPE_WEBHOOK_SECRET', { infer: true }),
+        ),
+    },
   ],
-  exports: [StripeClient],
+  exports: [StripeClient, StripeEventVerifier],
 })
 export class StripeModule {}

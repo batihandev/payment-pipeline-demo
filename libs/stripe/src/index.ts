@@ -5,5 +5,8 @@ export {
   type CardPayment,
   type CardPaymentInput,
 } from './stripe-client';
+export {
+  SdkStripeEventVerifier,
+  StripeEventVerifier,
+} from './stripe-event-verifier';
 export { StripeModule } from './stripe.module';
-export { setupDemoCustomer } from './setup-demo-customer';

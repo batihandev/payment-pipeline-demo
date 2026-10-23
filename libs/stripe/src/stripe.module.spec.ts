@@ -3,6 +3,10 @@ import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { REDIS } from '../../redis/src';
 import { SdkStripeClient, StripeClient } from './stripe-client';
+import {
+  SdkStripeEventVerifier,
+  StripeEventVerifier,
+} from './stripe-event-verifier';
 import { StripeModule } from './stripe.module';
 
 @Global()
@@ -35,13 +39,29 @@ it('provides the Stripe client', async () => {
   expect(module.get(StripeClient)).toBeInstanceOf(SdkStripeClient);
 });
 
-it('does not start without a secret key', async () => {
+it('provides the event verifier', async () => {
+  const module = await build({
+    STRIPE_WEBHOOK_SECRET: 'whsec_test',
+    RPC_COOLDOWN_MS: 1000,
+  });
+  expect(module.get(StripeEventVerifier)).toBeInstanceOf(
+    SdkStripeEventVerifier,
+  );
+});
+
+it('starts without a secret key and fails card payments as permanent', async () => {
   const inherited = process.env.STRIPE_SECRET_KEY;
   delete process.env.STRIPE_SECRET_KEY;
   try {
-    await expect(build({ RPC_COOLDOWN_MS: 1000 })).rejects.toThrow(
-      'STRIPE_SECRET_KEY is required',
-    );
+    const module = await build({ RPC_COOLDOWN_MS: 1000 });
+    await expect(
+      module.get(StripeClient).createPayment({
+        amountCents: 52,
+        customer: 'cus_1',
+        paymentMethod: 'pm_1',
+        orderId: 'order-1',
+      }),
+    ).rejects.toMatchObject({ kind: 'permanent' });
   } finally {
     if (inherited !== undefined) process.env.STRIPE_SECRET_KEY = inherited;
   }

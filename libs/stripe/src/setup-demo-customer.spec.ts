@@ -13,14 +13,16 @@ function fakeStripe() {
     id: 'pm_own',
     card: { brand: 'visa', last4: '4242' },
   }));
+  const list = jest.fn(async () => ({ data: [] as unknown[] }));
   const update = jest.fn(async () => ({}));
   return {
     stripe: {
       customers: { create: customersCreate, update },
-      paymentMethods: { attach },
+      paymentMethods: { attach, list },
     } as unknown as Stripe,
     customersCreate,
     attach,
+    list,
     update,
   };
 }
@@ -73,4 +75,39 @@ it('finishes a customer whose card was not saved', async () => {
   });
   expect(result.stripePaymentMethodId).toBe('pm_own');
   expect(await db.customer.count()).toBe(1);
+});
+
+it('creates the customer with a key derived from the local row', async () => {
+  const { db } = database;
+  const { stripe, customersCreate } = fakeStripe();
+  const result = await setupDemoCustomer(db, stripe, config);
+  expect(customersCreate).toHaveBeenCalledWith(
+    { name: 'Demo buyer' },
+    { idempotencyKey: `customer-${result.id}` },
+  );
+});
+
+it('reuses the attached card after a failed run', async () => {
+  const { db } = database;
+  const { stripe, attach, list, update } = fakeStripe();
+  const attached = { id: 'pm_own', card: { brand: 'visa', last4: '4242' } };
+  update.mockRejectedValueOnce(new Error('network'));
+  attach.mockImplementation(async () => {
+    list.mockResolvedValue({ data: [attached] });
+    return attached;
+  });
+
+  await expect(setupDemoCustomer(db, stripe, config)).rejects.toThrow(
+    'network',
+  );
+  const result = await setupDemoCustomer(db, stripe, config);
+
+  expect(list).toHaveBeenLastCalledWith({ customer: 'cus_1', type: 'card' });
+  expect(attach).toHaveBeenCalledTimes(1);
+  expect(update).toHaveBeenCalledTimes(2);
+  expect(result).toMatchObject({
+    stripePaymentMethodId: 'pm_own',
+    cardBrand: 'visa',
+    cardLast4: '4242',
+  });
 });

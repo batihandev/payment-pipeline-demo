@@ -33,13 +33,9 @@ const intent = {
   latest_charge: { receipt_url: 'https://pay.stripe.com/receipts/1' },
 };
 
-it('creates the payment once per order', async () => {
+it('sends the same idempotency key on a retry', async () => {
   const create = jest.fn(async () => intent);
-  const client = new SdkStripeClient(
-    fakeStripe(create),
-    undefined,
-    limiterWith().limiter,
-  );
+  const client = new SdkStripeClient(fakeStripe(create), limiterWith().limiter);
   const first = await client.createPayment(input);
   const retry = await client.createPayment(input);
   expect(first).toEqual({
@@ -73,11 +69,7 @@ it('leaves the receipt empty while the charge is not expanded', async () => {
     status: 'processing',
     latest_charge: null,
   }));
-  const client = new SdkStripeClient(
-    fakeStripe(create),
-    undefined,
-    limiterWith().limiter,
-  );
+  const client = new SdkStripeClient(fakeStripe(create), limiterWith().limiter);
   await expect(client.createPayment(input)).resolves.toMatchObject({
     receiptUrl: null,
   });
@@ -92,11 +84,7 @@ it('maps a declined card to CardDeclinedError', async () => {
       message: 'Your card has insufficient funds.',
     });
   });
-  const client = new SdkStripeClient(
-    fakeStripe(create),
-    undefined,
-    limiterWith().limiter,
-  );
+  const client = new SdkStripeClient(fakeStripe(create), limiterWith().limiter);
   const error = await client.createPayment(input).catch((e: unknown) => e);
   expect(error).toBeInstanceOf(CardDeclinedError);
   expect(error).toMatchObject({ declineCode: 'insufficient_funds' });
@@ -112,7 +100,7 @@ it('maps a rate limit to a transient error and a cooldown', async () => {
     });
   });
   const { limiter, reportCooldown } = limiterWith();
-  const client = new SdkStripeClient(fakeStripe(create), undefined, limiter);
+  const client = new SdkStripeClient(fakeStripe(create), limiter);
   await expect(client.createPayment(input)).rejects.toEqual(
     new RpcError('transient'),
   );
@@ -140,7 +128,7 @@ it.each([
       throw failure;
     });
     const { limiter, reportCooldown } = limiterWith();
-    const client = new SdkStripeClient(fakeStripe(create), undefined, limiter);
+    const client = new SdkStripeClient(fakeStripe(create), limiter);
     await expect(client.createPayment(input)).rejects.toEqual(
       new RpcError(kind),
     );
@@ -148,40 +136,39 @@ it.each([
   },
 );
 
-describe('verifyEvent', () => {
-  const stripe = new Stripe('sk_test_unused');
-  const secret = 'whsec_test';
-  const body = Buffer.from(
-    JSON.stringify({ id: 'evt_1', object: 'event', type: 'x' }),
+it('fails a card payment as permanent without a secret key', async () => {
+  const client = new SdkStripeClient(undefined, limiterWith().limiter);
+  const error = await client.createPayment(input).catch((e: unknown) => e);
+  expect(error).toBeInstanceOf(RpcError);
+  expect(error).toMatchObject({ kind: 'permanent' });
+  expect((error as Error).message).toMatch(/STRIPE_SECRET_KEY/);
+});
+
+it('treats an idempotency conflict as transient', async () => {
+  const create = jest.fn(async () => {
+    throw new Stripe.errors.StripeIdempotencyError({
+      type: 'idempotency_error',
+      statusCode: 409,
+      message: 'A request with this key is still in progress',
+    });
+  });
+  const { limiter, reportCooldown } = limiterWith();
+  const client = new SdkStripeClient(fakeStripe(create), limiter);
+  await expect(client.createPayment(input)).rejects.toEqual(
+    new RpcError('transient'),
   );
-  const client = new SdkStripeClient(stripe, secret, limiterWith().limiter);
+  expect(reportCooldown).not.toHaveBeenCalled();
+});
 
-  it('returns the event of a correctly signed body', () => {
-    const signature = stripe.webhooks.generateTestHeaderString({
-      payload: body.toString(),
-      secret,
+it('treats a 409 status as transient', async () => {
+  const create = jest.fn(async () => {
+    throw new Stripe.errors.StripeAPIError({
+      type: 'api_error',
+      statusCode: 409,
     });
-    expect(client.verifyEvent(body, signature).id).toBe('evt_1');
   });
-
-  it('rejects an event with a bad signature', () => {
-    const signature = stripe.webhooks.generateTestHeaderString({
-      payload: body.toString(),
-      secret: 'whsec_other',
-    });
-    expect(() => client.verifyEvent(body, signature)).toThrow(
-      Stripe.errors.StripeSignatureVerificationError,
-    );
-  });
-
-  it('refuses to verify without a webhook secret', () => {
-    const unsigned = new SdkStripeClient(
-      stripe,
-      undefined,
-      limiterWith().limiter,
-    );
-    expect(() => unsigned.verifyEvent(body, 'sig')).toThrow(
-      'Stripe webhook secret is not configured',
-    );
-  });
+  const client = new SdkStripeClient(fakeStripe(create), limiterWith().limiter);
+  await expect(client.createPayment(input)).rejects.toEqual(
+    new RpcError('transient'),
+  );
 });
