@@ -54,7 +54,7 @@ export async function createTestApp(
   const app =
     module.createNestApplication<NestExpressApplication>(applicationOptions);
   configureApp(app, config);
-  await app.init();
+  await app.listen(0, '127.0.0.1');
   const close = app.close.bind(app);
   app.close = async () => {
     destroyEventStreams(app);
