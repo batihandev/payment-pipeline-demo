@@ -45,9 +45,9 @@ export class OrderSender {
    * so the order is closed and leaves the in-flight count. A revert is read from a receipt and
    * closes at once. A dropped transfer has no receipt and a used nonce, and a lagging RPC backend
    * can report both for a transfer that landed, so it closes only when two consecutive runs find
-   * it dropped; a receipt, an unused nonce, or leaving the unseen list in between clears the suspicion. The suspicion is
-   * kept in memory, so a restart delays a close by one run. Otherwise the stored transfer is
-   * broadcast again, which is idempotent.
+   * it dropped; a receipt, an unused nonce, or leaving the unseen list in between clears the
+   * suspicion. The suspicion is kept in memory, so a restart delays a close by one run.
+   * Otherwise the stored transfer is broadcast again, which is idempotent.
    */
   async checkUnseen(now = new Date()): Promise<void> {
     const orders = await this.db.order.findMany({
