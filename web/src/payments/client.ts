@@ -90,6 +90,8 @@ export class PaymentsClient {
   /** Payments older than the live list: pages read with Show more, and rows it pushed out. */
   private older = new Map<string, Payment>();
   private olderLoading = false;
+  /** Held by whichever older read or refresh is running; a reopen drops it so a stale read cannot block the next. */
+  private olderRun = false;
   private oldestReached = false;
   private olderFailed = false;
   /** Changes when the stream reopens, so an older read that started before it is ignored. */
@@ -171,6 +173,8 @@ export class PaymentsClient {
   showMoreReceipts = (): void => {
     const data = this.snapshot.data;
     if (!data || this.olderLoading || data.olderReceipts === 'none') return;
+    // The re-read after a reopen is about to start; it takes the guard next.
+    if (this.olderRun || this.rereadOlder) return;
     this.olderFailed = false;
     this.receiptCount += RECEIPT_PAGE;
     const known = data.payments.length + this.older.size;
@@ -182,6 +186,7 @@ export class PaymentsClient {
       .sort(newestFirst)
       .at(-1);
     if (!last) return;
+    this.olderRun = true;
     this.olderLoading = true;
     this.update(this.snapshot);
     void this.readOlder(encodePaymentCursor(paymentCursor(last)));
@@ -210,6 +215,7 @@ export class PaymentsClient {
       this.receiptCount -= RECEIPT_PAGE;
       this.olderFailed = true;
     }
+    this.olderRun = false;
     this.olderLoading = false;
     this.update(this.snapshot);
   }
@@ -222,7 +228,9 @@ export class PaymentsClient {
     const epoch = this.olderEpoch;
     const target = this.receiptCount;
     const live = this.snapshot.data?.payments ?? [];
-    if (live.length >= target || !this.canReadOlder(live)) return;
+    if (live.length >= target || !this.canReadOlder(live) || this.olderRun)
+      return;
+    this.olderRun = true;
     this.olderLoading = true;
     this.olderFailed = false;
     this.update(this.snapshot);
@@ -230,8 +238,14 @@ export class PaymentsClient {
     const liveIds = new Set(live.map((p) => p.id));
     let last: Payment | undefined = live.at(-1);
     let reached = false;
+    // A server that keeps returning full pages must not keep the loop going.
+    const maxPages = Math.ceil((target - live.length) / RECEIPT_PAGE) + 1;
     try {
-      while (last && live.length + fresh.size < target) {
+      for (
+        let pages = 0;
+        last && pages < maxPages && live.length + fresh.size < target;
+        pages++
+      ) {
         const before = encodePaymentCursor(paymentCursor(last));
         const response = await request(
           `${this.baseUrl}/payments?limit=${RECEIPT_PAGE}&before=${before}`,
@@ -239,27 +253,31 @@ export class PaymentsClient {
         if (!response.ok) throw new Error('Demo offline');
         const rows = (await response.json()) as Payment[];
         if (epoch !== this.olderEpoch) return;
+        const known = fresh.size;
         for (const p of rows) if (!liveIds.has(p.id)) fresh.set(p.id, p);
         if (rows.length < RECEIPT_PAGE) {
           reached = true;
           break;
         }
+        if (fresh.size === known) break;
         last = rows.at(-1);
       }
     } catch {
       if (epoch !== this.olderEpoch) return;
+      this.olderRun = false;
       this.olderLoading = false;
       this.olderFailed = true;
       this.update(this.snapshot);
       return;
     }
-    // Live events may have moved a row on while the pages were in flight.
+    // Merge, never replace: a row that left the live list while the pages were in flight is held
+    // but not in `fresh`. Live events may also have moved a row on past the page's copy.
     for (const [id, p] of fresh) {
       const held = this.older.get(id);
-      if (held && stageRank(held) > stageRank(p)) fresh.set(id, held);
+      if (!held || stageRank(held) <= stageRank(p)) this.older.set(id, p);
     }
-    this.older = fresh;
     this.oldestReached = reached;
+    this.olderRun = false;
     this.olderLoading = false;
     this.update(this.snapshot);
   }
@@ -270,6 +288,7 @@ export class PaymentsClient {
       this.loading = false;
       this.buffered = [];
       this.olderEpoch++;
+      this.olderRun = false;
       this.olderLoading = false;
       this.olderFailed = false;
       this.rereadOlder = true;

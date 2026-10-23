@@ -480,6 +480,7 @@ describe('older receipts', () => {
       reads: 0,
       repeat: [] as unknown[],
       refreshes: 0,
+      stuck: false,
     };
     const client = new PaymentsClient(
       'https://api.example.com',
@@ -488,9 +489,11 @@ describe('older receipts', () => {
         if (pathname === '/payments') {
           const before = searchParams.get('before');
           const cursor = before ? decodeTestCursor(before) : null;
-          const index = cursor
-            ? rows.findIndex((r) => r.id === cursor.id) + 1
-            : 0;
+          // A stuck server ignores `before` and answers the first page again.
+          const index =
+            cursor && !older.stuck
+              ? rows.findIndex((r) => r.id === cursor.id) + 1
+              : 0;
           const page = rows.slice(
             index,
             index + Number(searchParams.get('limit')),
@@ -498,6 +501,7 @@ describe('older receipts', () => {
           if (before) {
             older.reads++;
             await older.hold;
+            if (older.stuck && older.reads > 50) throw new Error('runaway');
             if (older.fail) return new Response('{}', { status: 503 });
           }
           return Response.json(before ? [...page, ...older.repeat] : page);
@@ -615,6 +619,78 @@ describe('older receipts', () => {
     await vi.waitFor(() => expect(s.data().olderFailed).toBe(true));
     expect(Math.min(...counts.slice(before))).toBe(120);
     expect(s.data().olderReceipts).toBe('more');
+    stop();
+  });
+  /** Opens the stream, shows 120 receipts, then reopens with older reads held until `release`. */
+  async function reopenHeld(s: ReturnType<typeof paged>) {
+    s.stream.open();
+    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await s.showAll();
+    s.client.showMoreReceipts();
+    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(120));
+    let release = () => {};
+    s.older.hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const reads = s.older.reads;
+    s.stream.disconnect();
+    return { release, reads };
+  }
+  it('keeps a receipt that left the live list while older ones were re-read', async () => {
+    const s = paged();
+    const stop = s.client.subscribe(() => {});
+    const { release, reads } = await reopenHeld(s);
+    s.stream.open();
+    await vi.waitFor(() => expect(s.older.reads).toBeGreaterThan(reads));
+    // A new payment pushes the oldest live row, p099, into the older rows.
+    s.stream.send({
+      ...row('fresh', 'received'),
+      sentAt: at(-5),
+    });
+    await vi.waitFor(() =>
+      expect(s.data().payments.some((p) => p.id === 'fresh')).toBe(true),
+    );
+    release();
+    await vi.waitFor(() => expect(s.data().olderReceipts).not.toBe('loading'));
+    expect(s.data().receipts.map((p) => p.id)).toContain('p099');
+    expect(s.data().receipts).toHaveLength(120);
+    stop();
+  });
+  it('stops re-reading when a page adds nothing new', async () => {
+    const s = paged();
+    const stop = s.client.subscribe(() => {});
+    s.stream.open();
+    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await s.showAll();
+    s.client.showMoreReceipts();
+    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(120));
+    const reads = s.older.reads;
+    s.older.stuck = true;
+    s.stream.disconnect();
+    s.stream.open();
+    await vi.waitFor(() => expect(s.older.reads).toBeGreaterThan(reads));
+    await vi.waitFor(() => expect(s.data().olderReceipts).not.toBe('loading'));
+    expect(s.older.reads - reads).toBeLessThanOrEqual(2);
+    expect(s.data().olderFailed).toBe(false);
+    expect(s.data().receipts).toHaveLength(120);
+    stop();
+  });
+  it('does not lose rows when Show more is pressed during a refresh', async () => {
+    const s = paged();
+    const stop = s.client.subscribe(() => {});
+    const { release, reads } = await reopenHeld(s);
+    s.stream.open();
+    // Before the re-read starts, the reopen has cleared the loading state.
+    s.client.showMoreReceipts();
+    await vi.waitFor(() => expect(s.older.reads).toBeGreaterThan(reads));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    release();
+    await vi.waitFor(() => expect(s.data().olderReceipts).not.toBe('loading'));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(s.data().receipts).toHaveLength(120);
+    expect(s.data().olderReceipts).toBe('more');
+    s.client.showMoreReceipts();
+    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(130));
     stop();
   });
   it('says when older receipts could not load', async () => {
