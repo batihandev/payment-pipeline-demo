@@ -7,7 +7,10 @@ import {
 import { PrismaService } from '../../../../libs/db/src';
 import type { BuyerConfig } from '../buyer-config';
 import { OrderSenderService } from '../sending/order-sender.service';
-import { BUYER_ADDRESS, SHOP_ADDRESS } from '../sending/wallets';
+import {
+  BUYER_ADDRESS,
+  SHOP_ADDRESS,
+} from '../../../../libs/chain/src/wallet-addresses';
 
 // The scheduler fires every cooldown and job starts jitter, so allow a short margin.
 const COOLDOWN_TOLERANCE_MS = 1000;

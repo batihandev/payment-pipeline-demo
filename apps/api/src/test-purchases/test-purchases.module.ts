@@ -3,8 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { OrdersModule } from '../../../../libs/orders/src';
 import type { ApiConfig } from '../common/api-config';
 import { HealthModule } from '../health/health.module';
-import { TestPurchasesController } from './purchases.controller';
-import { TestPurchasesService } from './purchases.service';
+import { TestPurchasesController } from './test-purchases.controller';
+import { TestPurchasesService } from './test-purchases.service';
 import {
   VISITOR_LIMITS,
   VISITOR_PREFIX,
@@ -30,4 +30,4 @@ import {
     },
   ],
 })
-export class PurchasesModule {}
+export class TestPurchasesModule {}

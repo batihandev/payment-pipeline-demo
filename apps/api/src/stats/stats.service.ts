@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../../libs/db/src';
-import { DAY_MS, utcDateKey } from '../../../../libs/core/src/time';
+import { DAY_MS, utcDateKey, utcDay } from '../../../../libs/core/src/time';
 import type { ApiConfig } from '../common/api-config';
 import { InjectNow, type Now } from '../common/clock.module';
 import { ttlCache } from '../common/ttl-cache';
@@ -35,14 +35,9 @@ export class StatsService {
     this.daily = ttlCache(60000, () => this.computeDaily(), clock);
   }
 
-  private utcDayStart(): Date {
-    const at = this.now().getTime();
-    return new Date(at - (at % DAY_MS));
-  }
-
   private async computeToday(): Promise<TodayStats> {
     const donationMin = this.config.get('DONATION_MIN', { infer: true });
-    const from = this.utcDayStart();
+    const from = utcDay(this.now());
     const to = new Date(from.getTime() + DAY_MS);
     const [rows, duplicatesSkipped, failuresRecovered] = await Promise.all([
       this.db.$queryRaw<
@@ -66,7 +61,7 @@ export class StatsService {
   private async computeDaily(): Promise<DailyStats> {
     const donationMin = this.config.get('DONATION_MIN', { infer: true });
     const retentionDays = this.config.get('RETENTION_DAYS', { infer: true });
-    const to = new Date(this.utcDayStart().getTime() + DAY_MS);
+    const to = new Date(utcDay(this.now()).getTime() + DAY_MS);
     const from = new Date(to.getTime() - retentionDays * DAY_MS);
     const rows = await this.db.$queryRaw<
       {

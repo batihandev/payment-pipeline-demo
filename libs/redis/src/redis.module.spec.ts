@@ -13,7 +13,7 @@ it('quits Redis on shutdown', async () => {
         isGlobal: true,
         load: [() => ({ REDIS_URL: testRedisUrl() })],
       }),
-      RedisModule,
+      RedisModule.forRoot({ service: 'Test' }),
     ],
   }).compile();
   const redis = module.get<Redis>(REDIS);

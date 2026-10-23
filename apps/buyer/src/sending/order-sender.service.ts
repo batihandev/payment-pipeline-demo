@@ -15,7 +15,10 @@ import {
 } from '../../../../libs/db/src';
 import type { BuyerConfig } from '../buyer-config';
 import { RedisLock } from './redis-lock';
-import { BUYER_ADDRESS, SHOP_ADDRESS } from './wallets';
+import {
+  BUYER_ADDRESS,
+  SHOP_ADDRESS,
+} from '../../../../libs/chain/src/wallet-addresses';
 
 class NonceResynced extends RpcError {
   constructor() {

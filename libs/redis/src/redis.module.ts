@@ -25,7 +25,7 @@ const redisProvider = (name: string): Provider => ({
 });
 
 @Global()
-@Module({ providers: [redisProvider('Redis')], exports: [REDIS] })
+@Module({})
 export class RedisModule implements OnModuleDestroy {
   /** Names the service in the connection-failure log line. */
   static forRoot(options: { service: string }): DynamicModule {

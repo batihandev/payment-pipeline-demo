@@ -4,7 +4,7 @@ import {
   type Address,
 } from '../../../../libs/chain/src/chain-client';
 import { PrismaService } from '../../../../libs/db/src';
-import { BUYER_ADDRESS } from './wallets';
+import { BUYER_ADDRESS } from '../../../../libs/chain/src/wallet-addresses';
 
 @Injectable()
 export class FundsService {

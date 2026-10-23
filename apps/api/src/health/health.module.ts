@@ -15,7 +15,7 @@ import {
 import { REDIS } from '../../../../libs/redis/src';
 import type { ApiConfig } from '../common/api-config';
 import { NOW, type Now } from '../common/clock.module';
-import { recordGasPause } from '../purchases/visitor-limits';
+import { recordGasPause } from '../test-purchases/visitor-limits';
 import { ChainSnapshotService } from './chain-snapshot.service';
 import { HEALTH_QUEUES, HealthService } from './health.service';
 import { HealthController } from './health.controller';

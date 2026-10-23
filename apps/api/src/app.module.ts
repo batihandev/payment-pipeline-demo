@@ -18,7 +18,7 @@ import { HealthModule } from './health/health.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { NoticesModule } from './notices/notices.module';
 import { PaymentsModule } from './payments/payments.module';
-import { PurchasesModule } from './purchases/purchases.module';
+import { TestPurchasesModule } from './test-purchases/test-purchases.module';
 import { StatsModule } from './stats/stats.module';
 
 @Module({})
@@ -57,7 +57,7 @@ export class AppModule {
         StatsModule,
         HealthModule,
         EventsModule,
-        PurchasesModule,
+        TestPurchasesModule,
         NoticesModule,
       ],
       providers: [

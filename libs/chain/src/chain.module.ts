@@ -10,7 +10,7 @@ import {
   type Address,
   type Hex,
 } from './chain-client';
-import { walletAddress } from './wallet-address';
+import { BUYER_ADDRESS, SHOP_ADDRESS, walletAddress } from './wallet-addresses';
 import { serviceLimiter } from './service-limiter';
 import { ViemChainClient } from './viem-client';
 
@@ -29,6 +29,7 @@ function viemClient(
   service: Service,
   config: ConfigService<Settings, true>,
   redis: Redis,
+  walletShop: Address | undefined,
 ): ViemChainClient {
   const get = <K extends keyof Settings>(key: K): Settings[K] =>
     config.get(key, { infer: true });
@@ -37,11 +38,8 @@ function viemClient(
       ? [get('BUYER_PRIVATE_KEY') as Hex, get('SHOP_PRIVATE_KEY') as Hex]
       : undefined;
   const shopAddress =
-    service === 'buyer'
-      ? walletAddress(get('SHOP_PRIVATE_KEY'))
-      : service === 'tracker'
-        ? (get('SHOP_ADDRESS') as Address)
-        : undefined;
+    walletShop ??
+    (service === 'tracker' ? (get('SHOP_ADDRESS') as Address) : undefined);
   return new ViemChainClient(
     {
       chainId: get('CHAIN_ID'),
@@ -59,20 +57,37 @@ function viemClient(
   );
 }
 
+const walletAddressProvider = (
+  provide: symbol,
+  key: 'BUYER_PRIVATE_KEY' | 'SHOP_PRIVATE_KEY',
+): Provider => ({
+  provide,
+  inject: [ConfigService],
+  useFactory: (config: ConfigService<Settings, true>) =>
+    walletAddress(config.get(key, { infer: true })),
+});
+
 @Module({})
 export class ChainModule {
   static forRoot(options: { service: Service }): DynamicModule {
     const providers: Provider[] = [
       {
         provide: ViemChainClient,
-        inject: [ConfigService, REDIS],
-        useFactory: (config: ConfigService<Settings, true>, redis: Redis) =>
-          viemClient(options.service, config, redis),
+        inject: [ConfigService, REDIS, { token: SHOP_ADDRESS, optional: true }],
+        useFactory: (
+          config: ConfigService<Settings, true>,
+          redis: Redis,
+          shop: Address | undefined,
+        ) => viemClient(options.service, config, redis, shop),
       },
       { provide: ChainClient, useExisting: ViemChainClient },
     ];
     if (options.service === 'buyer')
-      providers.push({ provide: TransferSigner, useExisting: ViemChainClient });
+      providers.push(
+        { provide: TransferSigner, useExisting: ViemChainClient },
+        walletAddressProvider(BUYER_ADDRESS, 'BUYER_PRIVATE_KEY'),
+        walletAddressProvider(SHOP_ADDRESS, 'SHOP_PRIVATE_KEY'),
+      );
     return {
       module: ChainModule,
       providers,

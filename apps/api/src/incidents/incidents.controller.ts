@@ -1,5 +1,5 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { ListQueryDto } from '../payments/dto/list-query.dto';
+import { ListQueryDto } from '../common/dto/list-query.dto';
 import { IncidentsService } from './incidents.service';
 
 @Controller('incidents')

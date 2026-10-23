@@ -12,6 +12,12 @@ import {
 import type { BuyerConfig } from '../buyer-config';
 
 const UTC = 'UTC';
+const UPKEEP_SCHEDULERS = {
+  refill: 'buyer-refill',
+  unseen: 'buyer-unseen',
+  expiry: 'buyer-expiry',
+  sweep: 'buyer-sweep',
+} as const;
 
 @Injectable()
 export class SchedulesService implements OnModuleInit {
@@ -47,15 +53,10 @@ export class SchedulesService implements OnModuleInit {
         opts: schedulerJobOptions({ priority: 10 }),
       },
     );
-    for (const id of [
-      'buyer-refill',
-      'buyer-unseen',
-      'buyer-expiry',
-      'buyer-sweep',
-    ])
+    for (const id of Object.values(UPKEEP_SCHEDULERS))
       await this.queue.removeJobScheduler(id);
     await this.upkeepQueue.upsertJobScheduler(
-      'buyer-refill',
+      UPKEEP_SCHEDULERS.refill,
       { every: this.refillEveryMs },
       {
         name: JOBS.buyerUpkeep.refillCheck,
@@ -64,7 +65,7 @@ export class SchedulesService implements OnModuleInit {
       },
     );
     await this.upkeepQueue.upsertJobScheduler(
-      'buyer-unseen',
+      UPKEEP_SCHEDULERS.unseen,
       { every: 60_000 },
       {
         name: JOBS.buyerUpkeep.checkUnseen,
@@ -73,7 +74,7 @@ export class SchedulesService implements OnModuleInit {
       },
     );
     await this.upkeepQueue.upsertJobScheduler(
-      'buyer-expiry',
+      UPKEEP_SCHEDULERS.expiry,
       { pattern: '* * * * *', tz: UTC },
       {
         name: JOBS.buyerUpkeep.expireOrders,
@@ -82,7 +83,7 @@ export class SchedulesService implements OnModuleInit {
       },
     );
     await this.upkeepQueue.upsertJobScheduler(
-      'buyer-sweep',
+      UPKEEP_SCHEDULERS.sweep,
       { pattern: '0 3 * * *', tz: UTC },
       {
         name: JOBS.buyerUpkeep.nightlySweep,

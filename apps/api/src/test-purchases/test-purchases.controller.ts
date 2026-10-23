@@ -1,6 +1,6 @@
 import { Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
 import { ClientIp } from '../common/client-ip';
-import { TestPurchasesService } from './purchases.service';
+import { TestPurchasesService } from './test-purchases.service';
 
 @Controller('test-purchases')
 export class TestPurchasesController {

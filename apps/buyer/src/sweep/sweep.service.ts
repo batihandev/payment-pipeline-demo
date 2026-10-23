@@ -6,7 +6,7 @@ import {
 } from '../../../../libs/chain/src/chain-client';
 import { PrismaService } from '../../../../libs/db/src';
 import { OrderSenderService } from '../sending/order-sender.service';
-import { SHOP_ADDRESS } from '../sending/wallets';
+import { SHOP_ADDRESS } from '../../../../libs/chain/src/wallet-addresses';
 import { utcDateKey } from '../../../../libs/core/src/time';
 
 @Injectable()
