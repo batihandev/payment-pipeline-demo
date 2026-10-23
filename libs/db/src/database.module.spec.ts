@@ -38,7 +38,10 @@ it('fails at boot with an unreachable database', async () => {
     ],
   }).compile();
   try {
-    await expect(module.init()).rejects.toThrow();
+    await expect(module.init()).rejects.toMatchObject({
+      name: 'PrismaClientKnownRequestError',
+      code: 'P2010',
+    });
   } finally {
     await module.close();
   }

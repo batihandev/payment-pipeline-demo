@@ -1,9 +1,52 @@
 import { ConsoleLogger } from '@nestjs/common';
 import { ConfigError } from '../../config/src';
 
-/** The logger every app runs with: one JSON object per line, without debug or verbose lines. */
+const STACK_TRACE = /^Error\b[^\n]*\n|\n {4}at /;
+
+/** True for the stack text Nest passes next to an error: several lines, starting `Error` or with `    at` frames. */
+function looksLikeStack(value: unknown): boolean {
+  return (
+    typeof value === 'string' && value.includes('\n') && STACK_TRACE.test(value)
+  );
+}
+
+/**
+ * Nest's own error calls pass raw errors and their stacks to the logger (a failed
+ * provider, a rejected shutdown hook, a failed shutdown). This keeps only each error's
+ * name and code, and drops stack text, so no call site can print a message or a stack.
+ */
+function withoutErrorDetail(args: unknown[]): unknown[] {
+  return args.flatMap((arg, index) => {
+    if (arg instanceof Error)
+      return index === 0
+        ? ['Unhandled error.', errorFields(arg)]
+        : [errorFields(arg)];
+    return looksLikeStack(arg) ? [] : [arg];
+  });
+}
+
+class AppLogger extends ConsoleLogger {
+  override log(message: unknown, ...rest: unknown[]): void {
+    const [first, ...others] = withoutErrorDetail([message, ...rest]);
+    super.log(first, ...others);
+  }
+  override error(message: unknown, ...rest: unknown[]): void {
+    const [first, ...others] = withoutErrorDetail([message, ...rest]);
+    super.error(first, ...others);
+  }
+  override warn(message: unknown, ...rest: unknown[]): void {
+    const [first, ...others] = withoutErrorDetail([message, ...rest]);
+    super.warn(first, ...others);
+  }
+  override fatal(message: unknown, ...rest: unknown[]): void {
+    const [first, ...others] = withoutErrorDetail([message, ...rest]);
+    super.fatal(first, ...others);
+  }
+}
+
+/** The logger every app runs with: one JSON object per line, without debug or verbose lines, and no error message or stack. */
 export function appLogger(): ConsoleLogger {
-  return new ConsoleLogger({
+  return new AppLogger({
     json: true,
     logLevels: ['fatal', 'error', 'warn', 'log'],
   });

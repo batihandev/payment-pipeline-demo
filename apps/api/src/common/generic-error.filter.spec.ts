@@ -173,6 +173,25 @@ describe('error log', () => {
     ]);
   });
 
+  it('logs an error after headers are sent with name, code and route but not the message', async () => {
+    const log = await logOf('/after-headers');
+    const records: unknown[] = log
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    expect(records).toEqual([
+      {
+        level: 'error',
+        pid: process.pid,
+        timestamp: expect.any(Number),
+        context: 'GenericErrorFilter',
+        message: 'Request failed after its response started.',
+        params: { name: 'Error', route: 'GET /after-headers' },
+      },
+    ]);
+    expect(log).not.toMatch(/stream started|stack/);
+  });
+
   it('writes no secret-looking text to the log', async () => {
     const log = await logOf('/fails', '/leaky');
     expect(log.split('\n').filter(Boolean)).toHaveLength(2);

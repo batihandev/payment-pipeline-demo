@@ -8,7 +8,7 @@ async function bootstrap(): Promise<void> {
   const config = validateConfig(trackerSchema, process.env);
   const app = await NestFactory.createApplicationContext(
     AppModule.forRoot(config),
-    { logger: appLogger() },
+    { logger: appLogger(), abortOnError: false },
   );
   app.enableShutdownHooks();
 }

@@ -1,6 +1,7 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import Stripe from 'stripe';
 import {
+  ConfigError,
   buyerSchema,
   stripeSetupSchema,
   validateConfig,
@@ -37,7 +38,7 @@ async function main(): Promise<void> {
 if (require.main === module) {
   main().catch((error: unknown) => {
     console.error(
-      error instanceof Error && error.message.startsWith('Invalid or missing')
+      error instanceof ConfigError
         ? error.message
         : 'Could not set up the demo customer. Check the Stripe test key and database settings.',
     );

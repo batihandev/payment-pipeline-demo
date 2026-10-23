@@ -1,5 +1,7 @@
+import { Injectable, Module, type OnModuleDestroy } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
 import { ConfigError } from '../../config/src';
-import { errorFields, logStartupFailure } from './index';
+import { appLogger, errorFields, logStartupFailure } from './index';
 
 it('keeps only the name and code of an error, and only when they look like identifiers', () => {
   const error = Object.assign(new Error('postgresql://user:secret@db'), {
@@ -38,4 +40,75 @@ it('logs a startup failure as one JSON line naming the bad variables, not their 
     },
     { level: 'fatal', message: 'Startup failed.', params: { name: 'Error' } },
   ]);
+});
+
+const CONNECTION_STRING = 'postgresql://user:secret@db.internal:5432/payments';
+
+async function captured(run: () => Promise<void>): Promise<string> {
+  const stdout = jest
+    .spyOn(process.stdout, 'write')
+    .mockImplementation(() => true);
+  const stderr = jest
+    .spyOn(process.stderr, 'write')
+    .mockImplementation(() => true);
+  try {
+    await run();
+    return [...stdout.mock.calls, ...stderr.mock.calls]
+      .map(([chunk]) => String(chunk))
+      .join('');
+  } finally {
+    stdout.mockRestore();
+    stderr.mockRestore();
+  }
+}
+
+it('logs a rejected shutdown hook without its message or stack', async () => {
+  @Injectable()
+  class ClosingProvider implements OnModuleDestroy {
+    onModuleDestroy(): Promise<void> {
+      return Promise.reject(
+        Object.assign(new Error(`cannot close ${CONNECTION_STRING}`), {
+          code: 'ECONNRESET',
+        }),
+      );
+    }
+  }
+  @Module({ providers: [ClosingProvider] })
+  class ClosingModule {}
+
+  const log = await captured(async () => {
+    const app = await NestFactory.createApplicationContext(ClosingModule, {
+      logger: appLogger(),
+    });
+    await app.close();
+  });
+  expect(log).toContain('ECONNRESET');
+  expect(log).not.toMatch(/postgresql|secret|cannot close|\n\s+at |\\n\s+at /);
+  expect(log).not.toContain('"stack"');
+  expect(log).not.toContain('"message":"cannot');
+});
+
+it('logs a provider failure at boot without its message', async () => {
+  @Module({
+    providers: [
+      {
+        provide: 'BROKEN',
+        useFactory: () => {
+          throw Object.assign(new Error(`connect ${CONNECTION_STRING}`), {
+            code: 'ECONNREFUSED',
+          });
+        },
+      },
+    ],
+  })
+  class BrokenModule {}
+
+  const log = await captured(async () => {
+    await NestFactory.createApplicationContext(BrokenModule, {
+      logger: appLogger(),
+      abortOnError: false,
+    }).catch(logStartupFailure);
+  });
+  expect(log).toContain('ECONNREFUSED');
+  expect(log).not.toMatch(/postgresql|secret|connect |\\n\s+at |"stack"/);
 });
