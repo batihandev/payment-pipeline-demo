@@ -32,14 +32,17 @@ afterEach(async () => {
   await app.close();
 });
 
-const order = (source: 'visitor' | 'schedule' = 'visitor') =>
+const order = (
+  source: 'visitor' | 'schedule' = 'visitor',
+  rail: 'card' | 'chain' = 'card',
+) =>
   database.db.order.create({
     data: {
       item: 'Lucky paperclip',
       price: 50n * CENTS,
-      expectedAmount: 50n * CENTS,
+      expectedAmount: rail === 'card' ? 50n * CENTS : 50n * CENTS + 17n,
       source,
-      rail: 'card',
+      rail,
       sendState: 'sent',
       expiresAt: new Date(Date.now() + 3_600_000),
     },
@@ -48,7 +51,13 @@ const order = (source: 'visitor' | 'schedule' = 'visitor') =>
 function intentEvent(
   type: string,
   orderId: string,
-  options: { id?: string; intent?: string; padding?: number } = {},
+  options: {
+    id?: string;
+    intent?: string;
+    padding?: number;
+    amount?: number;
+    currency?: string;
+  } = {},
 ) {
   return {
     id: options.id ?? `evt_${randomUUID()}`,
@@ -58,8 +67,8 @@ function intentEvent(
       object: {
         id: options.intent ?? 'pi_1',
         object: 'payment_intent',
-        amount: 50,
-        currency: 'usd',
+        amount: options.amount ?? 50,
+        currency: options.currency ?? 'usd',
         metadata: {
           orderId,
           ...(options.padding ? { note: 'x'.repeat(options.padding) } : {}),
@@ -296,6 +305,45 @@ it('records an unmatched incident when the order id is not an id', async () => {
   );
   expect(response.statusCode).toBe(200);
   expect(await db().incident.count({ where: { kind: 'unmatched' } })).toBe(1);
+});
+
+const unmatched = () => db().incident.count({ where: { kind: 'unmatched' } });
+
+it('never applies a card event to a chain order', async () => {
+  const { id } = await order('visitor', 'chain');
+  const response = await post(intentEvent('payment_intent.succeeded', id));
+  expect(response.statusCode).toBe(200);
+  expect(await payments()).toHaveLength(0);
+  expect(await db().ledgerEntry.count()).toBe(0);
+  expect((await db().order.findUniqueOrThrow({ where: { id } })).status).toBe(
+    'open',
+  );
+  expect(await unmatched()).toBe(1);
+});
+
+it('rejects an event whose amount differs from the order', async () => {
+  const { id } = await order();
+  await post(intentEvent('payment_intent.succeeded', id, { amount: 51 }));
+  await post(
+    intentEvent('payment_intent.succeeded', id, {
+      intent: 'pi_eur',
+      currency: 'eur',
+    }),
+  );
+  expect(await payments()).toHaveLength(0);
+  expect(await db().ledgerEntry.count()).toBe(0);
+  expect(await unmatched()).toBe(2);
+});
+
+it('never settles a second PaymentIntent for one order', async () => {
+  const { id } = await order();
+  await post(intentEvent('payment_intent.succeeded', id));
+  await post(intentEvent('payment_intent.succeeded', id, { intent: 'pi_2' }));
+  const all = await payments();
+  expect(all).toHaveLength(1);
+  expect(all[0]?.externalKey).toBe('pi_1');
+  expect(await db().ledgerEntry.count()).toBe(1);
+  expect(await unmatched()).toBe(1);
 });
 
 describe('without a webhook secret', () => {

@@ -14,6 +14,7 @@ const INTENT_EVENTS = [
 ] as const;
 const BEFORE_PROCESSING = ['sent', 'received', 'confirming'];
 const BEFORE_SETTLED = [...BEFORE_PROCESSING, 'processing'];
+const CENTS = 10000n;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type IntentEvent = Stripe.Event & {
@@ -52,7 +53,7 @@ export class StripeWebhooksService {
         await tx.incident.create({
           data: {
             kind: 'unmatched',
-            whatHappened: `Card payment ${intent.id} names no known order.`,
+            whatHappened: `Card payment ${intent.id} matches no card order.`,
             howHandled: 'Stored the event and changed nothing.',
           },
         });
@@ -83,7 +84,11 @@ export class StripeWebhooksService {
     });
   }
 
-  /** Finds or creates the payment for the PaymentIntent and returns it row-locked. */
+  /**
+   * Finds or creates the payment for the PaymentIntent and returns it row-locked. Returns null,
+   * changing nothing, unless the intent names a card order with its amount in USD and the order
+   * has no other PaymentIntent.
+   */
   private async lockPayment(
     tx: Prisma.TransactionClient,
     intent: Stripe.PaymentIntent,
@@ -92,8 +97,18 @@ export class StripeWebhooksService {
     if (!orderId || !UUID.test(orderId)) return null;
     // The buyer locks the order before it writes the payment, so both sides agree on the order.
     await tx.$queryRaw`SELECT id FROM orders WHERE id = ${orderId}::uuid FOR UPDATE`;
-    const order = await tx.order.findUnique({ where: { id: orderId } });
-    if (!order) return null;
+    const order = await tx.order.findUnique({
+      where: { id: orderId },
+      include: { payments: { where: { provider: 'stripe' } } },
+    });
+    if (
+      !order ||
+      order.rail !== 'card' ||
+      intent.currency !== 'usd' ||
+      intent.amount !== Number(order.price / CENTS) ||
+      order.payments.some((payment) => payment.externalKey !== intent.id)
+    )
+      return null;
     const payment = await tx.payment.upsert({
       where: {
         provider_externalKey: { provider: 'stripe', externalKey: intent.id },
