@@ -15,8 +15,9 @@ import {
   type Prisma,
   type PrismaClient,
 } from '../../db/src';
-import { CustomersService } from './customers.service';
+import { CustomersService, hasSavedCard } from './customers.service';
 
+type Customer = Awaited<ReturnType<CustomersService['demo']>>;
 type Options = {
   cap: Budget;
   seed: string;
@@ -37,8 +38,8 @@ export class PurchasesService {
   constructor(
     private readonly db: PrismaClient,
     private readonly options: Options,
-    private readonly rng = Math.random,
-    private readonly customers = new CustomersService(db),
+    private readonly rng: () => number,
+    private readonly customers: CustomersService,
   ) {}
   async ensureBudget(now: Date) {
     const day = utcDay(now);
@@ -81,23 +82,30 @@ export class PurchasesService {
       )
     )
       return null;
+    const customer = await this.customers.demo();
     return this.create(
       'schedule',
       id,
       now,
       undefined,
-      (await this.customers.cardAvailable()) && paidByCard(id)
-        ? 'card'
-        : 'chain',
+      hasSavedCard(customer) && paidByCard(id) ? 'card' : 'chain',
+      customer,
     );
   }
-  visitor(
+  async visitor(
     orderId: string,
-    now = new Date(),
+    rail: PaymentRail,
+    now: Date,
     dailyLimit?: number,
-    rail: PaymentRail = 'chain',
   ) {
-    return this.create('visitor', orderId, now, dailyLimit, rail);
+    return this.create(
+      'visitor',
+      orderId,
+      now,
+      dailyLimit,
+      rail,
+      await this.customers.demo(),
+    );
   }
   visitorsToday(now: Date) {
     return this.countVisitors(this.db, now);
@@ -120,9 +128,9 @@ export class PurchasesService {
     now: Date,
     dailyLimit: number | undefined,
     rail: PaymentRail,
+    customer: Customer,
   ) {
     await this.ensureBudget(now);
-    const customer = await this.customers.demo();
     return this.db.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(84532001)`;
       const existing = await tx.order.findUnique({ where: { id } });

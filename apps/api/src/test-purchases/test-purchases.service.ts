@@ -107,7 +107,7 @@ export class TestPurchasesService {
 
   buy(
     address: string,
-    rail: PaymentRail = 'chain',
+    rail: PaymentRail,
   ): Promise<{
     orderId: string;
     position: number;
@@ -130,9 +130,9 @@ export class TestPurchasesService {
         await this.admitVisitor(address, now);
         const order = await this.purchases.visitor(
           randomUUID(),
+          rail,
           now,
           this.limits.dailyLimit,
-          rail,
         );
         if (!order) throw new ApiError(409, 'daily_limit');
         created = {

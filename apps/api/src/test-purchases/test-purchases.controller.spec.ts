@@ -8,6 +8,7 @@ import { testDatabase } from '../../../../libs/db/testing/database';
 import { PrismaService } from '../../../../libs/db/src';
 import {
   OrderQueueService,
+  CustomersService,
   PurchasesService,
 } from '../../../../libs/orders/src';
 import type { BuyerJobData } from '../../../../libs/queues/src';
@@ -99,6 +100,7 @@ beforeEach(async () => {
       quietEnd: 7,
     },
     () => 0,
+    new CustomersService(database.db),
   );
   limits = {
     perMinute: 10,
