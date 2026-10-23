@@ -10,8 +10,9 @@
 #    and keep running without a restart);
 # 5. record the deployed and previous tags in .deploy-state and IMAGE_TAG in the
 #    settings file;
-# 6. remove this image's other tags, untagged copies of this image, and the
-#    PostgreSQL, Redis and cloudflared images this stack stopped using.
+# 6. keep the deployed and previous tags and their -migrate tags; remove the rest
+#    of this image, and the PostgreSQL, Redis and cloudflared images this stack
+#    stopped using.
 # Postgres, Redis and the tunnel are recreated only when their own config changes.
 # Rolling back is a deploy of the previous tag. DEPLOY_ENV_FILE selects another
 # settings file than .env beside this script.
@@ -146,6 +147,7 @@ while read -r name; do
 done < <(docker inspect -f "{{range (index .NetworkSettings.Networks \"$network\").Aliases}}{{println .}}{{end}}" "$new_api")
 if ! docker network disconnect "$network" "$new_api" ||
   ! docker network connect "${alias_args[@]}" "$network" "$new_api"; then
+  docker rm -f "$new_api" >/dev/null 2>&1 || true
   fail "could not give the new API the $live_alias alias; the previous API, if there is one, keeps $live_alias; rerun deploy.sh $tag"
 fi
 
@@ -193,13 +195,29 @@ remove_image() {
   fi
 }
 # This image's other tags, then its untagged copies (a moved tag leaves one).
+# An untagged copy stays if a running container or a kept tag uses its ID.
+protected=" "
+while read -r cid; do
+  [[ -n $cid ]] && protected+="$(docker inspect -f '{{.Image}}' "$cid") "
+done < <(docker ps -q)
+untagged=()
 while read -r image_tag image_id; do
   if [[ $image_tag == '<none>' ]]; then
-    remove_image "$image_id" "untagged $repository image $image_id"
-  elif [[ $keep != *" $image_tag "* ]]; then
+    untagged+=("$image_id")
+  elif [[ $keep == *" $image_tag "* ]]; then
+    protected+="$image_id "
+  else
     remove_image "$repository:$image_tag" "$repository:$image_tag"
   fi
-done < <(docker image ls "$repository" --format '{{.Tag}} {{.ID}}')
+done < <(docker image ls "$repository" --no-trunc --format '{{.Tag}} {{.ID}}')
+tried=" "
+for image_id in "${untagged[@]}"; do
+  [[ $protected == *" $image_id "* || $tried == *" $image_id "* ]] && continue
+  tried+="$image_id "
+  if docker image rm "$image_id" >/dev/null 2>&1; then
+    echo "removed untagged $repository image $image_id"
+  fi
+done
 # Infra images a config change replaced; Docker refuses an image still in use.
 in_use=" "
 for svc in "${infra[@]}"; do
