@@ -63,6 +63,7 @@ export async function receiveTransfer(
     ? await tx.order.findUnique({ where: { id: sent.orderId } })
     : await tx.order.findFirst({
         where: {
+          rail: 'chain',
           expectedAmount: log.amount,
           createdAt: { gte: new Date(now.getTime() - DAY_MS), lte: now },
         },

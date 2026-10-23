@@ -1,8 +1,9 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import type { Redis } from 'ioredis';
-import { PrismaService } from '../../../../libs/db/src';
+import { PrismaService, type PaymentRail } from '../../../../libs/db/src';
 import {
+  CustomersService,
   OrderQueueService,
   PurchasesService,
 } from '../../../../libs/orders/src';
@@ -36,6 +37,7 @@ export class TestPurchasesService {
     @InjectRedis() private readonly redis: Redis,
     private readonly purchases: PurchasesService,
     private readonly orderQueue: OrderQueueService,
+    private readonly customers: CustomersService,
     private readonly snapshot: ChainSnapshotService,
     @Inject(VISITOR_LIMITS) private readonly limits: VisitorLimits,
     @Inject(VISITOR_PREFIX) private readonly prefix: string,
@@ -103,7 +105,10 @@ export class TestPurchasesService {
     );
   }
 
-  buy(address: string): Promise<{
+  buy(
+    address: string,
+    rail: PaymentRail = 'chain',
+  ): Promise<{
     orderId: string;
     position: number;
     item: string;
@@ -113,7 +118,10 @@ export class TestPurchasesService {
       const now = this.now();
       let created: { orderId: string; item: string; price: string } | undefined;
       try {
-        if (await this.paused(now)) throw new ApiError(503, 'paused');
+        if (rail === 'card') {
+          if (!(await this.customers.cardAvailable()))
+            throw new ApiError(503, 'card_unavailable');
+        } else if (await this.paused(now)) throw new ApiError(503, 'paused');
         if (
           (await this.db.order.count({ where: waiting })) >=
           this.limits.queueLimit
@@ -124,6 +132,7 @@ export class TestPurchasesService {
           randomUUID(),
           now,
           this.limits.dailyLimit,
+          rail,
         );
         if (!order) throw new ApiError(409, 'daily_limit');
         created = {

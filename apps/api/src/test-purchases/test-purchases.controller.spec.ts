@@ -85,7 +85,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await database.db.$executeRawUnsafe(
-    'TRUNCATE payments, orders, daily_budgets CASCADE',
+    'TRUNCATE payments, orders, customers, daily_budgets CASCADE',
   );
   await queue.drain(true);
   prefix = `api-limit-test:${randomUUID()}`;
@@ -373,4 +373,71 @@ it('keeps the item and price when sending could not be queued', async () => {
     item: order.item,
     price: order.price.toString(),
   });
+});
+
+const saveCard = () =>
+  database.db.customer.create({
+    data: {
+      name: 'Demo customer',
+      stripeCustomerId: 'cus_demo',
+      stripePaymentMethodId: 'pm_demo',
+      cardBrand: 'visa',
+      cardLast4: '4242',
+    },
+  });
+const buyBy = (rail: unknown, ip = '127.0.0.1') => buy(ip).send({ rail });
+
+it('admits a card test purchase', async () => {
+  const customer = await saveCard();
+  const response = await buyBy('card');
+  expect(response.statusCode).toBe(202);
+  const order = await database.db.order.findUniqueOrThrow({
+    where: { id: response.body.orderId },
+  });
+  expect(order).toMatchObject({
+    rail: 'card',
+    customerId: customer.id,
+    expectedAmount: order.price,
+  });
+  expect((await queue.getJob(`visitor-${order.id}`))?.name).toBe(
+    'visitor-purchase',
+  );
+});
+it('answers card_unavailable without a saved card', async () => {
+  const response = await buyBy('card');
+  expect(response.statusCode).toBe(503);
+  expect(response.body).toEqual({ error: 'card_unavailable' });
+  expect(await database.db.order.count()).toBe(0);
+});
+it('admits a card purchase while chain purchases are paused', async () => {
+  await saveCard();
+  gas = { native: limits.gasFloor - 1n, at: now.getTime() };
+  expect((await buyBy('card')).statusCode).toBe(202);
+  expect((await buyBy('chain', '192.0.2.5')).statusCode).toBe(503);
+});
+it('defaults to the chain rail and accepts an explicit chain rail', async () => {
+  await saveCard();
+  const plain = await buy('192.0.2.1');
+  const explicit = await buyBy('chain', '192.0.2.2');
+  const rails = await database.db.order.findMany({
+    where: { id: { in: [plain.body.orderId, explicit.body.orderId] } },
+  });
+  expect(rails.map((order) => order.rail)).toEqual(['chain', 'chain']);
+});
+it('rejects an unknown rail and unknown fields', async () => {
+  expect((await buyBy('crypto')).statusCode).toBe(400);
+  const extra = await buy().send({ rail: 'chain', amount: 1 });
+  expect(extra.statusCode).toBe(400);
+  expect(await database.db.order.count()).toBe(0);
+});
+it('counts card and chain purchases against one visitor limit', async () => {
+  await saveCard();
+  limits.dailyLimit = 2;
+  expect((await buyBy('card', '192.0.2.1')).statusCode).toBe(202);
+  expect((await buyBy('chain', '192.0.2.2')).statusCode).toBe(202);
+  const denied = await buyBy('card', '192.0.2.3');
+  expect([denied.statusCode, denied.body]).toEqual([
+    409,
+    { error: 'daily_limit' },
+  ]);
 });

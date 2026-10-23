@@ -167,3 +167,12 @@ it('keeps an unmatched buyer transfer as an unmatched incident', async () => {
   });
   expect(await f.db.incident.count({ where: { kind: 'unmatched' } })).toBe(1);
 });
+it('never matches a card order to a chain transfer', async () => {
+  await order(f.db, { rail: 'card', expectedAmount: 100n });
+  await scanner.scanOnce();
+  expect(await f.db.payment.findFirstOrThrow()).toMatchObject({
+    orderId: null,
+  });
+  const incident = await f.db.incident.findFirstOrThrow();
+  expect(incident.kind).toBe('unmatched');
+});

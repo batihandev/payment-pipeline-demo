@@ -1,4 +1,5 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { catalogue } from '../../core/src/catalogue';
 import { dailyTarget } from '../../core/src/pacing';
 import { testDatabase } from '../../db/testing/database';
 import { PurchasesService } from './purchases.service';
@@ -22,6 +23,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   await database.db.order.deleteMany();
+  await database.db.customer.deleteMany();
   await database.db.dailyBudget.deleteMany();
   purchases = new PurchasesService(database.db, options, () => 0);
 });
@@ -134,4 +136,95 @@ it('initializes a missing daily target once when first purchases start concurren
   expect(
     await database.db.dailyBudget.findUniqueOrThrow({ where: { day } }),
   ).toMatchObject({ reservedCount: 0, reservedAmount: 0n });
+});
+const savedCard = {
+  name: 'Demo customer',
+  stripeCustomerId: 'cus_demo',
+  stripePaymentMethodId: 'pm_demo',
+  cardBrand: 'visa',
+  cardLast4: '4242',
+};
+const paidByCard = (orderId: string) =>
+  createHash('sha256').update(orderId).digest().readUInt8(0) % 3 === 0;
+it('creates a card order at the item price without an offset', async () => {
+  const customer = await database.db.customer.create({ data: savedCard });
+  const order = await purchases.visitor(randomUUID(), now, undefined, 'card');
+  const item = catalogue[0];
+  expect(order).toMatchObject({
+    rail: 'card',
+    customerId: customer.id,
+    item: item?.name,
+    price: item?.priceCents && item.priceCents * 10000n,
+    expectedAmount: item?.priceCents && item.priceCents * 10000n,
+  });
+});
+it('creates chain orders with a unique offset and the demo customer', async () => {
+  const customer = await database.db.customer.create({ data: savedCard });
+  const order = await purchases.visitor(randomUUID(), now);
+  expect(order).toMatchObject({ rail: 'chain', customerId: customer.id });
+  expect(order?.expectedAmount).not.toBe(order?.price);
+});
+it('leaves the customer empty when no customer row exists', async () => {
+  expect(await purchases.visitor(randomUUID(), now)).toMatchObject({
+    rail: 'chain',
+    customerId: null,
+  });
+});
+it('schedules one in three purchases by card when a card is saved', async () => {
+  await database.db.customer.create({ data: savedCard });
+  purchases = new PurchasesService(
+    database.db,
+    { ...options, cap: { count: 500, amount: 100000000000n } },
+    () => 0,
+  );
+  const orders = [];
+  for (let minute = 0; minute < 30; minute++) {
+    const order = await purchases.pace(
+      new Date(now.getTime() + minute * 60000),
+    );
+    if (order) orders.push(order);
+  }
+  expect(orders).toHaveLength(30);
+  for (const order of orders)
+    expect(order.rail).toBe(paidByCard(order.id) ? 'card' : 'chain');
+  const cards = orders.filter((order) => order.rail === 'card').length;
+  expect(cards).toBeGreaterThan(0);
+  expect(cards).toBeLessThan(orders.length - cards);
+});
+it('schedules every purchase on chain without a saved card', async () => {
+  await database.db.customer.create({
+    data: { name: 'Demo customer', stripeCustomerId: 'cus_demo' },
+  });
+  purchases = new PurchasesService(
+    database.db,
+    { ...options, cap: { count: 500, amount: 100000000000n } },
+    () => 0,
+  );
+  for (let minute = 0; minute < 12; minute++)
+    expect(
+      (await purchases.pace(new Date(now.getTime() + minute * 60000)))?.rail,
+    ).toBe('chain');
+});
+it('counts card and chain purchases against one visitor limit', async () => {
+  expect(await purchases.visitor(randomUUID(), now, 2, 'card')).not.toBeNull();
+  expect(await purchases.visitor(randomUUID(), now, 2, 'chain')).not.toBeNull();
+  expect(await purchases.visitor(randomUUID(), now, 2, 'card')).toBeNull();
+  expect(await purchases.visitorsToday(now)).toBe(2);
+});
+it('reserves scheduled budget for a card order at its exact amount', async () => {
+  await database.db.customer.create({ data: savedCard });
+  purchases = new PurchasesService(
+    database.db,
+    { ...options, cap: { count: 500, amount: 100000000000n } },
+    () => 0,
+  );
+  const orders = [];
+  for (let minute = 0; minute < 30; minute++) {
+    const order = await purchases.pace(
+      new Date(now.getTime() + minute * 60000),
+    );
+    if (order?.rail === 'card') orders.push(order);
+  }
+  expect(orders.length).toBeGreaterThan(0);
+  for (const order of orders) expect(order.expectedAmount).toBe(order.price);
 });

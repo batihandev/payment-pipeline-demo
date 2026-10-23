@@ -11,9 +11,11 @@ import {
 } from '../../core/src/pacing';
 import {
   BudgetReservation,
+  type PaymentRail,
   type Prisma,
   type PrismaClient,
 } from '../../db/src';
+import { CustomersService } from './customers.service';
 
 type Options = {
   cap: Budget;
@@ -28,11 +30,15 @@ function minuteId(now: Date): string {
     .digest('hex');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
+function paidByCard(orderId: string): boolean {
+  return createHash('sha256').update(orderId).digest().readUInt8(0) % 3 === 0;
+}
 export class PurchasesService {
   constructor(
     private readonly db: PrismaClient,
     private readonly options: Options,
     private readonly rng = Math.random,
+    private readonly customers = new CustomersService(db),
   ) {}
   async ensureBudget(now: Date) {
     const day = utcDay(now);
@@ -75,10 +81,23 @@ export class PurchasesService {
       )
     )
       return null;
-    return this.create('schedule', id, now);
+    return this.create(
+      'schedule',
+      id,
+      now,
+      undefined,
+      (await this.customers.cardAvailable()) && paidByCard(id)
+        ? 'card'
+        : 'chain',
+    );
   }
-  visitor(orderId: string, now = new Date(), dailyLimit?: number) {
-    return this.create('visitor', orderId, now, dailyLimit);
+  visitor(
+    orderId: string,
+    now = new Date(),
+    dailyLimit?: number,
+    rail: PaymentRail = 'chain',
+  ) {
+    return this.create('visitor', orderId, now, dailyLimit, rail);
   }
   visitorsToday(now: Date) {
     return this.countVisitors(this.db, now);
@@ -99,9 +118,11 @@ export class PurchasesService {
     source: 'visitor' | 'schedule',
     id: string,
     now: Date,
-    dailyLimit?: number,
+    dailyLimit: number | undefined,
+    rail: PaymentRail,
   ) {
     await this.ensureBudget(now);
+    const customer = await this.customers.demo();
     return this.db.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(84532001)`;
       const existing = await tx.order.findUnique({ where: { id } });
@@ -112,7 +133,7 @@ export class PurchasesService {
         (await this.countVisitors(tx, now)) >= dailyLimit
       )
         return null;
-      return this.reserveOrder(tx, source, id, now);
+      return this.reserveOrder(tx, source, id, now, rail, customer?.id);
     });
   }
   private async reserveOrder(
@@ -120,21 +141,26 @@ export class PurchasesService {
     source: 'visitor' | 'schedule',
     id: string,
     now: Date,
+    rail: PaymentRail,
+    customerId: string | undefined,
   ) {
     const item = catalogue[Math.floor(this.rng() * catalogue.length)];
     if (!item)
       throw new RangeError('Random source must return a number in [0, 1)');
     const recent = await tx.order.findMany({
-      where: { createdAt: { gte: new Date(now.getTime() - DAY_MS) } },
+      where: {
+        rail: 'chain',
+        createdAt: { gte: new Date(now.getTime() - DAY_MS) },
+      },
       select: { expectedAmount: true },
     });
     const taken = new Set(
       recent.map((order) => Number(order.expectedAmount % 10000n)),
     );
-    const amount = expectedAmount(
-      item.priceCents,
-      allocateOffset(taken, this.rng),
-    );
+    const amount =
+      rail === 'card'
+        ? item.priceCents * 10000n
+        : expectedAmount(item.priceCents, allocateOffset(taken, this.rng));
     if (
       source === 'schedule' &&
       !(await new BudgetReservation(tx).reserve(utcDay(now), amount))
@@ -147,6 +173,8 @@ export class PurchasesService {
         price: item.priceCents * 10000n,
         expectedAmount: amount,
         source,
+        rail,
+        customerId,
         createdAt: now,
         expiresAt: new Date(now.getTime() + this.options.ttlMinutes * 60000),
       },
