@@ -1,7 +1,9 @@
 # The demo stack: its own Postgres and Redis, the three app services from one
 # image, a one-shot migrate service and a Cloudflare Tunnel connector.
 # Values come from deploy/.env, read with --env-file; deploy.sh sets IMAGE_TAG.
-# Nothing publishes a port: the tunnel reaches the API at http://api:3000.
+# Nothing publishes a port: the tunnel reaches the API at http://api-live:3000.
+# deploy.sh gives that alias only to the healthy API it has chosen; compose
+# would give an alias set here to every replica, a starting one included.
 name: payment-pipeline-demo-deploy
 
 x-logging: &logging
@@ -73,11 +75,12 @@ services:
     <<: *hardening
     image: redis:8.8-alpine@sha256:dc95ea2fcf5d5c4253be0f967c28143d0f625846197eed2fd32c748eb99abfca
     user: redis
-    # BullMQ needs noeviction: an evicted key would lose a job.
+    # BullMQ needs noeviction: an evicted key would lose a job. The append-only
+    # file, synced each second, replaces RDB snapshots.
     command:
       - sh
       - -c
-      - exec redis-server --requirepass "$$REDISCLI_AUTH" --maxmemory 48mb --maxmemory-policy noeviction
+      - exec redis-server --requirepass "$$REDISCLI_AUTH" --maxmemory 48mb --maxmemory-policy noeviction --appendonly yes --appendfsync everysec --save ''
     environment:
       REDISCLI_AUTH: ${REDIS_PASSWORD:?}
     volumes:
@@ -144,7 +147,7 @@ services:
       BUYER_ADDRESS: ${BUYER_ADDRESS:?}
       SHOP_ADDRESS: ${SHOP_ADDRESS:?}
       NOTICE_SECRET: ${NOTICE_SECRET:?}
-      SHOP_NOTICE_URL: http://api:3000/shop/notices
+      SHOP_NOTICE_URL: http://api-live:3000/shop/notices
     stop_grace_period: 60s
 
   buyer:
