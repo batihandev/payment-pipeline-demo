@@ -99,7 +99,7 @@ Stripe (phase 2): `received → processing → settled → notified`, without a 
 - **Sending is idempotent per order.** Nonces are allocated one at a time. The signed transaction and its hash are stored on the order before broadcast. A retry rebroadcasts the same signed transaction, or finds that it already landed, and never signs a second transfer for the same order.
 - Nightly sweep as a repeatable job, and the on-demand refill, both using the same send path.
 - A failed send is retried with backoff and recorded as an incident.
-- **Dropped transfers:** every minute the buyer checks transfers the tracker has not seen two minutes after sending. One that reverted, or whose nonce another transaction used, is closed with an incident only after two consecutive checks agree; an order that leaves the unseen list forgets the suspicion.
+- **Dropped transfers:** every minute the buyer checks transfers the tracker has not seen two minutes after sending. One that reverted (read from its receipt) is closed with an incident at once. One with no receipt whose nonce another transaction used is closed only after two consecutive checks agree; an order that leaves the unseen list forgets the suspicion.
 
 ### tracker
 
@@ -150,7 +150,7 @@ Data comes from the REST routes on load and `/events` afterwards. Explorer links
 - `orders`: id, item, price, expected amount (micro-units), status (open, paid, expired), source (schedule, visitor), nonce, signed transaction, transaction hash, send attempts, created and expiry times.
 - `daily_budgets`: UTC day, target count and amount, reserved count and amount.
 - `scan_gaps`: block range, error category, attempts, next retry time, resolved time.
-- `payments`: id, provider (chain, stripe), external key (unique per provider), order id (null for a donation), sender address and donation flag (donations only), amount, stage, confirmations, block number and hash, transaction hash, log index, final flag, stage timestamps.
+- `payments`: id, provider (chain, stripe), external key (unique per provider), order id (null for a donation), sender address (chain payments) and donation flag, amount, stage, confirmations, block number and hash, transaction hash, log index, final flag, stage timestamps.
 - `ledger_entries`: id, payment id (unique), amount, created time.
 - `incidents`: id, kind, what happened, how it was handled, related payment or block range, time.
 - `cursors`: name, block number, block hash.
