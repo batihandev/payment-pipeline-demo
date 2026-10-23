@@ -145,7 +145,7 @@ export class PaymentsClient {
     }
     for (const p of feed.payments) this.older.delete(p.id);
     const all = [...feed.payments, ...this.older.values()].sort(newestFirst);
-    const canRead = !this.oldestReached && feed.payments.length >= LIVE_LIMIT;
+    const canRead = this.canReadOlder(feed.payments);
     return {
       ...feed,
       receipts: all.slice(0, this.receiptCount),
@@ -156,13 +156,17 @@ export class PaymentsClient {
           : 'none',
     };
   }
+  /** Older payments exist on the server only past a full live list, until a short page ends them. */
+  private canReadOlder(live: readonly Payment[]): boolean {
+    return !this.oldestReached && live.length >= LIVE_LIMIT;
+  }
   /** Shows the next page of receipts, reading older payments from the API when needed. */
   showMoreReceipts = (): void => {
     const data = this.snapshot.data;
     if (!data || this.olderLoading || data.olderReceipts === 'none') return;
     this.receiptCount += RECEIPT_PAGE;
     const known = data.payments.length + this.older.size;
-    if (known >= this.receiptCount) {
+    if (known >= this.receiptCount || !this.canReadOlder(data.payments)) {
       this.update(this.snapshot);
       return;
     }

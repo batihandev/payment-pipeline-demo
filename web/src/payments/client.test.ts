@@ -425,6 +425,39 @@ describe('receipts', () => {
     stop();
   });
 });
+describe('receipts when every payment is live', () => {
+  it('reads no older page when the live list holds every payment', async () => {
+    const rows = Array.from({ length: 45 }, (_, i) => ({
+      ...row(`p${String(i).padStart(3, '0')}`, 'settled'),
+      sentAt: new Date(
+        Date.parse('2026-10-20T12:00:00Z') - i * 60000,
+      ).toISOString(),
+    }));
+    const requested: string[] = [];
+    const stream = new FakeEventSource();
+    const client = new PaymentsClient(
+      'https://api.example.com',
+      async (url) => {
+        const { pathname, search } = new URL(String(url));
+        requested.push(pathname + search);
+        if (pathname === '/payments') return Response.json(rows);
+        if (pathname === '/stats/daily') return Response.json([]);
+        return Response.json({});
+      },
+      () => stream,
+    );
+    const stop = client.subscribe(() => {});
+    stream.open();
+    await vi.waitFor(() => expect(client.getSnapshot().status).toBe('live'));
+    client.showMoreReceipts();
+    expect(client.getSnapshot().data?.olderReceipts).toBe('more');
+    client.showMoreReceipts();
+    expect(client.getSnapshot().data?.receipts).toHaveLength(45);
+    expect(client.getSnapshot().data?.olderReceipts).toBe('none');
+    expect(requested.filter((path) => path.includes('before='))).toEqual([]);
+    stop();
+  });
+});
 function beforeOf(path: string): string {
   return new URL(path, 'https://api.example.com').searchParams.get('before')!;
 }
