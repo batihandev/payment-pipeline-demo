@@ -2,7 +2,7 @@ import {
   PAYMENT_LIST_MAX,
   PAYMENT_LIST_STEP,
 } from '../../../libs/core/src/payment-list';
-import type { z } from 'zod';
+import type { z } from 'zod/mini';
 import type { OrderEvent, QueueEvent } from '../../../libs/core/src/api';
 import {
   dailyStats,
@@ -70,7 +70,7 @@ export type EventStream = Pick<
 };
 
 /** Parses an event body; anything unreadable or off-schema is undefined. */
-function readEvent<T>(schema: z.ZodType<T>, data: string): T | undefined {
+function readEvent<T>(schema: z.ZodMiniType<T>, data: string): T | undefined {
   try {
     const parsed = schema.safeParse(JSON.parse(data));
     return parsed.success ? parsed.data : undefined;
@@ -80,7 +80,7 @@ function readEvent<T>(schema: z.ZodType<T>, data: string): T | undefined {
 }
 /** Reads a response body through `schema`; a body that does not match throws. */
 async function readBody<T>(
-  schema: z.ZodType<T>,
+  schema: z.ZodMiniType<T>,
   response: Response,
 ): Promise<T> {
   return schema.parse(await response.json());
@@ -350,7 +350,7 @@ export class PaymentsClient {
       this.readTimeout(READ_TIMEOUT_MS),
     ]);
     try {
-      const get = async <T>(path: string, schema: z.ZodType<T>) => {
+      const get = async <T>(path: string, schema: z.ZodMiniType<T>) => {
         const request = this.request;
         const response = await request(`${this.baseUrl}${path}`, { signal });
         if (!response.ok) throw new Error('Demo offline');
