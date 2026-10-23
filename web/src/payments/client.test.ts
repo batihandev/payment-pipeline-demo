@@ -42,6 +42,7 @@ const row = (id: string, stage = 'received') => ({
   order: { id: `order-${id}`, item: 'Gold rubber duck', price: '14000000' },
   explorerUrl: 'https://example.com/tx/123',
   noteKinds: ['payment_reorg'],
+  version: 0,
 });
 function server() {
   let payments = [row('old')];
@@ -352,5 +353,348 @@ describe('test purchases', () => {
       retryAfter: '5',
       body: { error: 'card_unavailable' },
     });
+  });
+});
+describe('receipt window', () => {
+  const at = (minutes: number) =>
+    new Date(
+      Date.parse('2026-10-20T12:00:00Z') - minutes * 60000,
+    ).toISOString();
+  /** A client over `count` payments whose `/payments` reads can be held or failed. */
+  function windowed(count = 250) {
+    const rows = Array.from({ length: count }, (_, i) => ({
+      ...row(`p${String(i).padStart(3, '0')}`, 'received'),
+      sentAt: at(i),
+    }));
+    const stream = new FakeEventSource();
+    const reads: string[] = [];
+    const signals: (AbortSignal | undefined)[] = [];
+    const server = {
+      hold: null as Promise<void> | null,
+      fail: false,
+    };
+    const client = new PaymentsClient(
+      'https://api.example.com',
+      async (url, init) => {
+        const { pathname, search, searchParams } = new URL(String(url));
+        if (pathname === '/payments') {
+          reads.push(search);
+          signals.push(init?.signal ?? undefined);
+          await server.hold;
+          if (server.fail) return new Response('{}', { status: 503 });
+          return Response.json(
+            rows.slice(0, Number(searchParams.get('limit'))),
+          );
+        }
+        if (pathname === '/stats/daily') return Response.json([]);
+        return Response.json({});
+      },
+      () => stream,
+    );
+    const data = () => {
+      const current = client.getSnapshot().data;
+      if (!current) throw new Error('No data yet');
+      return current;
+    };
+    const holdReads = () => {
+      let release = () => {};
+      server.hold = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return () => {
+        server.hold = null;
+        release();
+      };
+    };
+    const showMore = async () => {
+      const shown = data().receipts.length;
+      client.showMoreReceipts();
+      await vi.waitFor(() =>
+        expect(data().receipts.length).toBeGreaterThan(shown),
+      );
+    };
+    const load = async () => {
+      stream.open();
+      await vi.waitFor(() => expect(client.getSnapshot().status).toBe('live'));
+    };
+    return {
+      client,
+      stream,
+      rows,
+      reads,
+      signals,
+      server,
+      data,
+      holdReads,
+      showMore,
+      load,
+    };
+  }
+  /** Counts of the shown receipts at every update, to catch a collapse that a later update hides. */
+  function watchCounts(s: ReturnType<typeof windowed>) {
+    const counts: number[] = [];
+    const stop = s.client.subscribe(() => {
+      const data = s.client.getSnapshot().data;
+      if (data) counts.push(data.receipts.length);
+    });
+    return { counts, stop };
+  }
+  it('shows the newest 20 and adds 20 with each Show more', async () => {
+    const s = windowed();
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    const ids = () => s.data().receipts.map((p) => p.id);
+    expect(ids()).toEqual(s.rows.slice(0, 20).map((r) => r.id));
+    expect(s.data().olderReceipts).toBe('more');
+    for (const size of [40, 60, 80, 100, 120, 140]) {
+      await s.showMore();
+      expect(ids()).toEqual(s.rows.slice(0, size).map((r) => r.id));
+    }
+    // The pipeline counts still cover the newest 100.
+    expect(s.data().payments).toHaveLength(100);
+    s.stream.send({ ...row('fresh', 'received'), sentAt: at(-1) });
+    expect(ids()[0]).toBe('fresh');
+    expect(ids()).toHaveLength(140);
+    expect(s.data().payments).toHaveLength(100);
+    stop();
+  });
+  it('reads the whole window in one request', async () => {
+    const s = windowed();
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    for (let i = 0; i < 4; i++) await s.showMore();
+    const reads = s.reads.length;
+    await s.showMore();
+    expect(s.data().receipts).toHaveLength(120);
+    expect(s.reads.slice(reads)).toEqual(['?limit=120']);
+    expect(s.reads.every((search) => !search.includes('before='))).toBe(true);
+    stop();
+  });
+  it('keeps the window size across a stream reopen', async () => {
+    const s = windowed();
+    const { counts, stop } = watchCounts(s);
+    await s.load();
+    for (let i = 0; i < 5; i++) await s.showMore();
+    expect(s.data().receipts).toHaveLength(120);
+    const updates = counts.length;
+    const reads = s.reads.length;
+    const changed = s.rows[110];
+    if (!changed) throw new Error('No row p110');
+    changed.stage = 'settled';
+    s.stream.disconnect();
+    s.stream.open();
+    await vi.waitFor(() =>
+      expect(s.data().receipts.find((p) => p.id === 'p110')?.stage).toBe(
+        'settled',
+      ),
+    );
+    expect(s.reads.slice(reads)).toEqual(['?limit=120']);
+    expect(Math.min(...counts.slice(updates))).toBe(120);
+    expect(s.data().receipts).toHaveLength(120);
+    expect(s.data().olderReceipts).toBe('more');
+    stop();
+  });
+  /** Lets the reads already started finish. */
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+  it('shows a reorged payment moving back to sent', async () => {
+    const s = windowed();
+    const confirming = {
+      ...s.rows[0],
+      stage: 'confirming',
+      confirmations: 2,
+      receivedAt: at(0),
+      noteKinds: [],
+      version: 3,
+    };
+    Object.assign(s.rows[0] ?? {}, confirming);
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    expect(s.data().receipts[0]).toMatchObject({ stage: 'confirming' });
+    const reorged = {
+      ...confirming,
+      stage: 'sent',
+      blockNumber: null,
+      confirmations: 0,
+      receivedAt: null,
+      version: 4,
+    };
+    Object.assign(s.rows[0] ?? {}, reorged, { noteKinds: ['payment_reorg'] });
+    s.stream.send({ ...reorged, noteKinds: undefined });
+    expect(s.data().receipts[0]).toMatchObject({
+      stage: 'sent',
+      blockNumber: null,
+      confirmations: 0,
+      receivedAt: null,
+    });
+    await vi.waitFor(() =>
+      expect(s.data().receipts[0]?.noteKinds).toEqual(['payment_reorg']),
+    );
+    expect(s.data().receipts[0]).toMatchObject({ stage: 'sent', version: 4 });
+    stop();
+  });
+  it('takes a read with a higher version over a held row', async () => {
+    const s = windowed();
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    s.stream.send({ ...s.rows[5], stage: 'confirming', version: 2 });
+    await settle();
+    expect(s.data().receipts[5]).toMatchObject({ stage: 'confirming' });
+    Object.assign(s.rows[5] ?? {}, {
+      stage: 'sent',
+      blockNumber: null,
+      noteKinds: ['payment_reorg'],
+      version: 3,
+    });
+    await s.client.refresh();
+    expect(s.data().receipts[5]).toMatchObject({
+      stage: 'sent',
+      blockNumber: null,
+      noteKinds: ['payment_reorg'],
+      version: 3,
+    });
+    stop();
+  });
+  it('keeps a newer event over a late read with a lower version', async () => {
+    const s = windowed();
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    for (let i = 0; i < 5; i++) await s.showMore();
+    const release = s.holdReads();
+    const reads = s.reads.length;
+    s.client.showMoreReceipts();
+    await vi.waitFor(() => expect(s.reads.length).toBe(reads + 1));
+    // The read is in flight; the event moves p110 on, and the read's copy is the older one.
+    s.stream.send({ ...s.rows[110], stage: 'settled', version: 5 });
+    const p110 = () => s.data().receipts.find((p) => p.id === 'p110');
+    expect(p110()?.stage).toBe('settled');
+    // Notes come from incidents, so the read's notes apply even to a row the client keeps.
+    Object.assign(s.rows[110] ?? {}, { noteKinds: ['paid_after_expiry'] });
+    release();
+    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(140));
+    expect(p110()).toMatchObject({
+      stage: 'settled',
+      version: 5,
+      noteKinds: ['paid_after_expiry'],
+    });
+    await s.client.refresh();
+    expect(p110()).toMatchObject({ stage: 'settled', version: 5 });
+    stop();
+  });
+  it('restores the window size and shows the calm line when Show more fails', async () => {
+    const s = windowed();
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    for (let i = 0; i < 5; i++) await s.showMore();
+    const release = s.holdReads();
+    s.server.fail = true;
+    s.client.showMoreReceipts();
+    expect(s.data().olderReceipts).toBe('loading');
+    expect(s.data().receipts).toHaveLength(120);
+    release();
+    await vi.waitFor(() => expect(s.data().olderFailed).toBe(true));
+    expect(s.data().olderReceipts).toBe('more');
+    expect(s.data().receipts).toHaveLength(120);
+    expect(s.client.getSnapshot().status).toBe('live');
+    s.server.fail = false;
+    const reads = s.reads.length;
+    s.client.showMoreReceipts();
+    expect(s.data().olderFailed).toBe(false);
+    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(140));
+    expect(s.reads.slice(reads)).toEqual(['?limit=140']);
+    stop();
+  });
+  it('stops offering more at 200 or when the server has no more', async () => {
+    const s = windowed();
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    for (let i = 0; i < 9; i++) await s.showMore();
+    expect(s.data().receipts).toHaveLength(200);
+    expect(s.data().olderReceipts).toBe('none');
+    const reads = s.reads.length;
+    s.client.showMoreReceipts();
+    expect(s.reads).toHaveLength(reads);
+    stop();
+
+    const few = windowed(50);
+    const stopFew = few.client.subscribe(() => {});
+    await few.load();
+    await few.showMore();
+    expect(few.data().olderReceipts).toBe('more');
+    await few.showMore();
+    expect(few.data().receipts).toHaveLength(50);
+    expect(few.data().olderReceipts).toBe('none');
+    stopFew();
+  });
+  it('does not show the older-receipts line when only the background refresh fails', async () => {
+    const s = windowed();
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    for (let i = 0; i < 2; i++) await s.showMore();
+    s.server.fail = true;
+    await s.client.refresh();
+    expect(s.data().olderFailed).toBe(false);
+    expect(s.data().olderReceipts).toBe('more');
+    expect(s.client.getSnapshot().status).toBe('live');
+    const reads = s.reads.length;
+    s.stream.disconnect();
+    s.stream.open();
+    await vi.waitFor(() => expect(s.reads.length).toBeGreaterThan(reads));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(s.data().olderFailed).toBe(false);
+    expect(s.data().olderReceipts).toBe('more');
+    expect(s.data().receipts).toHaveLength(60);
+    stop();
+  });
+  it('clears the older-receipts line after a later read succeeds', async () => {
+    const s = windowed();
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    s.server.fail = true;
+    s.client.showMoreReceipts();
+    await vi.waitFor(() => expect(s.data().olderFailed).toBe(true));
+    s.server.fail = false;
+    await s.client.refresh();
+    expect(s.data().olderFailed).toBe(false);
+    expect(s.data().receipts).toHaveLength(20);
+    stop();
+  });
+  it('keeps buffered events bounded while reads fail', async () => {
+    const s = windowed();
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    s.server.fail = true;
+    const reads = s.reads.length;
+    for (let i = 0; i < 600; i++) {
+      s.stream.send({
+        ...row(`fresh${i % 300}`, 'received'),
+        sentAt: at(-1 - i),
+        version: i,
+      });
+      await settle();
+    }
+    // The first event starts a read; once it fails, events wait for the retry timer.
+    expect(s.reads.length - reads).toBe(1);
+    const buffered = (s.client as unknown as { buffered: { size: number } })
+      .buffered;
+    expect(buffered.size).toBeLessThanOrEqual(200);
+    expect(s.client.getSnapshot().status).toBe('live');
+    stop();
+  });
+  it('aborts a superseded read', async () => {
+    const s = windowed();
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    const release = s.holdReads();
+    const reads = s.reads.length;
+    void s.client.refresh();
+    s.client.showMoreReceipts();
+    await vi.waitFor(() => expect(s.reads.length).toBe(reads + 2));
+    const [first, second] = s.signals.slice(reads);
+    expect(first?.aborted).toBe(true);
+    expect(second?.aborted).toBe(false);
+    release();
+    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(40));
+    stop();
+    expect(second?.aborted).toBe(false);
   });
 });

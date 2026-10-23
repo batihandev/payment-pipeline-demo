@@ -18,9 +18,8 @@ it('returns newest incidents and rejects limits outside one to one hundred', asy
   expect(response.body).toEqual([
     expect.objectContaining({ whatHappened: 'Day 20' }),
   ]);
-  for (const route of ['/incidents', '/payments'])
-    for (const limit of ['0', '101', 'abc', '1.5'])
-      expect((await get(`${route}?limit=${limit}`)).statusCode).toBe(400);
+  for (const limit of ['0', '101', 'abc', '1.5'])
+    expect((await get(`/incidents?limit=${limit}`)).statusCode).toBe(400);
 });
 it('answers 400 bad_request for an out-of-range or non-integer limit', async () => {
   for (const query of ['limit=0', 'limit=101', 'limit=abc', 'limit=1.5']) {

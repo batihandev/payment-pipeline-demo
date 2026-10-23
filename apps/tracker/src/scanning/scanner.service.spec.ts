@@ -223,6 +223,84 @@ it('stores one payment and one cursor when two scans overlap', async () => {
   expect(await f.db.payment.count()).toBe(1);
   expect((await f.db.cursor.findFirstOrThrow()).blockNumber).toBe(20n);
 });
+it('initialises the cursor once when two first scans race', async () => {
+  f.chain.logs = [log()];
+  // Each step below holds the first scan until the second reaches it, so both scans read the
+  // empty cursor table before either writes, and both write at the same moment.
+  const meeting = () => {
+    let arrived = 0;
+    let release = () => {};
+    const both = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return async () => {
+      if (++arrived === 2) release();
+      await both;
+    };
+  };
+  const readsMeet = meeting();
+  const writesMeet = meeting();
+  const bound = (target: object, key: string | symbol) => {
+    const value: unknown = Reflect.get(target, key, target);
+    return typeof value === 'function' ? value.bind(target) : value;
+  };
+  const writes = ['create', 'createMany', 'upsert'];
+  const cursorDelegate = new Proxy(f.db.cursor, {
+    get(target, key) {
+      if (key === 'findUnique')
+        return async (args: Parameters<typeof f.db.cursor.findUnique>[0]) => {
+          const found = await target.findUnique(args);
+          await readsMeet();
+          return found;
+        };
+      if (typeof key === 'string' && writes.includes(key))
+        return async (...args: unknown[]) => {
+          await writesMeet();
+          return (bound(target, key) as (...a: unknown[]) => unknown)(...args);
+        };
+      return bound(target, key);
+    },
+  });
+  const racing = new Proxy(f.db, {
+    get(target, key) {
+      if (key === 'cursor') return cursorDelegate;
+      if (key === '$executeRaw')
+        return async (...args: unknown[]) => {
+          await writesMeet();
+          return (bound(target, key) as (...a: unknown[]) => unknown)(...args);
+        };
+      return bound(target, key);
+    },
+  });
+  const scans = [0, 1].map(
+    () =>
+      new ScannerService(
+        racing,
+        f.chain,
+        trackerConfig(),
+        () => now,
+        async () => {},
+        () => 0.5,
+      ),
+  );
+  // A slow first insert keeps the other scan's read-then-insert inside its window, so the
+  // overlap does not depend on how fast either scan runs.
+  await f.db.$executeRawUnsafe(
+    `CREATE FUNCTION slow_cursor_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(0.3); RETURN NEW; END $$`,
+  );
+  await f.db.$executeRawUnsafe(
+    'CREATE TRIGGER slow_cursor_insert BEFORE INSERT ON cursors FOR EACH ROW EXECUTE FUNCTION slow_cursor_insert()',
+  );
+  try {
+    await Promise.all(scans.map((scan) => scan.scanOnce()));
+  } finally {
+    await f.db.$executeRawUnsafe('DROP TRIGGER slow_cursor_insert ON cursors');
+    await f.db.$executeRawUnsafe('DROP FUNCTION slow_cursor_insert()');
+  }
+  expect(await f.db.cursor.count()).toBe(1);
+  expect(await f.db.payment.count()).toBe(1);
+  expect((await f.db.cursor.findFirstOrThrow()).blockNumber).toBe(20n);
+});
 
 it('starts a fresh database near the head and saves the cursor', async () => {
   f.chain.head = 100000n;

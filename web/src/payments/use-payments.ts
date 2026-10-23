@@ -13,9 +13,10 @@ export function paymentsClient(apiBaseUrl: string): PaymentsClient {
 }
 export function usePayments(apiBaseUrl: string) {
   const client = paymentsClient(apiBaseUrl);
-  return useSyncExternalStore(
+  const snapshot = useSyncExternalStore(
     client.subscribe,
     client.getSnapshot,
     client.getSnapshot,
   );
+  return { ...snapshot, showMoreReceipts: client.showMoreReceipts };
 }

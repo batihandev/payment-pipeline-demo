@@ -53,7 +53,14 @@ export type Health = {
   cardAvailable: boolean;
 };
 export type Dashboard = {
+  /** The newest 100 payments, kept live; the pipeline counts cover these. */
   payments: Payment[];
+  /** The receipt window, newest first: 20 at first, growing by 20 with each Show more, up to 200. */
+  receipts: Payment[];
+  /** Whether Show more can grow the window, is reading it, or has reached the end. */
+  olderReceipts: 'more' | 'loading' | 'none';
+  /** Whether the last Show more read failed; Show more stays available to try again. */
+  olderFailed: boolean;
   stats: Stats;
   daily: DailyStat[];
   /** Null until the first /health read arrives. */

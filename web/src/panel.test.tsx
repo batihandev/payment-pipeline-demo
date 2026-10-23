@@ -19,10 +19,15 @@ const data: Dashboard = {
   },
   daily: [],
   health: null,
+  get receipts() {
+    return this.payments;
+  },
+  olderReceipts: 'none',
+  olderFailed: false,
 };
 
 vi.mock('./payments/use-payments', () => ({
-  usePayments: () => ({ status: 'live', data }),
+  usePayments: () => ({ status: 'live', data, showMoreReceipts: () => {} }),
 }));
 
 describe('PaymentsPanel', () => {
@@ -101,5 +106,25 @@ describe('PaymentsPanel', () => {
     expect(lanes.map(([label]) => label)).not.toContain('Failed');
     expect(lanes.reduce((sum, [, count]) => sum + Number(count), 0)).toBe(1);
     expect(html).toContain('2 did not go through');
+  });
+  it('offers Show more only while older receipts remain', async () => {
+    const { PaymentsPanel } = await import('./panel');
+    const render = () =>
+      renderToStaticMarkup(<PaymentsPanel apiBaseUrl="/api" />);
+    data.olderReceipts = 'more';
+    expect(render()).toContain('>Show more</button>');
+    data.olderReceipts = 'loading';
+    expect(render()).toMatch(/disabled="">Loading older receipts…<\/button>/);
+    data.olderReceipts = 'none';
+    expect(render()).not.toContain('tp-show-more');
+  });
+  it('shows a calm line and keeps Show more when older receipts failed', async () => {
+    const { PaymentsPanel } = await import('./panel');
+    data.olderReceipts = 'more';
+    data.olderFailed = true;
+    const html = renderToStaticMarkup(<PaymentsPanel apiBaseUrl="/api" />);
+    data.olderFailed = false;
+    expect(html).toContain('Could not load older receipts. Try again.');
+    expect(html).toContain('>Show more</button>');
   });
 });

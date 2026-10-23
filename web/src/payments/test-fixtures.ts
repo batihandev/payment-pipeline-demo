@@ -26,6 +26,7 @@ export function payment(overrides: Partial<Payment> = {}): Payment {
     finalAt: null,
     donorName: null,
     noteKinds: [],
+    version: 0,
     ...overrides,
   };
 }

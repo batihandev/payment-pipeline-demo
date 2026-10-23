@@ -31,12 +31,9 @@ export async function testDatabase(): Promise<{
   for (const entry of readdirSync(migrations, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .sort((a, b) => a.name.localeCompare(b.name))) {
-    for (const statement of readFileSync(
-      join(migrations, entry.name, 'migration.sql'),
-      'utf8',
-    )
-      .split(';')
-      .filter((part) => part.trim()))
+    for (const statement of sqlStatements(
+      readFileSync(join(migrations, entry.name, 'migration.sql'), 'utf8'),
+    ))
       await db.$executeRawUnsafe(statement);
   }
   return {
@@ -47,4 +44,26 @@ export async function testDatabase(): Promise<{
       await admin.$disconnect();
     },
   };
+}
+
+/**
+ * Splits a migration into statements at each `;` outside a `$$` body, since the driver runs
+ * one statement per call.
+ */
+function sqlStatements(sql: string): string[] {
+  return sql
+    .split(/(\$\$[\s\S]*?\$\$)/)
+    .reduce<string[]>(
+      (statements, part, index) => {
+        if (index % 2) {
+          statements[statements.length - 1] += part;
+          return statements;
+        }
+        const [first = '', ...rest] = part.split(';');
+        statements[statements.length - 1] += first;
+        return [...statements, ...rest];
+      },
+      [''],
+    )
+    .filter((statement) => statement.trim());
 }

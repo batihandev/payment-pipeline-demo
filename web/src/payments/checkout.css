@@ -1,38 +1,38 @@
 .tp-checkout {
-  padding: 26px;
-  border: 1px solid #cfc8b8;
+  padding: var(--tp-space-5);
+  border: 1px solid var(--tp-line-strong);
   border-radius: 20px;
   background: #eee6d7;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--tp-space-4);
   min-width: 0;
 }
 .tp-counter-heading {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--tp-space-2);
 }
 .tp-counter-heading h2 {
   font-size: 28px;
   letter-spacing: -0.025em;
 }
 .tp-counter-label {
-  color: #9a3412;
+  color: var(--tp-orange-dark);
   font-weight: 600;
   letter-spacing: 0.1em;
 }
 .tp-disclosure {
-  color: #4a4a52;
+  color: var(--tp-slate);
   font-size: 13px;
   max-width: 45ch;
 }
 .tp-drawer {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding-top: 18px;
-  border-top: 2px solid #c7bba6;
+  gap: var(--tp-space-4);
+  padding-top: var(--tp-space-4);
+  border-top: 2px solid var(--tp-sand);
   animation: tp-drawer-open 0.4s ease-out;
 }
 .tp-drawer > .tp-muted {
@@ -41,7 +41,7 @@
 .tp-rails {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--tp-space-3);
 }
 .tp .tp-rail-button {
   width: 100%;
@@ -49,32 +49,32 @@
   text-align: center;
 }
 .tp .tp-rail-card:not(:disabled) {
-  background: #fffaf0;
-  color: #17171a;
+  background: var(--tp-ivory);
+  color: var(--tp-ink);
 }
 .tp .tp-rail-card:not(:disabled):hover {
   background: #f4ead6;
 }
 .tp-purchase-status {
   font-size: 14px;
-  color: #9a3412;
+  color: var(--tp-orange-dark);
 }
 .tp-purchase-status:empty {
   display: none;
 }
 .tp-item {
-  background: #fffaf0;
-  border: 1px solid #cfc8b8;
-  padding: 18px;
+  background: var(--tp-ivory);
+  border: 1px solid var(--tp-line-strong);
+  padding: var(--tp-space-4);
   border-radius: 12px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--tp-space-1);
   text-align: center;
   animation: tp-item-in 0.5s ease-out;
 }
 .tp-item > .tp-mono {
-  color: #5b5b63;
+  color: var(--tp-muted);
 }
 .tp-item strong {
   font-size: 20px;
@@ -85,19 +85,19 @@
   max-width: 320px;
   border-radius: 18px 18px 28px 28px;
   background: #313137;
-  padding: 16px 16px 22px;
-  border-bottom: 6px solid #17171a;
+  padding: var(--tp-space-4) var(--tp-space-4) var(--tp-space-5);
+  border-bottom: 6px solid var(--tp-ink);
 }
 .tp-terminal-screen {
-  background: #f4f1ea;
-  padding: 18px;
+  background: var(--tp-cream);
+  padding: var(--tp-space-4);
   border-radius: 9px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--tp-space-4);
 }
 .tp-terminal-screen > .tp-mono {
-  color: #5b5b63;
+  color: var(--tp-muted);
   font-size: 11px;
   letter-spacing: 0.1em;
 }
@@ -119,9 +119,9 @@
 .tp-terminal-keys {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
+  gap: var(--tp-space-2);
   max-width: 150px;
-  margin: 15px auto 0;
+  margin: var(--tp-space-4) auto 0;
 }
 .tp-terminal-keys i {
   background: #85858d;
@@ -145,17 +145,22 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 6px 0 2px;
+  gap: var(--tp-space-3);
+  padding: var(--tp-space-2) 0 2px;
 }
 .tp-tap-card {
   width: 148px;
   max-width: 70%;
   aspect-ratio: 1.586;
   border-radius: 10px;
-  padding: 12px;
-  background: linear-gradient(135deg, #1e3a8a, #1d4ed8 60%, #3b82f6);
-  color: #fff;
+  padding: var(--tp-space-3);
+  background: linear-gradient(
+    135deg,
+    var(--tp-blue-dark),
+    var(--tp-blue) 60%,
+    #3b82f6
+  );
+  color: var(--tp-paper);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -166,7 +171,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--tp-space-2);
   min-width: 0;
 }
 .tp-tap-chip {
@@ -195,7 +200,7 @@
 }
 .tp-tap-waves i {
   width: 6px;
-  border: 2px solid #c2410c;
+  border: 2px solid var(--tp-orange);
   border-left: 0;
   border-radius: 0 99px 99px 0;
   animation: tp-wave 1.2s ease-in-out infinite;
@@ -212,7 +217,7 @@
   animation-delay: 0.3s;
 }
 .tp-tap-done .tp-tap-waves i {
-  border-color: #15803d;
+  border-color: var(--tp-green);
   animation: none;
 }
 @keyframes tp-card-tap {
@@ -308,15 +313,15 @@
 }
 .tp-block-stack span {
   height: 24px;
-  border: 1px solid #c7bba6;
+  border: 1px solid var(--tp-sand);
   border-radius: 3px;
-  background: #e5e0d4;
+  background: var(--tp-sand-light);
   transition:
     background 0.3s ease,
     transform 0.3s ease;
 }
 .tp-block-stack .tp-block-confirmed {
-  background: #c2410c;
-  border-color: #c2410c;
+  background: var(--tp-orange);
+  border-color: var(--tp-orange);
   transform: translateY(-3px);
 }

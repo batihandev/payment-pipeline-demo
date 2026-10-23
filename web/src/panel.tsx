@@ -14,7 +14,7 @@ import {
 import './panel.css';
 
 export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
-  const { data, status } = usePayments(apiBaseUrl);
+  const { data, status, showMoreReceipts } = usePayments(apiBaseUrl);
   const [visitorOrders, setVisitorOrders] = useState<ReadonlySet<string>>(
     new Set(),
   );
@@ -75,55 +75,59 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
         <p role="status">Loading the payment trail…</p>
       ) : (
         <>
-          <section aria-label="Pipeline" className="tp-pipeline">
-            {pipelineSteps.map((step, index) => {
-              const rows = data.payments.filter((p) => p.stage === step.stage);
-              return (
-                <div key={step.stage} className={`tp-lane tp-${step.color}`}>
-                  <div className="tp-row tp-between">
-                    <h2>
-                      {index + 1} · {step.label}
-                    </h2>
-                    <strong>{rows.length}</strong>
+          <div className="tp-pipeline-block">
+            <section aria-label="Pipeline" className="tp-pipeline">
+              {pipelineSteps.map((step, index) => {
+                const rows = data.payments.filter(
+                  (p) => p.stage === step.stage,
+                );
+                return (
+                  <div key={step.stage} className={`tp-lane tp-${step.color}`}>
+                    <div className="tp-row tp-between">
+                      <h2>
+                        {index + 1} · {step.label}
+                      </h2>
+                      <strong>{rows.length}</strong>
+                    </div>
+                    <p>
+                      {step.stage === 'confirming'
+                        ? `Waiting for ${confirmationsNeeded(data.health)} blocks on top`
+                        : step.hint}
+                    </p>
+                    <div className="tp-row">
+                      {rows.slice(0, 4).map((p) => (
+                        <a
+                          className="tp-stage"
+                          href={`#payment-${p.id}`}
+                          key={p.id}
+                        >
+                          #{shortId(p.orderId ?? p.id)}
+                        </a>
+                      ))}
+                    </div>
                   </div>
-                  <p>
-                    {step.stage === 'confirming'
-                      ? `Waiting for ${confirmationsNeeded(data.health)} blocks on top`
-                      : step.hint}
-                  </p>
-                  <div className="tp-row">
-                    {rows.slice(0, 4).map((p) => (
-                      <a
-                        className="tp-stage"
-                        href={`#payment-${p.id}`}
-                        key={p.id}
-                      >
-                        #{shortId(p.orderId ?? p.id)}
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </section>
-          <p className="tp-mono tp-muted">
-            Pipeline counts cover the {data.payments.length} most recent
-            payments.
-            {data.payments.some((p) => p.stage === 'sent') &&
-              ` ${data.payments.filter((p) => p.stage === 'sent').length} sent, waiting for the tracker or Stripe.`}
-          </p>
-          {failedCount > 0 && (
-            <p className="tp-mono tp-muted tp-failed-count">
-              {failedCount} did not go through, outside the lanes above. Nothing
-              was credited for them.
+                );
+              })}
+            </section>
+            <p className="tp-mono tp-muted">
+              Pipeline counts cover the {data.payments.length} most recent
+              payments.
+              {data.payments.some((p) => p.stage === 'sent') &&
+                ` ${data.payments.filter((p) => p.stage === 'sent').length} sent, waiting for the tracker or Stripe.`}
             </p>
-          )}
+            {failedCount > 0 && (
+              <p className="tp-mono tp-muted tp-failed-count">
+                {failedCount} did not go through, outside the lanes above.
+                Nothing was credited for them.
+              </p>
+            )}
+          </div>
           <SettledChart days={data.daily} />
           <div className="tp-detail-grid">
             <section aria-labelledby="receipts-title" className="tp-feed">
               <h2 id="receipts-title">Receipts</h2>
-              {data.payments.length === 0 && <p>No payments yet.</p>}
-              {data.payments.map((payment) => (
+              {data.receipts.length === 0 && <p>No payments yet.</p>}
+              {data.receipts.map((payment) => (
                 <div id={`payment-${payment.id}`} key={payment.id}>
                   <Receipt
                     payment={payment}
@@ -133,9 +137,26 @@ export function PaymentsPanel({ apiBaseUrl }: { apiBaseUrl: string }) {
                   />
                 </div>
               ))}
+              {data.olderFailed && (
+                <p className="tp-muted tp-older-failed" role="status">
+                  Could not load older receipts. Try again.
+                </p>
+              )}
+              {data.olderReceipts !== 'none' && (
+                <button
+                  type="button"
+                  className="tp-show-more"
+                  disabled={data.olderReceipts === 'loading'}
+                  onClick={showMoreReceipts}
+                >
+                  {data.olderReceipts === 'loading'
+                    ? 'Loading older receipts…'
+                    : 'Show more'}
+                </button>
+              )}
             </section>
             <aside className="tp-sidebar">
-              <h2 className="tp-stats-title">Today · UTC</h2>
+              <h2>Today · UTC</h2>
               <section aria-label="Today's statistics" className="tp-stats">
                 {[
                   [String(data.stats.settledCount), 'payments settled'],

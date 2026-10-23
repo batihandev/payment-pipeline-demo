@@ -39,12 +39,15 @@ export type ChartBar = {
   visitor: number;
   averageMs: number | null;
 };
+/** The daily view covers the last two weeks, so each day keeps a readable bar on a phone. */
+export const DAILY_DAYS = 14;
+
 export function chartBars(
   days: readonly DailyStat[],
   mode: 'daily' | 'weekly',
 ): ChartBar[] {
   if (mode === 'daily')
-    return days.map((d) => ({
+    return days.slice(-DAILY_DAYS).map((d) => ({
       key: d.day,
       label: d.day,
       scheduled: d.scheduled,
@@ -70,4 +73,29 @@ export function chartBars(
         : null,
     };
   });
+}
+
+/**
+ * The bars that have an average, as runs of indexes whose days (or weeks) follow one another,
+ * so a line joins only neighbouring periods and never crosses a gap.
+ */
+export function averageRuns(
+  bars: readonly ChartBar[],
+  mode: 'daily' | 'weekly',
+): number[][] {
+  const step = mode === 'daily' ? dayMs : 7 * dayMs;
+  const runs: number[][] = [];
+  let previous: number | null = null;
+  bars.forEach((bar, index) => {
+    if (bar.averageMs === null) {
+      previous = null;
+      return;
+    }
+    const time = Date.parse(`${bar.key}T00:00:00Z`);
+    const run = runs.at(-1);
+    if (run && previous !== null && time - previous === step) run.push(index);
+    else runs.push([index]);
+    previous = time;
+  });
+  return runs;
 }

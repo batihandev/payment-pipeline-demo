@@ -87,10 +87,13 @@ export class ScannerService {
           ? head.hash
           : await this.rpc(() => this.chain.getBlockHash(position));
       if (!blockHash) throw new RpcError('transient');
-      const initialized = await this.db.cursor.upsert({
+      // One statement, so two first scans cannot both insert: the loser leaves the winner's row.
+      await this.db.$executeRaw`
+        INSERT INTO cursors (name, block_number, block_hash)
+        VALUES (${this.cursorName}, ${position}, ${blockHash})
+        ON CONFLICT (name) DO NOTHING`;
+      const initialized = await this.db.cursor.findUniqueOrThrow({
         where: { name: this.cursorName },
-        create: { name: this.cursorName, blockNumber: position, blockHash },
-        update: {},
       });
       position = initialized.blockNumber;
     }
@@ -159,11 +162,13 @@ export class ScannerService {
         data: { blockNumber: to, blockHash, advancedAt: this.now() },
       });
       if (advanced.count === 0)
-        await tx.cursor.upsert({
-          where: { name: this.cursorName },
-          create: { name: this.cursorName, blockNumber: to, blockHash },
-          update: { blockNumber: to, blockHash },
-        });
+        // A cursor already at or past `to` is set to `to` without moving advancedAt; as one
+        // statement, this cannot collide with another scan's first insert.
+        await tx.$executeRaw`
+          INSERT INTO cursors (name, block_number, block_hash)
+          VALUES (${this.cursorName}, ${to}, ${blockHash})
+          ON CONFLICT (name) DO UPDATE
+          SET block_number = EXCLUDED.block_number, block_hash = EXCLUDED.block_hash`;
     });
     return head;
   }

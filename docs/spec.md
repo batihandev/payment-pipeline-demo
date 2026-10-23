@@ -104,7 +104,7 @@ Card: `sent → processing → settled → notified`, without a confirmation cou
 - **notified:** the shop accepted the signed notice, as on the chain rail.
 - **failed:** the PaymentIntent was declined or canceled. The payment is `final`, the order is closed unless it already is, one `card_failed` incident is recorded and nothing is credited. It is terminal: a later `processing` or `succeeded` for the payment changes nothing.
 
-A stage never moves backwards: an event that would move a payment to an earlier or equal stage is ignored.
+A card payment's stage never moves backwards: an event that would move it to an earlier or equal stage is ignored. (A chain payment can move back to `sent` when a reorg replaces its block; see **Reorgs** under the tracker.)
 
 ## Services
 
@@ -136,18 +136,18 @@ A stage never moves backwards: an event that would move a payment to an earlier 
 
 ### api
 
-| Route                     | Purpose                                                                                                                           |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /payments?limit=`    | Recent payments with order or donor name, stage, confirmations, block, explorer URL, note kinds                                   |
-| `GET /stats`              | Today: settled count, average time to settle, duplicates skipped, failures recovered. In-memory cache with a short TTL            |
-| `GET /stats/daily`        | Per UTC day for the retained period: settled count, average time to settle, scheduled and visitor purchases. Cached like `/stats` |
-| `GET /incidents?limit=`   | Recent incidents                                                                                                                  |
-| `GET /health`             | Head, cursor, lag, open gaps, queue depth, cooldown state, balances and low-balance flags, and the monitoring signals below       |
-| `GET /events`             | Server-sent events relayed from Redis pub/sub: payments, order changes, the visitor queue and a keep-alive                        |
-| `POST /test-purchases`    | Visitor test buy, as above                                                                                                        |
-| `GET /test-purchases/:id` | Queue position of a waiting visitor purchase, and whether it closed without a payment being sent                                  |
-| `POST /shop/notices`      | Receives the signed notice. Verifies the signature and timestamp, then marks the payment notified                                 |
-| `POST /stripe/webhooks`   | Receives Stripe events. Verifies the signature over the raw body, then moves the card payment the event names. See Card rail      |
+| Route                          | Purpose                                                                                                                           |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /payments?limit=&before=` | Recent payments with order or donor name, stage, confirmations, block, explorer URL, note kinds. `before` pages older ones        |
+| `GET /stats`                   | Today: settled count, average time to settle, duplicates skipped, failures recovered. In-memory cache with a short TTL            |
+| `GET /stats/daily`             | Per UTC day for the retained period: settled count, average time to settle, scheduled and visitor purchases. Cached like `/stats` |
+| `GET /incidents?limit=`        | Recent incidents                                                                                                                  |
+| `GET /health`                  | Head, cursor, lag, open gaps, queue depth, cooldown state, balances and low-balance flags, and the monitoring signals below       |
+| `GET /events`                  | Server-sent events relayed from Redis pub/sub: payments, order changes, the visitor queue and a keep-alive                        |
+| `POST /test-purchases`         | Visitor test buy, as above                                                                                                        |
+| `GET /test-purchases/:id`      | Queue position of a waiting visitor purchase, and whether it closed without a payment being sent                                  |
+| `POST /shop/notices`           | Receives the signed notice. Verifies the signature and timestamp, then marks the payment notified                                 |
+| `POST /stripe/webhooks`        | Receives Stripe events. Verifies the signature over the raw body, then moves the card payment the event names. See Card rail      |
 
 **Request limit:** one budget per client address across all routes, `API_REQUESTS_PER_MINUTE` (default 300) a minute, answered with `429`, `rate_limited` and `Retry-After`. `POST /shop/notices` and `POST /stripe/webhooks` are outside it; their signatures are their checks. The counted address is the same one the visitor limits and the stream cap use.
 
@@ -155,7 +155,9 @@ A stage never moves backwards: an event that would move a payment to an earlier 
 
 **Live streams:** `GET /events` allows `STREAMS_PER_IP` (default 5) open connections per client address and `STREAMS_TOTAL` (default 500) in all. A connection over either cap gets `429`, `rate_limited` and `Retry-After: 5`. A closed connection frees its slot. Payments arrive as unnamed events. Order changes arrive as named `order` events (`{id, closed}`), and the waiting visitor queue as `queue` events (`{waiting}`, the order ids oldest first), sent only when it changes. The stream sends a `: keep-alive` comment every 30 seconds, under the 100 seconds after which Cloudflare closes an idle connection, and a client that stops reading is dropped.
 
-**Payments cache:** `GET /payments` keeps its result per `limit` for 5 seconds, and concurrent requests share one database read.
+**Payments cache:** `GET /payments` keeps its first page per `limit` for 5 seconds, and concurrent requests share one database read. A payment event clears it.
+
+**Older payments:** `before` is an opaque cursor naming one payment's place in the feed order (newest send or receive time first, then id). `/payments?before=` returns the payments after it, so a page stays stable while new payments arrive. A malformed cursor answers `400` `bad_request`. Pages before a cursor are not cached.
 
 Every 4xx answers with a fixed body. Errors that reach the error filter get a fixed code for their status (for example `bad_request`, `not_found`, `rate_limited`), and routes send their own fixed codes (for example `busy`, `daily_limit`); bodies never echo messages. CORS is allowed only for the origins listed in `WEB_ORIGIN`. The client address is the socket address, or, with `CLIENT_IP_HEADER=cf-connecting-ip`, the address Cloudflare puts in `CF-Connecting-IP`, so per-visitor limits apply to visitors rather than to the tunnel. `X-Forwarded-For` is never read.
 
@@ -167,11 +169,11 @@ One React + Vite page with three parts:
 
 - The checkout shows "Queued · N ahead" while a visitor purchase waits, and each limit's message says which limit applies and when it lifts. It follows the visitor's order on the event stream, not by polling: it reads `GET /test-purchases/:id` once and again each time the stream opens, and takes the queue position and the closed state from the `queue` and `order` events. A payment that fails ends the terminal on "Failed" and reopens the buttons with a "did not go through" note. A card payment still `processing` two minutes after its `processingAt` stops holding the checkout: the buttons reopen with "Still processing at Stripe. It will appear in the feed when it settles.", and the payment stays in the feed. An order with no payment that is still open two minutes past the `expiresAt` from the accept response also stops holding it: the buttons reopen with "This order is past its expiry. If it was paid, the payment will appear in the feed."
 - **Small widget:** a dark card showing the latest payment as a receipt (item, price, order and block), a confirmation bar filling to the threshold, a PAID stamp when settled, a stage strip and a footer of counts. A chain payment's strip is Received, Confirming, Settled, Shop notified. A card payment's strip is Sent, Processing, Settled, Shop notified, and a failed payment's strip ends on a red Failed step in place of the stages it never reached. A card receipt shows the brand and last four digits in its badge and no confirmation bar. It runs without interaction. It can also be shown on its own at `/?view=widget`.
-- **Full panel:** header with a live indicator, test network label, one-line caption; a five-lane pipeline (Received, Confirming, Processing, Settled, Shop notified) with a separate line under it counting payments that did not go through, since a failed payment is in no lane; a receipts feed in which a receipt shows at most one note (a reorg, a payment that did not go through, a payment after its order expired, or a thank-you on a donation; the widget shows none; `/payments` sends each payment's note kinds, the distinct incident kinds that have a note, never incident text); stats tiles.
+- **Full panel:** header with a live indicator, test network label, one-line caption; a five-lane pipeline (Received, Confirming, Processing, Settled, Shop notified) with a separate line under it counting payments that did not go through, since a failed payment is in no lane; a receipts feed showing the latest 20 receipts, with a Show more button that adds the next 20, up to 200, by reading the whole window again in one `/payments` request, in which a receipt shows at most one note (a reorg, a payment that did not go through, a payment after its order expired, or a thank-you on a donation; the widget shows none; `/payments` sends each payment's note kinds, the distinct incident kinds that have a note, never incident text); stats tiles.
 
-Confirmation progress reads "N of `CONFIRMATIONS`" until the threshold, then "`CONFIRMATIONS`+ confirmations". The full panel adds a chart of settled payments per day and per week over the retained period, from `/stats/daily`, with scheduled and visitor purchases stacked and the average time to settle as a line.
+Confirmation progress reads "N of `CONFIRMATIONS`" until the threshold, then "`CONFIRMATIONS`+ confirmations". The full panel adds a chart of settled payments from `/stats/daily`, per day over the last 14 days and per week over the retained period, with scheduled and visitor purchases stacked. The average time to settle shows as a dot per day or week, joined by a line only across consecutive ones, so a gap in the data stays a gap. The chart fills its card at any width.
 
-Data comes from the REST routes on load and `/events` afterwards. Explorer links point to the configured block explorer.
+Data comes from the REST routes on load and `/events` afterwards. Payment events and `/payments` rows carry the payment's version; when the page holds two copies of a payment, it shows the one with the higher version, so a reorg that moves a payment back to `sent` shows as `sent`. Note kinds always come from the latest read. Explorer links point to the configured block explorer.
 
 Failures are quiet. Once the page has data, a failed refresh or health read keeps what is shown and tries again on the next 15-second cycle. The page shows the offline state only when it has no data. A closed or failed live stream is reopened after 30 seconds, and the open stream triggers a refresh.
 
@@ -183,7 +185,7 @@ Failures are quiet. Once the page has data, a failed refresh or health read keep
 - `customers`: id, name, chain address, Stripe customer id, Stripe payment method id, card brand, last four digits. One demo customer.
 - `stripe_events`: Stripe event id, type, received time. An event id is stored once.
 - `order_events`: order id, created time and published time; one row for each change to an order's status or send state, written in the same transaction and published after it commits.
-- `payments`: id, provider (chain, stripe), external key (unique per provider; the PaymentIntent id for Stripe), order id (null for a donation), sender address (chain payments) and donation flag, amount, stage, confirmations, block number and hash, transaction hash, log index, Stripe receipt URL, final flag, stage timestamps.
+- `payments`: id, provider (chain, stripe), external key (unique per provider; the PaymentIntent id for Stripe), order id (null for a donation), sender address (chain payments) and donation flag, amount, stage, confirmations, block number and hash, transaction hash, log index, Stripe receipt URL, final flag, stage timestamps, and a version that a database trigger raises by one on every update.
 - `ledger_entries`: id, payment id (unique), amount, created time.
 - `incidents`: id, kind, what happened, how it was handled, related payment or block range, time.
 - `cursors`: name, block number, block hash.

@@ -28,7 +28,7 @@ On the chain rail, only transfers from `BUYER_ADDRESS` are matched to orders. An
 
 Chain payments follow `sent → received → confirming → settled → notified` and gain a final flag when the chain finalizes their block. The ledger's unique payment key enforces one credit per payment.
 
-Card payments follow `sent → processing → settled → notified`, with no confirmation count, or end at the terminal `failed` stage. The buyer creates a Stripe PaymentIntent for the order and records the payment as `processing`. The API's `POST /stripe/webhooks` route is the only writer of card settlement: `payment_intent.succeeded` writes the ledger entry, the shop notice and the order's `paid` status, and sets the final flag at once. The notice then marks the payment `notified`, as on the chain rail. A stage never moves backwards, whatever order the events arrive in.
+Card payments follow `sent → processing → settled → notified`, with no confirmation count, or end at the terminal `failed` stage. The buyer creates a Stripe PaymentIntent for the order and records the payment as `processing`. The API's `POST /stripe/webhooks` route is the only writer of card settlement: `payment_intent.succeeded` writes the ledger entry, the shop notice and the order's `paid` status, and sets the final flag at once. The notice then marks the payment `notified`, as on the chain rail. A card payment's stage never moves backwards, whatever order the events arrive in.
 
 Webhook handling:
 
@@ -86,18 +86,18 @@ Each tracker pass re-reads the last `RESCAN_BLOCKS` blocks. A log re-read inside
 
 ## API routes
 
-| Route                     | Purpose                                                                                                                              |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `GET /payments?limit=`    | Recent payments with order, stage, confirmations, block, explorer URL and note kinds                                                 |
-| `GET /stats`              | Today only: settled count, average time to settle, duplicates skipped, failures recovered                                            |
-| `GET /stats/daily`        | Per UTC day for the retained period: settled count, average time to settle, scheduled and visitor purchases                          |
-| `GET /incidents?limit=`   | Recent incidents                                                                                                                     |
-| `GET /health`             | Head, cursor, lag, open gaps, queue depth, cooldown state, balances, low-balance flags, `cardAvailable` and the `monitoring` signals |
-| `GET /events`             | Server-sent events relayed from Redis pub/sub: payments, order changes, the visitor queue and a keep-alive                           |
-| `POST /test-purchases`    | Visitor test buy                                                                                                                     |
-| `GET /test-purchases/:id` | Queue position of a waiting visitor purchase, and whether it closed without a payment being sent                                     |
-| `POST /stripe/webhooks`   | Receives Stripe events, verifies their signature, then moves the card payment they name                                              |
-| `POST /shop/notices`      | Receives the signed notice, verifies its signature and timestamp, then marks the payment notified                                    |
+| Route                          | Purpose                                                                                                                              |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /payments?limit=&before=` | Recent payments with order, stage, confirmations, block, explorer URL and note kinds; `before` pages older ones                      |
+| `GET /stats`                   | Today only: settled count, average time to settle, duplicates skipped, failures recovered                                            |
+| `GET /stats/daily`             | Per UTC day for the retained period: settled count, average time to settle, scheduled and visitor purchases                          |
+| `GET /incidents?limit=`        | Recent incidents                                                                                                                     |
+| `GET /health`                  | Head, cursor, lag, open gaps, queue depth, cooldown state, balances, low-balance flags, `cardAvailable` and the `monitoring` signals |
+| `GET /events`                  | Server-sent events relayed from Redis pub/sub: payments, order changes, the visitor queue and a keep-alive                           |
+| `POST /test-purchases`         | Visitor test buy                                                                                                                     |
+| `GET /test-purchases/:id`      | Queue position of a waiting visitor purchase, and whether it closed without a payment being sent                                     |
+| `POST /stripe/webhooks`        | Receives Stripe events, verifies their signature, then moves the card payment they name                                              |
+| `POST /shop/notices`           | Receives the signed notice, verifies its signature and timestamp, then marks the payment notified                                    |
 
 Each 4xx answers with a fixed body. Errors that reach the error filter get a fixed code for their status, such as `bad_request` or `rate_limited`, and routes send their own fixed codes, such as `busy` or `daily_limit`; bodies never echo messages.
 
