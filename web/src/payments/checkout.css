@@ -18,12 +18,12 @@
   letter-spacing: -0.025em;
 }
 .tp-counter-label {
-  color: #9a3412;
+  color: var(--tp-orange-dark);
   font-weight: 600;
   letter-spacing: 0.1em;
 }
 .tp-disclosure {
-  color: #4a4a52;
+  color: var(--tp-slate);
   font-size: 13px;
   max-width: 45ch;
 }
@@ -32,7 +32,7 @@
   flex-direction: column;
   gap: var(--tp-space-4);
   padding-top: var(--tp-space-4);
-  border-top: 2px solid #c7bba6;
+  border-top: 2px solid var(--tp-sand);
   animation: tp-drawer-open 0.4s ease-out;
 }
 .tp-drawer > .tp-muted {
@@ -49,7 +49,7 @@
   text-align: center;
 }
 .tp .tp-rail-card:not(:disabled) {
-  background: #fffaf0;
+  background: var(--tp-ivory);
   color: var(--tp-ink);
 }
 .tp .tp-rail-card:not(:disabled):hover {
@@ -57,13 +57,13 @@
 }
 .tp-purchase-status {
   font-size: 14px;
-  color: #9a3412;
+  color: var(--tp-orange-dark);
 }
 .tp-purchase-status:empty {
   display: none;
 }
 .tp-item {
-  background: #fffaf0;
+  background: var(--tp-ivory);
   border: 1px solid var(--tp-line-strong);
   padding: var(--tp-space-4);
   border-radius: 12px;
@@ -154,8 +154,13 @@
   aspect-ratio: 1.586;
   border-radius: 10px;
   padding: var(--tp-space-3);
-  background: linear-gradient(135deg, #1e3a8a, #1d4ed8 60%, #3b82f6);
-  color: #fff;
+  background: linear-gradient(
+    135deg,
+    var(--tp-blue-dark),
+    var(--tp-blue) 60%,
+    #3b82f6
+  );
+  color: var(--tp-paper);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -195,7 +200,7 @@
 }
 .tp-tap-waves i {
   width: 6px;
-  border: 2px solid #c2410c;
+  border: 2px solid var(--tp-orange);
   border-left: 0;
   border-radius: 0 99px 99px 0;
   animation: tp-wave 1.2s ease-in-out infinite;
@@ -212,7 +217,7 @@
   animation-delay: 0.3s;
 }
 .tp-tap-done .tp-tap-waves i {
-  border-color: #15803d;
+  border-color: var(--tp-green);
   animation: none;
 }
 @keyframes tp-card-tap {
@@ -308,15 +313,15 @@
 }
 .tp-block-stack span {
   height: 24px;
-  border: 1px solid #c7bba6;
+  border: 1px solid var(--tp-sand);
   border-radius: 3px;
-  background: #e5e0d4;
+  background: var(--tp-sand-light);
   transition:
     background 0.3s ease,
     transform 0.3s ease;
 }
 .tp-block-stack .tp-block-confirmed {
-  background: #c2410c;
-  border-color: #c2410c;
+  background: var(--tp-orange);
+  border-color: var(--tp-orange);
   transform: translateY(-3px);
 }

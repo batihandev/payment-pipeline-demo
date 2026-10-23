@@ -29,11 +29,11 @@ body {
   letter-spacing: -0.02em;
 }
 .tp-header-copy > p {
-  color: #4a4a52;
+  color: var(--tp-slate);
   font-size: 17px;
 }
 .tp-online {
-  color: #146f36;
+  color: var(--tp-green-text);
 }
 .tp-counter-link {
   display: flex;
@@ -72,7 +72,7 @@ body {
   margin: var(--tp-space-2) 0;
 }
 .tp-eyebrow {
-  color: #9a3412;
+  color: var(--tp-orange-dark);
   font-weight: 600;
   letter-spacing: 0.08em;
 }
@@ -140,7 +140,7 @@ body {
   border: 1px solid var(--tp-line);
   border-radius: 16px;
   padding: var(--tp-space-4);
-  background: #fff;
+  background: var(--tp-paper);
   display: flex;
   flex-direction: column;
   gap: var(--tp-space-1);
@@ -159,7 +159,7 @@ body {
   font-size: 13px;
 }
 .tp-stats > div:first-child span {
-  color: #d4d4d8;
+  color: var(--tp-grey-light);
 }
 .tp-health {
   background: white;
@@ -244,10 +244,14 @@ body {
   color: var(--tp-ink);
 }
 .tp .tp-show-more:hover:not(:disabled) {
-  background: #fff;
+  background: var(--tp-paper);
 }
 .tp .tp-show-more:disabled {
   color: var(--tp-muted);
   border-color: var(--tp-line-strong);
   background: transparent;
+}
+.tp .tp-older-failed {
+  align-self: center;
+  margin: 0;
 }

@@ -1,5 +1,5 @@
 .tp-chart {
-  background: #fff;
+  background: var(--tp-paper);
   border: 1px solid var(--tp-line);
   border-radius: 16px;
   padding: var(--tp-space-5);
@@ -41,7 +41,7 @@
 }
 .tp-toggle button[aria-pressed='true'] {
   background: var(--tp-ink);
-  color: #fff;
+  color: var(--tp-paper);
 }
 .tp-chart-grid {
   stroke: var(--tp-line);
@@ -56,10 +56,10 @@
   fill: var(--tp-ink);
 }
 .tp-chart-scheduled {
-  fill: #1d4ed8;
+  fill: var(--tp-blue);
 }
 .tp-chart-visitor {
-  fill: #c2410c;
+  fill: var(--tp-orange);
 }
 .tp-chart-line {
   fill: none;
@@ -70,7 +70,7 @@
 }
 .tp-chart-dot {
   fill: var(--tp-ink);
-  stroke: #fff;
+  stroke: var(--tp-paper);
   stroke-width: 2;
 }
 .tp-chart-legend {
@@ -93,10 +93,10 @@
   background: currentColor;
 }
 .tp-chart-legend .tp-chart-key-scheduled::before {
-  background: #1d4ed8;
+  background: var(--tp-blue);
 }
 .tp-chart-legend .tp-chart-key-visitor::before {
-  background: #c2410c;
+  background: var(--tp-orange);
 }
 .tp-chart-legend .tp-chart-key-line::before {
   background: var(--tp-ink);
