@@ -12,6 +12,7 @@ import { RpcError } from '@app/chain/rpc-error';
 import { DAY_MS } from '@app/core/time';
 import { PrismaService, type PaymentRail, recordIncident } from '@app/db';
 import { publishPayment } from '@app/events/publish-payment';
+import { publicOrderSelect } from '@app/events/public-payment';
 import { OrderQueueService, PurchasesService } from '@app/orders';
 import { JOBS, QUEUES, type BuyerJobData } from '@app/queues';
 import { REDIS } from '@app/redis';
@@ -133,7 +134,10 @@ export class BuyerProcessor
   ): Promise<void> {
     if (rail === 'card') await this.cards.charge(orderId, exhausted);
     else await this.sender.sendForOrder(orderId, exhausted);
-    const payment = await this.db.payment.findFirst({ where: { orderId } });
+    const payment = await this.db.payment.findFirst({
+      where: { orderId },
+      include: { order: { select: publicOrderSelect } },
+    });
     if (!payment) return;
     try {
       await publishPayment(this.redis, payment);

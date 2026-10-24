@@ -10,7 +10,7 @@ import { Prisma, PrismaService } from '@app/db';
 import type { PaymentCursor } from '@app/core/payment-cursor';
 import { PAYMENT_LIST_STEP } from '@app/core/payment-list';
 import type { PaymentListItemRecord } from '@app/core/api';
-import { publicPayment } from '@app/events/public-payment';
+import { publicOrderSelect, publicPayment } from '@app/events/public-payment';
 import { isReceiptNoteKind, receiptNoteKinds } from '@app/core/receipt-notes';
 import type { ApiConfig } from '../common/api-config';
 import { InjectNow, type Now } from '../common/clock.module';
@@ -88,19 +88,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
           select: { kind: true },
           distinct: ['kind'],
         },
-        order: {
-          select: {
-            id: true,
-            item: true,
-            price: true,
-            expectedAmount: true,
-            status: true,
-            source: true,
-            createdAt: true,
-            expiresAt: true,
-            customer: { select: { cardBrand: true, cardLast4: true } },
-          },
-        },
+        order: { select: publicOrderSelect },
       },
     });
     return rows
