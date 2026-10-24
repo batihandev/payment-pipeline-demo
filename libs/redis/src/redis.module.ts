@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Redis } from 'ioredis';
-import { errorFields } from '../../logging/src';
+import { errorFields } from '@app/logging';
 
 const logger = new Logger('Redis');
 

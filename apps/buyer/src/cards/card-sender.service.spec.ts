@@ -1,15 +1,12 @@
 import { Redis } from 'ioredis';
-import { ScriptedChain } from '../../../../libs/chain/testing/scripted-chain';
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
-import { testRedisUrl } from '../../../../libs/config/testing/redis';
-import { fakeConfig } from '../../../../libs/config/testing/config';
-import { testDatabase } from '../../../../libs/db/testing/database';
-import { CustomersService } from '../../../../libs/orders/src';
-import { CardDeclinedError, applyIntent } from '../../../../libs/stripe/src';
-import {
-  FakeStripe,
-  paymentIntent,
-} from '../../../../libs/stripe/testing/fake-stripe';
+import { ScriptedChain } from '@testing/chain/scripted-chain';
+import { RpcError } from '@app/chain/rpc-error';
+import { testRedisUrl } from '@testing/config/redis';
+import { fakeConfig } from '@testing/config/config';
+import { testDatabase } from '@testing/db/database';
+import { CustomersService } from '@app/orders';
+import { CardDeclinedError, applyIntent } from '@app/stripe';
+import { FakeStripe, paymentIntent } from '@testing/stripe/fake-stripe';
 import { OrderSenderService } from '../sending/order-sender.service';
 import { RedisLock } from '../sending/redis-lock';
 import type { BuyerConfig } from '../buyer-config';

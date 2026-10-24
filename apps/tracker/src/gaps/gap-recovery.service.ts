@@ -1,5 +1,5 @@
 import { Injectable, Optional } from '@nestjs/common';
-import { PrismaService, recordIncident } from '../../../../libs/db/src';
+import { PrismaService, recordIncident } from '@app/db';
 import { ScannerService } from '../scanning/scanner.service';
 @Injectable()
 export class GapRecoveryService {

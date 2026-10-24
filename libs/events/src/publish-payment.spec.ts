@@ -1,7 +1,7 @@
 import { Redis } from 'ioredis';
-import { testDatabase } from '../../db/testing/database';
+import { testDatabase } from '@testing/db/database';
 import { paymentChannel, publishPayment } from './publish-payment';
-import { testRedisUrl } from '../../config/testing/redis';
+import { testRedisUrl } from '@testing/config/redis';
 
 it('publishes the complete saved payment with integer amounts encoded as decimal strings', async () => {
   const database = await testDatabase();

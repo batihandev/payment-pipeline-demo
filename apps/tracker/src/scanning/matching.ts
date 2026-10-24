@@ -1,8 +1,8 @@
-import { DAY_MS } from '../../../../libs/core/src/time';
-import { savePaymentEvent } from '../../../../libs/events/src/save-payment-event';
-import type { TransferLog } from '../../../../libs/chain/src/chain-client';
-import type { Prisma } from '../../../../libs/db/src';
-import { recordIncident } from '../../../../libs/db/src';
+import { DAY_MS } from '@app/core/time';
+import { savePaymentEvent } from '@app/events/save-payment-event';
+import type { TransferLog } from '@app/chain/chain-client';
+import type { Prisma } from '@app/db';
+import { recordIncident } from '@app/db';
 /** The unlogged `sent` row that a transfer's transaction hash and amount belong to. */
 function findDroppedPayment(
   tx: Prisma.TransactionClient,

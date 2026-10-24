@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
-import { OrdersModule } from '../../../../libs/orders/src';
-import { StripeModule } from '../../../../libs/stripe/src';
+import { OrdersModule } from '@app/orders';
+import { StripeModule } from '@app/stripe';
 import { CardReconcilerService } from './card-reconciler.service';
 import { CardSenderService } from './card-sender.service';
 

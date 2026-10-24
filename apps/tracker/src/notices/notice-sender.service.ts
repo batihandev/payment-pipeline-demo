@@ -1,9 +1,9 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService, recordIncident } from '../../../../libs/db/src';
+import { PrismaService, recordIncident } from '@app/db';
 import type { TrackerConfig } from '../tracker-config';
 import { noticeRetryOptions } from './notice-retry';
-import { signNotice } from '../../../../libs/core/src/notices';
+import { signNotice } from '@app/core/notices';
 @Injectable()
 export class NoticeSenderService {
   private readonly url: string;

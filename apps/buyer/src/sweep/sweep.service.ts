@@ -1,13 +1,10 @@
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
+import { RpcError } from '@app/chain/rpc-error';
 import { Inject, Injectable } from '@nestjs/common';
-import {
-  ChainClient,
-  type Address,
-} from '../../../../libs/chain/src/chain-client';
-import { PrismaService, recordIncident } from '../../../../libs/db/src';
+import { ChainClient, type Address } from '@app/chain/chain-client';
+import { PrismaService, recordIncident } from '@app/db';
 import { OrderSenderService } from '../sending/order-sender.service';
-import { SHOP_ADDRESS } from '../../../../libs/chain/src/wallet-addresses';
-import { utcDateKey } from '../../../../libs/core/src/time';
+import { SHOP_ADDRESS } from '@app/chain/wallet-addresses';
+import { utcDateKey } from '@app/core/time';
 
 @Injectable()
 export class SweepService {

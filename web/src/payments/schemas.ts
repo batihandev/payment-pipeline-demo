@@ -9,8 +9,8 @@ import {
   type OrderPosition,
   type PurchaseAccepted,
   type QueueEvent,
-} from '../../../libs/core/src/api';
-import { isReceiptNoteKind } from '../../../libs/core/src/receipt-notes';
+} from '@app/core/api';
+import { isReceiptNoteKind } from '@app/core/receipt-notes';
 import type { DailyStat, Health, Payment, Stats } from './types';
 
 /**

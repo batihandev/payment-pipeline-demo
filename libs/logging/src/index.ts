@@ -1,5 +1,5 @@
 import { ConsoleLogger } from '@nestjs/common';
-import { ConfigError } from '../../config/src';
+import { ConfigError } from '@app/config';
 
 const STACK_TRACE = /^Error\b[^\n]*\n|\n {4}at /;
 

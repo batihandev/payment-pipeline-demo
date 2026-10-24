@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { logStartupFailure } from '../../../libs/logging/src';
+import { logStartupFailure } from '@app/logging';
 import { createApp } from './bootstrap';
 import type { ApiConfig } from './common/api-config';
 

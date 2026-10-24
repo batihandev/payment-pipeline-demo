@@ -1,11 +1,11 @@
 import { Redis } from 'ioredis';
 import { generatePrivateKey } from 'viem/accounts';
-import { ScriptedChain } from '../../../../libs/chain/testing/scripted-chain';
-import { buyerSchema, validateConfig } from '../../../../libs/config/src';
-import { fakeConfig } from '../../../../libs/config/testing/config';
-import { testRedisUrl } from '../../../../libs/config/testing/redis';
-import { databasePool } from '../../../../libs/db/src';
-import { testDatabase } from '../../../../libs/db/testing/database';
+import { ScriptedChain } from '@testing/chain/scripted-chain';
+import { buyerSchema, validateConfig } from '@app/config';
+import { fakeConfig } from '@testing/config/config';
+import { testRedisUrl } from '@testing/config/redis';
+import { databasePool } from '@app/db';
+import { testDatabase } from '@testing/db/database';
 import type { BuyerConfig } from '../buyer-config';
 import { OrderSenderService } from './order-sender.service';
 import { RedisLock } from './redis-lock';

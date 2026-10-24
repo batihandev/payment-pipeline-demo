@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import type { Redis } from 'ioredis';
-import { errorFields } from '../../logging/src';
+import { errorFields } from '@app/logging';
 
 const logger = new Logger('EventSubscription');
 

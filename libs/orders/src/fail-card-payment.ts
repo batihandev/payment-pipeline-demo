@@ -1,8 +1,8 @@
 import type { Payment } from '../../db/generated/client';
-import type { Prisma } from '../../db/src';
-import { savePaymentEvent } from '../../events/src/save-payment-event';
+import type { Prisma } from '@app/db';
+import { savePaymentEvent } from '@app/events/save-payment-event';
 import { closeOrder } from './close-order';
-import { recordIncident } from '../../db/src';
+import { recordIncident } from '@app/db';
 
 /**
  * Moves a card payment to the terminal `failed` stage, closes its order unless it is closed

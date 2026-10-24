@@ -1,4 +1,4 @@
-import type { Prisma } from '../../db/src';
+import type { Prisma } from '@app/db';
 
 /** Row-locks an order until the transaction ends, so its writers take turns. */
 export async function lockOrder(

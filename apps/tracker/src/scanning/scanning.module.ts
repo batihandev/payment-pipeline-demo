@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { ChainModule } from '../../../../libs/chain/src/chain.module';
+import { ChainModule } from '@app/chain/chain.module';
 import { ProgressService } from './progress.service';
 import { ScannerService } from './scanner.service';
 

@@ -1,6 +1,6 @@
 import type { Order } from '../../db/generated/client';
-import type { Prisma } from '../../db/src';
-import type { OrderEvent } from '../../core/src/api';
+import type { Prisma } from '@app/db';
+import type { OrderEvent } from '@app/core/api';
 
 export const orderChannel = 'orders';
 

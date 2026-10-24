@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { StripeModule } from '../../../../libs/stripe/src';
+import { StripeModule } from '@app/stripe';
 import { StripeSignatureGuard } from './stripe-signature.guard';
 import { StripeWebhooksController } from './stripe-webhooks.controller';
 import { StripeWebhooksService } from './stripe-webhooks.service';

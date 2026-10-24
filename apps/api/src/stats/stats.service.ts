@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../../../../libs/db/src';
-import type { DailyStat, TodayStats } from '../../../../libs/core/src/api';
-import { DAY_MS, utcDateKey, utcDay } from '../../../../libs/core/src/time';
+import { PrismaService } from '@app/db';
+import type { DailyStat, TodayStats } from '@app/core/api';
+import { DAY_MS, utcDateKey, utcDay } from '@app/core/time';
 import type { ApiConfig } from '../common/api-config';
 import { InjectNow, type Now } from '../common/clock.module';
 import { ttlCache } from '../common/ttl-cache';

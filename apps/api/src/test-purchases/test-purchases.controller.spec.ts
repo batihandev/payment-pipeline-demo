@@ -4,20 +4,17 @@ import { Redis } from 'ioredis';
 import { Queue } from 'bullmq';
 import request from 'supertest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { ChainClient } from '../../../../libs/chain/src/chain-client';
-import { testDatabase } from '../../../../libs/db/testing/database';
-import { PrismaService } from '../../../../libs/db/src';
+import { ChainClient } from '@app/chain/chain-client';
+import { testDatabase } from '@testing/db/database';
+import { PrismaService } from '@app/db';
 import {
   OrderQueueService,
   CustomersService,
   PurchasesService,
-} from '../../../../libs/orders/src';
-import type { BuyerJobData } from '../../../../libs/queues/src';
-import { testRedisUrl } from '../../../../libs/config/testing/redis';
-import {
-  orderChannel,
-  serializeOrder,
-} from '../../../../libs/events/src/order-events';
+} from '@app/orders';
+import type { BuyerJobData } from '@app/queues';
+import { testRedisUrl } from '@testing/config/redis';
+import { orderChannel, serializeOrder } from '@app/events/order-events';
 import { createTestApp } from '../../testing/app';
 import { openEventStream } from '../../testing/event-stream';
 import { NOW } from '../common/clock.module';

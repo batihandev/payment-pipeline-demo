@@ -1,4 +1,4 @@
-import type { IncidentKind } from '../../core/src/incidents';
+import type { IncidentKind } from '@app/core/incidents';
 import type { Prisma } from '../generated/client';
 
 export type IncidentRecord = Omit<

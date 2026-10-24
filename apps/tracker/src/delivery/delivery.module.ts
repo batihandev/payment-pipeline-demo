@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BullModule, getQueueToken } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
-import { QUEUES, logQueueErrors } from '../../../../libs/queues/src';
+import { QUEUES, logQueueErrors } from '@app/queues';
 import { GapsModule } from '../gaps/gaps.module';
 import { DeliveryService } from './delivery.service';
 import { TrackerProcessor } from './tracker.processor';

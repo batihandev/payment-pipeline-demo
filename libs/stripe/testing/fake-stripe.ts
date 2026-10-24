@@ -1,5 +1,5 @@
 import type Stripe from 'stripe';
-import { RpcError } from '../../chain/src/rpc-error';
+import { RpcError } from '@app/chain/rpc-error';
 import type {
   CardPayment,
   CardPaymentInput,

@@ -1,10 +1,7 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
-import {
-  ChainClient,
-  type Address,
-} from '../../../../libs/chain/src/chain-client';
-import { PrismaService } from '../../../../libs/db/src';
-import { BUYER_ADDRESS } from '../../../../libs/chain/src/wallet-addresses';
+import { ChainClient, type Address } from '@app/chain/chain-client';
+import { PrismaService } from '@app/db';
+import { BUYER_ADDRESS } from '@app/chain/wallet-addresses';
 
 @Injectable()
 export class FundsService {

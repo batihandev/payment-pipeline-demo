@@ -5,10 +5,10 @@ import {
 } from '@nestjs/common';
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { UnrecoverableError, type Job } from 'bullmq';
-import { JOBS, QUEUES } from '../../../../libs/queues/src';
+import { JOBS, QUEUES } from '@app/queues';
 import { GapRecoveryService } from '../gaps/gap-recovery.service';
 import { DeliveryService } from './delivery.service';
-import { errorFields } from '../../../../libs/logging/src';
+import { errorFields } from '@app/logging';
 
 @Processor(QUEUES.tracker, { concurrency: 1, autorun: false })
 export class TrackerProcessor

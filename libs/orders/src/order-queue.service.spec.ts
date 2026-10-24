@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Queue, Worker, type Job } from 'bullmq';
-import { testDatabase } from '../../db/testing/database';
-import { testRedisUrl } from '../../config/testing/redis';
-import type { BuyerJobData } from '../../queues/src';
+import { testDatabase } from '@testing/db/database';
+import { testRedisUrl } from '@testing/config/redis';
+import type { BuyerJobData } from '@app/queues';
 import { OrderQueueService } from './order-queue.service';
 import { CustomersService } from './customers.service';
 import { PurchasesService } from './purchases.service';

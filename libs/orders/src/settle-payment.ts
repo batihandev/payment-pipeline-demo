@@ -1,7 +1,7 @@
 import type { Payment } from '../../db/generated/client';
-import type { Prisma } from '../../db/src';
-import { saveOrderEvents } from '../../events/src/order-events';
-import { savePaymentEvent } from '../../events/src/save-payment-event';
+import type { Prisma } from '@app/db';
+import { saveOrderEvents } from '@app/events/order-events';
+import { savePaymentEvent } from '@app/events/save-payment-event';
 
 /**
  * Credits a payment once: the ledger entry, the `settled` stage with its event, and for an

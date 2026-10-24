@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { PrismaService, PrismaClient } from '../../db/src';
+import { PrismaService, PrismaClient } from '@app/db';
 
 type Customer = Awaited<ReturnType<PrismaClient['customer']['findFirst']>>;
 

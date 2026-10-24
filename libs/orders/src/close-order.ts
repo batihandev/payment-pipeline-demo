@@ -1,5 +1,5 @@
-import { BudgetReservation, type Prisma } from '../../db/src';
-import { saveOrderEvents } from '../../events/src/order-events';
+import { BudgetReservation, type Prisma } from '@app/db';
+import { saveOrderEvents } from '@app/events/order-events';
 
 type ClosableOrder = {
   id: string;

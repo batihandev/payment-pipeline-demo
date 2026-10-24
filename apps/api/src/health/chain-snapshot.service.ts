@@ -1,10 +1,7 @@
-import type {
-  Address,
-  ChainClient,
-} from '../../../../libs/chain/src/chain-client';
+import type { Address, ChainClient } from '@app/chain/chain-client';
 import { Logger } from '@nestjs/common';
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
-import { errorFields } from '../../../../libs/logging/src';
+import { RpcError } from '@app/chain/rpc-error';
+import { errorFields } from '@app/logging';
 
 const logger = new Logger('ChainSnapshotService');
 

@@ -1,13 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
-import { PrismaService } from '../../db/src';
-import {
-  JOBS,
-  QUEUES,
-  retryOptions,
-  type BuyerJobData,
-} from '../../queues/src';
+import { PrismaService } from '@app/db';
+import { JOBS, QUEUES, retryOptions, type BuyerJobData } from '@app/queues';
 
 @Injectable()
 export class OrderQueueService {

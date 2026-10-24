@@ -1,16 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { Queue, Worker, type Job } from 'bullmq';
-import { testDatabase } from '../../../../libs/db/testing/database';
-import {
-  CustomersService,
-  PurchasesService,
-} from '../../../../libs/orders/src';
-import type { BuyerJobData } from '../../../../libs/queues/src';
+import { testDatabase } from '@testing/db/database';
+import { CustomersService, PurchasesService } from '@app/orders';
+import type { BuyerJobData } from '@app/queues';
 import { ExpiryService } from '../expiry/expiry.service';
 import { holdWhenFull, holdWhenShort } from './holds';
 import { OrderSenderService } from '../sending/order-sender.service';
-import { testRedisUrl } from '../../../../libs/config/testing/redis';
-import { fakeConfig } from '../../../../libs/config/testing/config';
+import { testRedisUrl } from '@testing/config/redis';
+import { fakeConfig } from '@testing/config/config';
 import type { BuyerConfig } from '../buyer-config';
 
 let database: Awaited<ReturnType<typeof testDatabase>>;

@@ -5,14 +5,14 @@ import {
 } from '@nestjs/common';
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { UnrecoverableError, type Job } from 'bullmq';
-import { JOBS, QUEUES, type BuyerJobData } from '../../../../libs/queues/src';
+import { JOBS, QUEUES, type BuyerJobData } from '@app/queues';
 import { CardReconcilerService } from '../cards/card-reconciler.service';
 import { ExpiryService } from '../expiry/expiry.service';
 import { RefillService } from '../refill/refill.service';
 import { OrderSenderService } from '../sending/order-sender.service';
 import { SweepService } from '../sweep/sweep.service';
 import { mapJobError } from './job-errors';
-import { errorFields } from '../../../../libs/logging/src';
+import { errorFields } from '@app/logging';
 
 @Processor(QUEUES.buyerUpkeep, { concurrency: 1, autorun: false })
 export class UpkeepProcessor

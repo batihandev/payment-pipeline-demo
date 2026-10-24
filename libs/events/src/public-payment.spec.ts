@@ -1,6 +1,6 @@
 import type { Payment } from '../../db/generated/client';
-import { donorName } from '../../core/src/donor-name';
-import { bigintReplacer } from '../../core/src/json';
+import { donorName } from '@app/core/donor-name';
+import { bigintReplacer } from '@app/core/json';
 import { publicPayment } from './public-payment';
 import { serializePayment } from './publish-payment';
 

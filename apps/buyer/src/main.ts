@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { buyerSchema, validateConfig } from '../../../libs/config/src';
-import { appLogger, logStartupFailure } from '../../../libs/logging/src';
+import { buyerSchema, validateConfig } from '@app/config';
+import { appLogger, logStartupFailure } from '@app/logging';
 import { AppModule } from './app.module';
 
 async function bootstrap(): Promise<void> {

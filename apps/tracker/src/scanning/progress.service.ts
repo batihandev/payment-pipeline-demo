@@ -1,9 +1,9 @@
 import { handlePaymentReorg } from './payment-reorg';
-import { settlePayment } from '../../../../libs/orders/src/settle-payment';
-import { savePaymentEvent } from '../../../../libs/events/src/save-payment-event';
-import type { Hex } from '../../../../libs/chain/src/chain-client';
+import { settlePayment } from '@app/orders/settle-payment';
+import { savePaymentEvent } from '@app/events/save-payment-event';
+import type { Hex } from '@app/chain/chain-client';
 import { Injectable, Optional } from '@nestjs/common';
-import { PrismaService } from '../../../../libs/db/src';
+import { PrismaService } from '@app/db';
 import { ScannerService } from './scanner.service';
 @Injectable()
 export class ProgressService {

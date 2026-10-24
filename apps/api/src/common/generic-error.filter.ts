@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { HttpAdapterHost } from '@nestjs/core';
 import type { Request } from 'express';
-import { errorFields } from '../../../../libs/logging/src';
+import { errorFields } from '@app/logging';
 import { ApiError } from './api-error';
 
 const clientErrorCodes: Record<number, string> = {

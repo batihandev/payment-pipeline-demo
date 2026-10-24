@@ -3,8 +3,8 @@ import type {
   PublicCard,
   PublicOrderRecord,
   PublicPaymentRecord,
-} from '../../core/src/api';
-import { donorName } from '../../core/src/donor-name';
+} from '@app/core/api';
+import { donorName } from '@app/core/donor-name';
 
 /** The order fields a payment read selects, with the customer when it was included. */
 export type OrderRow = Omit<PublicOrderRecord, 'customer'> & {

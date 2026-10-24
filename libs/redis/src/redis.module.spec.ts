@@ -3,7 +3,7 @@ import { once } from 'node:events';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import type { Redis } from 'ioredis';
-import { testRedisUrl } from '../../config/testing/redis';
+import { testRedisUrl } from '@testing/config/redis';
 import { REDIS, RedisModule } from './redis.module';
 
 it('quits Redis on shutdown', async () => {

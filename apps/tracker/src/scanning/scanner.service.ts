@@ -1,19 +1,12 @@
 import { handlePaymentReorg } from './payment-reorg';
-import { savePaymentEvent } from '../../../../libs/events/src/save-payment-event';
+import { savePaymentEvent } from '@app/events/save-payment-event';
 import { receiveTransfer } from './matching';
 import { setTimeout } from 'node:timers/promises';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  ChainClient,
-  type TransferLog,
-} from '../../../../libs/chain/src/chain-client';
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
-import {
-  PrismaService,
-  type Prisma,
-  recordIncident,
-} from '../../../../libs/db/src';
+import { ChainClient, type TransferLog } from '@app/chain/chain-client';
+import { RpcError } from '@app/chain/rpc-error';
+import { PrismaService, type Prisma, recordIncident } from '@app/db';
 import type { TrackerConfig } from '../tracker-config';
 export type TrackerOptions = {
   startBlock?: bigint;

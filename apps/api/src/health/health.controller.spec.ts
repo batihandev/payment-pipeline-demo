@@ -3,12 +3,9 @@ import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { Queue } from 'bullmq';
 import request from 'supertest';
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
-import {
-  cooldownKey,
-  serviceLimiter,
-} from '../../../../libs/chain/src/service-limiter';
-import { testRedisUrl } from '../../../../libs/config/testing/redis';
+import { RpcError } from '@app/chain/rpc-error';
+import { cooldownKey, serviceLimiter } from '@app/chain/service-limiter';
+import { testRedisUrl } from '@testing/config/redis';
 import { payment as createPayment, useReadApi } from '../../testing/read-api';
 import { ChainSnapshotService } from './chain-snapshot.service';
 

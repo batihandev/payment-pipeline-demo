@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
 import { BullModule, getQueueToken } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../../db/src';
+import { PrismaService } from '@app/db';
 import type { Queue } from 'bullmq';
-import { QUEUES, QUEUE_ERROR_MESSAGE, logQueueErrors } from '../../queues/src';
+import { QUEUES, QUEUE_ERROR_MESSAGE, logQueueErrors } from '@app/queues';
 import { CustomersService } from './customers.service';
 import { OrderQueueService } from './order-queue.service';
 import { PurchasesService, purchaseOptions } from './purchases.service';

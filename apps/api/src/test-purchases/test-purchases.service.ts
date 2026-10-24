@@ -8,19 +8,13 @@ import {
 } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import type { Subscription } from 'rxjs';
-import { PrismaService, type PaymentRail } from '../../../../libs/db/src';
-import { errorFields } from '../../../../libs/logging/src';
-import {
-  OrderQueueService,
-  PurchasesService,
-} from '../../../../libs/orders/src';
-import { orderClosed } from '../../../../libs/events/src/order-events';
-import type {
-  OrderPosition,
-  PurchaseAccepted,
-} from '../../../../libs/core/src/api';
-import { utcDateKey } from '../../../../libs/core/src/time';
-import { InjectRedis } from '../../../../libs/redis/src';
+import { PrismaService, type PaymentRail } from '@app/db';
+import { errorFields } from '@app/logging';
+import { OrderQueueService, PurchasesService } from '@app/orders';
+import { orderClosed } from '@app/events/order-events';
+import type { OrderPosition, PurchaseAccepted } from '@app/core/api';
+import { utcDateKey } from '@app/core/time';
+import { InjectRedis } from '@app/redis';
 import { ApiError } from '../common/api-error';
 import { InjectNow, type Now } from '../common/clock.module';
 import { EventsService } from '../events/events.service';

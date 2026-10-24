@@ -1,5 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
-import type { HealthRecord } from '../../../../libs/core/src/api';
+import type { HealthRecord } from '@app/core/api';
 import { HealthService } from './health.service';
 
 @Controller('health')

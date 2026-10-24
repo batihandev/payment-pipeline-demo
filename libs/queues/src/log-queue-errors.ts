@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import type { Queue } from 'bullmq';
-import { errorFields } from '../../logging/src';
+import { errorFields } from '@app/logging';
 
 const logger = new Logger('Queue');
 

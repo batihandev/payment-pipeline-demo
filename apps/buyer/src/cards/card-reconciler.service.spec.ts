@@ -1,19 +1,13 @@
 import { Redis } from 'ioredis';
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
-import { cooldownKey } from '../../../../libs/chain/src/service-limiter';
-import { testRedisUrl } from '../../../../libs/config/testing/redis';
-import type { SendState } from '../../../../libs/db/src';
-import { testDatabase } from '../../../../libs/db/testing/database';
-import {
-  FakeStripe,
-  paymentIntent,
-} from '../../../../libs/stripe/testing/fake-stripe';
-import { RpcLimiter } from '../../../../libs/chain/src/rpc-limiter';
-import {
-  SdkStripeClient,
-  StripeAccessError,
-} from '../../../../libs/stripe/src/stripe-client';
-import { applyIntent } from '../../../../libs/stripe/src';
+import { RpcError } from '@app/chain/rpc-error';
+import { cooldownKey } from '@app/chain/service-limiter';
+import { testRedisUrl } from '@testing/config/redis';
+import type { SendState } from '@app/db';
+import { testDatabase } from '@testing/db/database';
+import { FakeStripe, paymentIntent } from '@testing/stripe/fake-stripe';
+import { RpcLimiter } from '@app/chain/rpc-limiter';
+import { SdkStripeClient, StripeAccessError } from '@app/stripe/stripe-client';
+import { applyIntent } from '@app/stripe';
 import { CardReconcilerService } from './card-reconciler.service';
 
 const now = new Date('2026-10-23T12:00:00Z');

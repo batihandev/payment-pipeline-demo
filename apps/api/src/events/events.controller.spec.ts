@@ -4,7 +4,7 @@ import { Logger, type MessageEvent } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
 import { EMPTY, Subject } from 'rxjs';
-import { testDatabase } from '../../../../libs/db/testing/database';
+import { testDatabase } from '@testing/db/database';
 import { createTestApp } from '../../testing/app';
 import { openEventStream } from '../../testing/event-stream';
 import { EventsController } from './events.controller';

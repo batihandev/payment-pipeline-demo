@@ -1,11 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type Stripe from 'stripe';
-import {
-  PrismaService,
-  type Prisma,
-  recordIncident,
-} from '../../../../libs/db/src';
-import { applyIntent } from '../../../../libs/stripe/src';
+import { PrismaService, type Prisma, recordIncident } from '@app/db';
+import { applyIntent } from '@app/stripe';
 import { InjectNow, type Now } from '../common/clock.module';
 
 const INTENT_EVENTS = [

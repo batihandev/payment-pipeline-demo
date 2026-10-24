@@ -1,6 +1,6 @@
 import Stripe from 'stripe';
-import { RpcError } from '../../chain/src/rpc-error';
-import { RpcLimiter } from '../../chain/src/rpc-limiter';
+import { RpcError } from '@app/chain/rpc-error';
+import { RpcLimiter } from '@app/chain/rpc-limiter';
 import {
   CardDeclinedError,
   SdkStripeClient,

@@ -5,9 +5,9 @@ import {
 } from '@nestjs/common';
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import type { Job } from 'bullmq';
-import { QUEUES } from '../../../../libs/queues/src';
+import { QUEUES } from '@app/queues';
 import { NoticeSenderService } from './notice-sender.service';
-import { errorFields } from '../../../../libs/logging/src';
+import { errorFields } from '@app/logging';
 
 @Processor(QUEUES.shopNotices, { concurrency: 1, autorun: false })
 export class ShopNoticesProcessor

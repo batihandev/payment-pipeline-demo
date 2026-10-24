@@ -1,9 +1,9 @@
 import { Module, type DynamicModule, type Provider } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Redis } from 'ioredis';
-import type { apiSchema, buyerSchema, trackerSchema } from '../../config/src';
+import type { apiSchema, buyerSchema, trackerSchema } from '@app/config';
 import type { z } from 'zod';
-import { REDIS } from '../../redis/src';
+import { REDIS } from '@app/redis';
 import { ChainClient, TransferSigner, type Address } from './chain-client';
 import { BUYER_ADDRESS, SHOP_ADDRESS, walletAddress } from './wallet-addresses';
 import { serviceLimiter } from './service-limiter';

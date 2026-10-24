@@ -4,7 +4,7 @@ import { Controller, Get, HttpException, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import request from 'supertest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { appLogger } from '../../../../libs/logging/src';
+import { appLogger } from '@app/logging';
 import { createTestApp } from '../../testing/app';
 import { ApiError } from './api-error';
 

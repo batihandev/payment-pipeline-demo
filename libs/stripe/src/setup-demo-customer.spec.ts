@@ -1,5 +1,5 @@
 import type Stripe from 'stripe';
-import { testDatabase } from '../../db/testing/database';
+import { testDatabase } from '@testing/db/database';
 import { setupDemoCustomer } from './setup-demo-customer';
 
 const config = {

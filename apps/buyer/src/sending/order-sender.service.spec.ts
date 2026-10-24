@@ -1,12 +1,12 @@
-import { ScriptedChain } from '../../../../libs/chain/testing/scripted-chain';
+import { ScriptedChain } from '@testing/chain/scripted-chain';
 import { Redis } from 'ioredis';
 import { keccak256, type Hex } from 'viem';
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
-import { testDatabase } from '../../../../libs/db/testing/database';
+import { RpcError } from '@app/chain/rpc-error';
+import { testDatabase } from '@testing/db/database';
 import { OrderSenderService } from './order-sender.service';
 import { RedisLock } from './redis-lock';
-import { testRedisUrl } from '../../../../libs/config/testing/redis';
-import { fakeConfig } from '../../../../libs/config/testing/config';
+import { testRedisUrl } from '@testing/config/redis';
+import { fakeConfig } from '@testing/config/config';
 import type { BuyerConfig } from '../buyer-config';
 
 const buyer = `0x${'11'.repeat(20)}` as const;

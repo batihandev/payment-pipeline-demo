@@ -1,4 +1,4 @@
-import type { PaymentStage } from '../../db/src';
+import type { PaymentStage } from '@app/db';
 
 /** Stages a card payment can leave for `processing`. */
 export const BEFORE_PROCESSING: readonly PaymentStage[] = [

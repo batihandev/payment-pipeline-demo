@@ -1,6 +1,6 @@
 import Stripe from 'stripe';
-import { RpcError } from '../../chain/src/rpc-error';
-import type { RpcLimiter } from '../../chain/src/rpc-limiter';
+import { RpcError } from '@app/chain/rpc-error';
+import type { RpcLimiter } from '@app/chain/rpc-limiter';
 
 export type CardPayment = {
   id: string;

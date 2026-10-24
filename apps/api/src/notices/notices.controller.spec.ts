@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { testDatabase } from '../../../../libs/db/testing/database';
-import { signNotice } from '../../../../libs/core/src/notices';
-import { PrismaService } from '../../../../libs/db/src';
+import { testDatabase } from '@testing/db/database';
+import { signNotice } from '@app/core/notices';
+import { PrismaService } from '@app/db';
 import { createTestApp } from '../../testing/app';
 import { NOW } from '../common/clock.module';
 

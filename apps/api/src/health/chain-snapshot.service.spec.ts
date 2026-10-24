@@ -1,5 +1,5 @@
 import { ChainSnapshotService } from './chain-snapshot.service';
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
+import { RpcError } from '@app/chain/rpc-error';
 
 const buyer = `0x${'11'.repeat(20)}` as const;
 const shop = `0x${'22'.repeat(20)}` as const;

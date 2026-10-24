@@ -1,4 +1,4 @@
-import { utcDateKey } from '../../core/src/time';
+import { utcDateKey } from '@app/core/time';
 import type { Prisma } from '../generated/client';
 
 export class BudgetReservation {

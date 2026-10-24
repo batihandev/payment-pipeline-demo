@@ -2,14 +2,11 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import Stripe from 'stripe';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { testDatabase } from '../../../../libs/db/testing/database';
-import { PrismaService } from '../../../../libs/db/src';
-import { utcDay } from '../../../../libs/core/src/time';
-import { CustomersService } from '../../../../libs/orders/src';
-import {
-  CardDeclinedError,
-  type StripeClient,
-} from '../../../../libs/stripe/src';
+import { testDatabase } from '@testing/db/database';
+import { PrismaService } from '@app/db';
+import { utcDay } from '@app/core/time';
+import { CustomersService } from '@app/orders';
+import { CardDeclinedError, type StripeClient } from '@app/stripe';
 import { CardSenderService } from '../../../buyer/src/cards/card-sender.service';
 import { createTestApp } from '../../testing/app';
 

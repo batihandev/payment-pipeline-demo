@@ -1,9 +1,6 @@
-import {
-  PAYMENT_LIST_MAX,
-  PAYMENT_LIST_STEP,
-} from '../../../libs/core/src/payment-list';
+import { PAYMENT_LIST_MAX, PAYMENT_LIST_STEP } from '@app/core/payment-list';
 import type { z } from 'zod/mini';
-import type { OrderEvent, QueueEvent } from '../../../libs/core/src/api';
+import type { OrderEvent, QueueEvent } from '@app/core/api';
 import {
   dailyStats,
   health,

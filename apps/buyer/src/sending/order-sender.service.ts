@@ -6,23 +6,20 @@ import {
   TransferSigner,
   type Address,
   type Hex,
-} from '../../../../libs/chain/src/chain-client';
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
+} from '@app/chain/chain-client';
+import { RpcError } from '@app/chain/rpc-error';
 import {
   BudgetReservation,
   PrismaService,
   type Prisma,
   recordIncident,
-} from '../../../../libs/db/src';
-import { saveOrderEvents } from '../../../../libs/events/src/order-events';
-import { closeOrder } from '../../../../libs/orders/src/close-order';
+} from '@app/db';
+import { saveOrderEvents } from '@app/events/order-events';
+import { closeOrder } from '@app/orders/close-order';
 import type { BuyerConfig } from '../buyer-config';
 import { RedisLock } from './redis-lock';
-import {
-  BUYER_ADDRESS,
-  SHOP_ADDRESS,
-} from '../../../../libs/chain/src/wallet-addresses';
-import type { IncidentKind } from '../../../../libs/core/src/incidents';
+import { BUYER_ADDRESS, SHOP_ADDRESS } from '@app/chain/wallet-addresses';
+import type { IncidentKind } from '@app/core/incidents';
 
 class NonceResynced extends RpcError {
   constructor() {

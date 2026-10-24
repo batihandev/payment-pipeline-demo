@@ -1,8 +1,5 @@
 import { Injectable, Optional } from '@nestjs/common';
-import {
-  OrderQueueService,
-  PurchasesService,
-} from '../../../../libs/orders/src';
+import { OrderQueueService, PurchasesService } from '@app/orders';
 
 @Injectable()
 export class PaceService {

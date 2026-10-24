@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { OrderUpdate, PaymentsClient } from './client';
-import type { OrderPosition } from '../../../libs/core/src/api';
+import type { OrderPosition } from '@app/core/api';
 import { orderPosition } from './schemas';
 import { paymentsClient } from './use-payments';
 

@@ -1,4 +1,4 @@
-import type { ReceiptNoteKind } from '../../../libs/core/src/receipt-notes';
+import type { ReceiptNoteKind } from '@app/core/receipt-notes';
 import type { Payment } from './types';
 
 const failureKinds: ReceiptNoteKind[] = [

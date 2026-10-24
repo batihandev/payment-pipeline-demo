@@ -1,7 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { REDIS } from '../../redis/src';
+import { REDIS } from '@app/redis';
 import { ChainClient, TransferSigner } from './chain-client';
 import { ChainModule } from './chain.module';
 import { privateKeyToAccount } from 'viem/accounts';

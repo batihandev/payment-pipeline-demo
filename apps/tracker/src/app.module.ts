@@ -1,15 +1,15 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 import { BullModule, getQueueToken } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
-import { appConfig } from '../../../libs/config/src/config.module';
-import { DatabaseModule } from '../../../libs/db/src';
+import { appConfig } from '@app/config/config.module';
+import { DatabaseModule } from '@app/db';
 import {
   QUEUES,
   QUEUE_ERROR_MESSAGE,
   QueueErrorsModule,
   logQueueErrors,
-} from '../../../libs/queues/src';
-import { RedisModule } from '../../../libs/redis/src';
+} from '@app/queues';
+import { RedisModule } from '@app/redis';
 import { DeliveryModule } from './delivery/delivery.module';
 import { NoticesModule } from './notices/notices.module';
 import { PollingModule } from './polling/polling.module';

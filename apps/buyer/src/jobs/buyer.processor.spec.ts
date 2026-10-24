@@ -1,6 +1,6 @@
 import type { ConfigService } from '@nestjs/config';
 import type { Job } from 'bullmq';
-import { JOBS, type BuyerJobData } from '../../../../libs/queues/src';
+import { JOBS, type BuyerJobData } from '@app/queues';
 import type { BuyerConfig } from '../buyer-config';
 import { BuyerProcessor } from './buyer.processor';
 

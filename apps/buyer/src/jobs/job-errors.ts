@@ -1,5 +1,5 @@
 import { UnrecoverableError } from 'bullmq';
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
+import { RpcError } from '@app/chain/rpc-error';
 
 /** Turns a failed job's error into what BullMQ should do: stop retrying, or retry. */
 export function mapJobError(error: unknown): never {

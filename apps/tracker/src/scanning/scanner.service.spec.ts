@@ -1,4 +1,4 @@
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
+import { RpcError } from '@app/chain/rpc-error';
 import {
   fixture,
   clear,

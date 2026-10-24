@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { OrdersModule } from '../../../../libs/orders/src';
+import { OrdersModule } from '@app/orders';
 import type { ApiConfig } from '../common/api-config';
 import { EventsModule } from '../events/events.module';
 import { HealthModule } from '../health/health.module';

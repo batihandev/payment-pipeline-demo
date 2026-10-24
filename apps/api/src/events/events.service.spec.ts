@@ -6,13 +6,10 @@ import {
   paymentChannel,
   publishPayment,
   serializePayment,
-} from '../../../../libs/events/src/publish-payment';
-import {
-  orderChannel,
-  serializeOrder,
-} from '../../../../libs/events/src/order-events';
-import { testDatabase } from '../../../../libs/db/testing/database';
-import { testRedisUrl } from '../../../../libs/config/testing/redis';
+} from '@app/events/publish-payment';
+import { orderChannel, serializeOrder } from '@app/events/order-events';
+import { testDatabase } from '@testing/db/database';
+import { testRedisUrl } from '@testing/config/redis';
 import { createTestApp } from '../../testing/app';
 import { openEventStream } from '../../testing/event-stream';
 

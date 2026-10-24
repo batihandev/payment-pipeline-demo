@@ -1,7 +1,7 @@
 import { expect } from '@jest/globals';
 import { Injectable, Module, type OnModuleDestroy } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { ConfigError } from '../../config/src';
+import { ConfigError } from '@app/config';
 import { appLogger, errorFields, logStartupFailure } from './index';
 
 it('keeps only the name and code of an error, and only when they look like identifiers', () => {

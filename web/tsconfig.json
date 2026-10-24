@@ -12,7 +12,11 @@
     "isolatedModules": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "paths": {
+      "@app/core": ["../libs/core/src"],
+      "@app/core/*": ["../libs/core/src/*"]
+    }
   },
   "include": ["src", "vite.config.ts"]
 }

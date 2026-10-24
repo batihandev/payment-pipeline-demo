@@ -1,5 +1,5 @@
 import { Redis } from 'ioredis';
-import { testRedisUrl } from '../../../../libs/config/testing/redis';
+import { testRedisUrl } from '@testing/config/redis';
 import { ChainSnapshotService } from '../health/chain-snapshot.service';
 import { recordGasPause } from './visitor-limits';
 

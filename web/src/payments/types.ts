@@ -3,7 +3,7 @@ import type {
   Health,
   PaymentListItem,
   TodayStats,
-} from '../../../libs/core/src/api';
+} from '@app/core/api';
 
 export type { DailyStat, Health };
 export type Stats = TodayStats;

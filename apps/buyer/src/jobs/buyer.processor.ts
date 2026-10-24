@@ -8,20 +8,13 @@ import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { UnrecoverableError, type Job } from 'bullmq';
 import type { Redis } from 'ioredis';
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
-import { DAY_MS } from '../../../../libs/core/src/time';
-import {
-  PrismaService,
-  type PaymentRail,
-  recordIncident,
-} from '../../../../libs/db/src';
-import { publishPayment } from '../../../../libs/events/src/publish-payment';
-import {
-  OrderQueueService,
-  PurchasesService,
-} from '../../../../libs/orders/src';
-import { JOBS, QUEUES, type BuyerJobData } from '../../../../libs/queues/src';
-import { REDIS } from '../../../../libs/redis/src';
+import { RpcError } from '@app/chain/rpc-error';
+import { DAY_MS } from '@app/core/time';
+import { PrismaService, type PaymentRail, recordIncident } from '@app/db';
+import { publishPayment } from '@app/events/publish-payment';
+import { OrderQueueService, PurchasesService } from '@app/orders';
+import { JOBS, QUEUES, type BuyerJobData } from '@app/queues';
+import { REDIS } from '@app/redis';
 import type { BuyerConfig } from '../buyer-config';
 import { CardSenderService } from '../cards/card-sender.service';
 import { RetentionService } from '../retention/retention.service';
@@ -30,7 +23,7 @@ import { OrderSenderService } from '../sending/order-sender.service';
 import { holdWhenFull, holdWhenShort } from './holds';
 import { mapJobError } from './job-errors';
 import { PaceService } from './pace.service';
-import { errorFields } from '../../../../libs/logging/src';
+import { errorFields } from '@app/logging';
 
 @Processor(QUEUES.buyer, { concurrency: 1, autorun: false })
 export class BuyerProcessor

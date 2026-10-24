@@ -6,15 +6,12 @@ import {
 import { ConfigService } from '@nestjs/config';
 import type { Subscription } from 'rxjs';
 import { EventsService } from '../events/events.service';
-import { Prisma, PrismaService } from '../../../../libs/db/src';
-import type { PaymentCursor } from '../../../../libs/core/src/payment-cursor';
-import { PAYMENT_LIST_STEP } from '../../../../libs/core/src/payment-list';
-import type { PaymentListItemRecord } from '../../../../libs/core/src/api';
-import { publicPayment } from '../../../../libs/events/src/public-payment';
-import {
-  isReceiptNoteKind,
-  receiptNoteKinds,
-} from '../../../../libs/core/src/receipt-notes';
+import { Prisma, PrismaService } from '@app/db';
+import type { PaymentCursor } from '@app/core/payment-cursor';
+import { PAYMENT_LIST_STEP } from '@app/core/payment-list';
+import type { PaymentListItemRecord } from '@app/core/api';
+import { publicPayment } from '@app/events/public-payment';
+import { isReceiptNoteKind, receiptNoteKinds } from '@app/core/receipt-notes';
 import type { ApiConfig } from '../common/api-config';
 import { InjectNow, type Now } from '../common/clock.module';
 import { ttlCache } from '../common/ttl-cache';

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Optional } from '@nestjs/common';
 import type { Redis } from 'ioredis';
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
-import { InjectRedis } from '../../../../libs/redis/src';
+import { RpcError } from '@app/chain/rpc-error';
+import { InjectRedis } from '@app/redis';
 
 @Injectable()
 export class RedisLock {

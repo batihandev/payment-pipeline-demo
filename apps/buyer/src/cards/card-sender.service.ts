@@ -1,20 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
-import { PrismaService, recordIncident } from '../../../../libs/db/src';
-import {
-  BEFORE_PROCESSING,
-  BEFORE_SETTLED,
-} from '../../../../libs/orders/src/card-stages';
-import { saveOrderEvents } from '../../../../libs/events/src/order-events';
-import { closeOrder } from '../../../../libs/orders/src/close-order';
-import { failCardPayment } from '../../../../libs/orders/src/fail-card-payment';
-import { lockOrder } from '../../../../libs/orders/src/lock-order';
-import { CustomersService, hasSavedCard } from '../../../../libs/orders/src';
-import {
-  CardDeclinedError,
-  StripeClient,
-  type CardPayment,
-} from '../../../../libs/stripe/src';
+import { RpcError } from '@app/chain/rpc-error';
+import { PrismaService, recordIncident } from '@app/db';
+import { BEFORE_PROCESSING, BEFORE_SETTLED } from '@app/orders/card-stages';
+import { saveOrderEvents } from '@app/events/order-events';
+import { closeOrder } from '@app/orders/close-order';
+import { failCardPayment } from '@app/orders/fail-card-payment';
+import { lockOrder } from '@app/orders/lock-order';
+import { CustomersService, hasSavedCard } from '@app/orders';
+import { CardDeclinedError, StripeClient, type CardPayment } from '@app/stripe';
 
 const CENTS = 10000n;
 const DECLINED = 'The test card was declined.';

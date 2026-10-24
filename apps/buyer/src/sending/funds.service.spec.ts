@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { SendState } from '../../../../libs/db/src';
-import { testDatabase } from '../../../../libs/db/testing/database';
+import type { SendState } from '@app/db';
+import { testDatabase } from '@testing/db/database';
 import { FundsService } from './funds.service';
 
 let database: Awaited<ReturnType<typeof testDatabase>>;

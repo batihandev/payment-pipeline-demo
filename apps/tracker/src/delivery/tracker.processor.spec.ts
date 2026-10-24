@@ -1,5 +1,5 @@
 import { UnrecoverableError, type Job } from 'bullmq';
-import { JOBS } from '../../../../libs/queues/src';
+import { JOBS } from '@app/queues';
 import { TrackerProcessor } from './tracker.processor';
 
 const done = () => jest.fn(() => Promise.resolve(undefined));

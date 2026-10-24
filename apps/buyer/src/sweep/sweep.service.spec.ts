@@ -1,12 +1,12 @@
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
+import { RpcError } from '@app/chain/rpc-error';
 import { Redis } from 'ioredis';
-import { testDatabase } from '../../../../libs/db/testing/database';
-import { ScriptedChain } from '../../../../libs/chain/testing/scripted-chain';
+import { testDatabase } from '@testing/db/database';
+import { ScriptedChain } from '@testing/chain/scripted-chain';
 import { RedisLock } from '../sending/redis-lock';
 import { OrderSenderService } from '../sending/order-sender.service';
 import { SweepService } from './sweep.service';
-import { testRedisUrl } from '../../../../libs/config/testing/redis';
-import { fakeConfig } from '../../../../libs/config/testing/config';
+import { testRedisUrl } from '@testing/config/redis';
+import { fakeConfig } from '@testing/config/config';
 import type { BuyerConfig } from '../buyer-config';
 const buyer = `0x${'11'.repeat(20)}` as const;
 const shop = `0x${'22'.repeat(20)}` as const;

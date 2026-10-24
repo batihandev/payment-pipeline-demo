@@ -7,11 +7,11 @@ import {
 import { ConfigService } from '@nestjs/config';
 import type { Redis } from 'ioredis';
 import { Observable, Subject, interval, map, merge, takeUntil } from 'rxjs';
-import type { OrderEvent, QueueEvent } from '../../../../libs/core/src/api';
-import { orderChannel } from '../../../../libs/events/src/order-events';
-import { paymentChannel } from '../../../../libs/events/src/publish-payment';
-import { subscribeEvents } from '../../../../libs/events/src/subscribe-events';
-import { InjectRedis } from '../../../../libs/redis/src';
+import type { OrderEvent, QueueEvent } from '@app/core/api';
+import { orderChannel } from '@app/events/order-events';
+import { paymentChannel } from '@app/events/publish-payment';
+import { subscribeEvents } from '@app/events/subscribe-events';
+import { InjectRedis } from '@app/redis';
 import type { ApiConfig } from '../common/api-config';
 
 /** Below the 100 s after which Cloudflare closes an idle connection. */

@@ -1,9 +1,9 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
-import { appConfig } from '../../../libs/config/src/config.module';
-import { DatabaseModule } from '../../../libs/db/src';
-import { QueueErrorsModule } from '../../../libs/queues/src';
-import { RedisModule } from '../../../libs/redis/src';
+import { appConfig } from '@app/config/config.module';
+import { DatabaseModule } from '@app/db';
+import { QueueErrorsModule } from '@app/queues';
+import { RedisModule } from '@app/redis';
 import type { BuyerConfig } from './buyer-config';
 import { JobsModule } from './jobs/jobs.module';
 

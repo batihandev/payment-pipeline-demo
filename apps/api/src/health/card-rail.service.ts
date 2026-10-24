@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { CustomersService, hasSavedCard } from '../../../../libs/orders/src';
+import { CustomersService, hasSavedCard } from '@app/orders';
 import type { ApiConfig } from '../common/api-config';
 
 /**

@@ -1,6 +1,6 @@
 import type { Redis } from 'ioredis';
 import type { Payment } from '../../db/generated/client';
-import { bigintReplacer } from '../../core/src/json';
+import { bigintReplacer } from '@app/core/json';
 import { publicPayment } from './public-payment';
 export const paymentChannel = 'payments';
 export function serializePayment(payment: Payment): string {

@@ -4,12 +4,9 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { payment as createPayment } from '../../testing/read-api';
 import { useReadApi } from '../../testing/read-api';
-import { publishPayment } from '../../../../libs/events/src/publish-payment';
-import { savePaymentEvent } from '../../../../libs/events/src/save-payment-event';
-import {
-  encodePaymentCursor,
-  paymentCursor,
-} from '../../../../libs/core/src/payment-cursor';
+import { publishPayment } from '@app/events/publish-payment';
+import { savePaymentEvent } from '@app/events/save-payment-event';
+import { encodePaymentCursor, paymentCursor } from '@app/core/payment-cursor';
 
 type Payment = { id: string; sentAt: string | null; receivedAt: string | null };
 

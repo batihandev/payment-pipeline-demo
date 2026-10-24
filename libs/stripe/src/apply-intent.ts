@@ -1,14 +1,11 @@
 import type Stripe from 'stripe';
 import type { Order, Payment } from '../../db/generated/client';
-import { BudgetReservation, type Prisma, recordIncident } from '../../db/src';
-import { savePaymentEvent } from '../../events/src/save-payment-event';
-import {
-  BEFORE_PROCESSING,
-  BEFORE_SETTLED,
-} from '../../orders/src/card-stages';
-import { failCardPayment } from '../../orders/src/fail-card-payment';
-import { lockOrder } from '../../orders/src/lock-order';
-import { settlePayment } from '../../orders/src/settle-payment';
+import { BudgetReservation, type Prisma, recordIncident } from '@app/db';
+import { savePaymentEvent } from '@app/events/save-payment-event';
+import { BEFORE_PROCESSING, BEFORE_SETTLED } from '@app/orders/card-stages';
+import { failCardPayment } from '@app/orders/fail-card-payment';
+import { lockOrder } from '@app/orders/lock-order';
+import { settlePayment } from '@app/orders/settle-payment';
 
 const CENTS = 10000n;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

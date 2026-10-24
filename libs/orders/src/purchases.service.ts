@@ -1,20 +1,20 @@
 import type { z } from 'zod';
-import type { buyerSchema } from '../../config/src';
+import type { buyerSchema } from '@app/config';
 import { createHash } from 'node:crypto';
-import { DAY_MS, utcDateKey, utcDay } from '../../core/src/time';
-import { catalogue } from '../../core/src/catalogue';
-import { allocateOffset, expectedAmount } from '../../core/src/amounts';
+import { DAY_MS, utcDateKey, utcDay } from '@app/core/time';
+import { catalogue } from '@app/core/catalogue';
+import { allocateOffset, expectedAmount } from '@app/core/amounts';
 import {
   dailyTarget,
   shouldBuyThisMinute,
   type Budget,
-} from '../../core/src/pacing';
+} from '@app/core/pacing';
 import {
   BudgetReservation,
   type PaymentRail,
   type Prisma,
   type PrismaClient,
-} from '../../db/src';
+} from '@app/db';
 import { CustomersService, hasSavedCard } from './customers.service';
 
 type Customer = Awaited<ReturnType<CustomersService['demo']>>;

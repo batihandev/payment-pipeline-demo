@@ -1,6 +1,6 @@
 import type Stripe from 'stripe';
 import { privateKeyToAccount } from 'viem/accounts';
-import type { PrismaClient } from '../../db/src';
+import type { PrismaClient } from '@app/db';
 
 type Config = { STRIPE_PAYMENT_METHOD: string; BUYER_PRIVATE_KEY: string };
 

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../../../libs/db/src';
-import { savePaymentEvent } from '../../../../libs/events/src/save-payment-event';
+import { PrismaService } from '@app/db';
+import { savePaymentEvent } from '@app/events/save-payment-event';
 import { ApiError } from '../common/api-error';
 import { InjectNow, type Now } from '../common/clock.module';
 

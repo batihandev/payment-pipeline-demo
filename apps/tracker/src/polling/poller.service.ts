@@ -7,8 +7,8 @@ import {
   type OnModuleDestroy,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService, recordIncident } from '../../../../libs/db/src';
-import { errorFields } from '../../../../libs/logging/src';
+import { PrismaService, recordIncident } from '@app/db';
+import { errorFields } from '@app/logging';
 import { ScannerService } from '../scanning/scanner.service';
 import { ProgressService } from '../scanning/progress.service';
 import type { TrackerConfig } from '../tracker-config';

@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
-import { orderChannel } from '../../../../libs/events/src/order-events';
-import { paymentChannel } from '../../../../libs/events/src/publish-payment';
-import { closeOrder } from '../../../../libs/orders/src/close-order';
+import { orderChannel } from '@app/events/order-events';
+import { paymentChannel } from '@app/events/publish-payment';
+import { closeOrder } from '@app/orders/close-order';
 import {
   fixture,
   clear,
@@ -16,7 +16,7 @@ import {
 import { ScannerService } from '../scanning/scanner.service';
 import { ProgressService } from '../scanning/progress.service';
 import { DeliveryService } from './delivery.service';
-import { testRedisUrl } from '../../../../libs/config/testing/redis';
+import { testRedisUrl } from '@testing/config/redis';
 let f: Awaited<ReturnType<typeof fixture>>;
 let redis: Redis;
 let queue: Queue<{ paymentId: string }>;

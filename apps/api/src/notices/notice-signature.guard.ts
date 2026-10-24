@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
-import { verifyNotice } from '../../../../libs/core/src/notices';
+import { verifyNotice } from '@app/core/notices';
 import { ApiError } from '../common/api-error';
 import type { ApiConfig } from '../common/api-config';
 import { InjectNow, type Now } from '../common/clock.module';
