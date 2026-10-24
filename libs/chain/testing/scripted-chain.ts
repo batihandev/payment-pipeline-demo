@@ -13,6 +13,7 @@ export class ScriptedChain implements ChainClient, TransferSigner {
   fail:
     'sign' | 'broadcast' | 'permanent-broadcast' | 'after-broadcast' | null =
     null;
+
   getHead = () => Promise.resolve({ number: 1n, hash: '0xaa' as const });
   getFinalized = () => Promise.resolve(0n);
   getBlockHash = () => Promise.resolve('0xaa' as Hex);
@@ -22,14 +23,17 @@ export class ScriptedChain implements ChainClient, TransferSigner {
       native: 1n,
       usdc: this.balances.get(address) ?? 500n,
     });
+
   getNonce = () => {
     this.calls.push('getNonce');
     return Promise.resolve(this.nonce);
   };
+
   getConfirmedNonce = () => {
     this.calls.push('getConfirmedNonce');
     return Promise.resolve(this.nonce);
   };
+
   getTransactionReceipt = (hash: Hex) => {
     this.calls.push('getTransactionReceipt');
     if (this.reverted.has(hash))
@@ -40,6 +44,7 @@ export class ScriptedChain implements ChainClient, TransferSigner {
         : null,
     );
   };
+
   signTransfer(
     from: Address,
     to: Address,
@@ -61,6 +66,7 @@ export class ScriptedChain implements ChainClient, TransferSigner {
       ),
     );
   }
+
   sendRawTransaction(raw: Hex): Promise<Hex> {
     this.calls.push('sendRawTransaction');
     if (this.fail === 'broadcast')

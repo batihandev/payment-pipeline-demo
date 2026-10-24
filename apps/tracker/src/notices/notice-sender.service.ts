@@ -17,6 +17,7 @@ export class NoticeSenderService {
     this.url = config.get('SHOP_NOTICE_URL', { infer: true });
     this.secret = config.get('NOTICE_SECRET', { infer: true });
   }
+
   async send(paymentId: string, exhausted = false): Promise<void> {
     const notice = await this.db.notice.findUniqueOrThrow({
       where: { paymentId },

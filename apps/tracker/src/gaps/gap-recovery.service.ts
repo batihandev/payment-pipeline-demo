@@ -8,6 +8,7 @@ export class GapRecoveryService {
     private readonly scanner: ScannerService,
     @Optional() private readonly now = () => new Date(),
   ) {}
+
   async retryOnce(): Promise<void> {
     const gap = await this.db.scanGap.findFirst({
       where: {

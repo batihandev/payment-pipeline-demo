@@ -10,6 +10,7 @@ export class RedisLock {
     @InjectRedis() private readonly redis: Redis,
     @Optional() private readonly prefix = 'buyer',
   ) {}
+
   async run<T>(wallet: string, operation: () => Promise<T>): Promise<T> {
     const key = `${this.prefix}:nonce:${wallet.toLowerCase()}`;
     const token = randomUUID();

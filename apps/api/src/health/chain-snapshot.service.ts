@@ -34,21 +34,25 @@ export class ChainSnapshotService {
       onRefresh?: (reading: ChainReading) => Promise<void>;
     } = {},
   ) {}
+
   private now(): number {
     return (this.options.now ?? Date.now)();
   }
+
   /** The last reading and, when the latest refresh failed, its error category. */
   current(): { reading: ChainReading | null; error: RpcError['kind'] | null } {
     if (this.startedAt === null || this.now() - this.startedAt >= MAX_AGE_MS)
       void this.refresh();
     return { reading: this.reading, error: this.error };
   }
+
   refresh(): Promise<void> {
     this.loading ??= this.load().finally(() => {
       this.loading = undefined;
     });
     return this.loading;
   }
+
   /** The buyer's gas balance as visitor admission reads it, without an RPC call. */
   buyerGas(): Promise<GasReading> {
     const { reading } = this.current();
@@ -58,6 +62,7 @@ export class ChainSnapshotService {
         : null,
     );
   }
+
   private async load(): Promise<void> {
     this.startedAt = this.now();
     let reading: ChainReading;

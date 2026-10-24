@@ -43,6 +43,7 @@ export class OrderSenderService {
   ) {
     this.chainId = config.get('CHAIN_ID', { infer: true });
   }
+
   private readonly suspectedDropped = new Set<string>();
   /** Buyer-wallet transfers broadcast but not yet seen by the tracker. */
   inFlight(): Promise<number> {
@@ -54,6 +55,7 @@ export class OrderSenderService {
       },
     });
   }
+
   /**
    * Closes or rebroadcasts buyer transfers the tracker has not seen two minutes after sending.
    * A transfer that reverted, or whose nonce another transaction used, can never pay its order,
@@ -110,6 +112,7 @@ export class OrderSenderService {
         await this.chain.sendRawTransaction(order.signedTransaction as Hex);
     }
   }
+
   private async closeUnseen(
     orderId: string,
     incident: { kind: IncidentKind; whatHappened: string },
@@ -131,12 +134,15 @@ export class OrderSenderService {
       });
     });
   }
+
   sendForOrder(orderId: string, exhausted = false): Promise<void> {
     return this.send({ kind: 'order', id: orderId }, exhausted);
   }
+
   sendForSweep(id: string, exhausted = false): Promise<void> {
     return this.send({ kind: 'sweep', id }, exhausted);
   }
+
   private async load(tx: Prisma.TransactionClient, target: Target) {
     if (target.kind === 'order') {
       const order = await tx.order.findUniqueOrThrow({
@@ -146,6 +152,7 @@ export class OrderSenderService {
     }
     return tx.sweep.findUniqueOrThrow({ where: { id: target.id } });
   }
+
   private async update(
     tx: Prisma.TransactionClient,
     target: Target,
@@ -163,6 +170,7 @@ export class OrderSenderService {
       if (data.sendState !== undefined) await saveOrderEvents(tx, [target.id]);
     } else await tx.sweep.update({ where: { id: target.id }, data });
   }
+
   private async lockRow(
     tx: Prisma.TransactionClient,
     target: Target,
@@ -172,6 +180,7 @@ export class OrderSenderService {
     else
       await tx.$queryRaw`SELECT id FROM sweeps WHERE id = ${target.id} FOR UPDATE`;
   }
+
   private async prepare(target: Target, from: Address, to: Address) {
     return this.db.$transaction(
       async (tx) => {
@@ -230,6 +239,7 @@ export class OrderSenderService {
       { timeout: 60000 },
     );
   }
+
   private async send(target: Target, exhausted: boolean): Promise<void> {
     const from = target.kind === 'order' ? this.buyer : this.shop;
     const to = target.kind === 'order' ? this.shop : this.buyer;
@@ -317,6 +327,7 @@ export class OrderSenderService {
       throw error instanceof RpcError ? error : new RpcError('transient');
     }
   }
+
   // A "nonce too low" answer means another transaction used this nonce. The stored transfer is
   // dropped only when it has no receipt and the chain's mined nonce is past it, so it can never
   // land and the order never has two transfers that can.
@@ -378,6 +389,7 @@ export class OrderSenderService {
       throw new RpcError('transient');
     }
   }
+
   private async recordFailure(
     target: Target,
     error: unknown,

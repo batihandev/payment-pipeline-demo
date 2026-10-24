@@ -25,6 +25,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
     number,
     () => Promise<PaymentListItemRecord[]>
   >();
+
   private subscription?: Subscription;
 
   constructor(

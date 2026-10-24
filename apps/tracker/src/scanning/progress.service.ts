@@ -12,6 +12,7 @@ export class ProgressService {
     private readonly scanner: ScannerService,
     @Optional() private readonly now = () => new Date(),
   ) {}
+
   async advance(head: bigint, finalized = 0n): Promise<void> {
     const payments = await this.db.payment.findMany({
       where: {

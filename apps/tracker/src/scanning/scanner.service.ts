@@ -68,6 +68,7 @@ export class ScannerService {
         'MIN_RANGE must exceed RESCAN_BLOCKS + 1; MAX_RANGE must be at least MIN_RANGE',
       );
   }
+
   /** `idle` says whether nothing waits on the chain; it is asked after the head is read. */
   async scanOnce(
     idle?: () => Promise<boolean>,
@@ -176,6 +177,7 @@ export class ScannerService {
     });
     return head;
   }
+
   /**
    * Moves an idle cursor to the head. A purchase made after `idle` answered is mined after
    * the head was read, so the skipped blocks hold no transfer an order waits for.
@@ -203,6 +205,7 @@ export class ScannerService {
       return tx.cursor.findUniqueOrThrow({ where: { name: this.cursorName } });
     });
   }
+
   async readRange(from: bigint, end: bigint) {
     let to = end;
     let logs: TransferLog[] = [];
@@ -227,6 +230,7 @@ export class ScannerService {
     }
     return { to, logs, failure };
   }
+
   async rpc<T>(work: () => Promise<T>): Promise<T> {
     for (let attempt = 1; ; attempt++) {
       try {
@@ -251,6 +255,7 @@ export class ScannerService {
       }
     }
   }
+
   async storeLogs(
     tx: Prisma.TransactionClient,
     logs: TransferLog[],
