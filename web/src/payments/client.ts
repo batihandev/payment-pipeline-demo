@@ -22,6 +22,42 @@ export type PurchaseAnswer = {
   body: PurchaseBody;
 };
 
+/**
+ * A signal that aborts with `abort` or after `ms`. It uses AbortSignal.any and
+ * AbortSignal.timeout where the browser has them (Safari before 17.4 and 16, Chrome before
+ * 116, Firefox before 124 lack them) and otherwise an AbortController fed by a timer and a
+ * listener, which `release` clears when the read ends.
+ */
+export function readSignal(
+  abort: AbortSignal,
+  ms: number,
+  timeout?: (ms: number) => AbortSignal,
+): { signal: AbortSignal; release: () => void } {
+  const native: Partial<typeof AbortSignal> = AbortSignal;
+  if (native.any && (timeout || native.timeout)) {
+    const limit = timeout ? timeout(ms) : AbortSignal.timeout(ms);
+    return { signal: AbortSignal.any([abort, limit]), release: () => {} };
+  }
+  const controller = new AbortController();
+  const stop = () => {
+    controller.abort();
+  };
+  const limit = timeout?.(ms);
+  const timer = limit ? undefined : setTimeout(stop, ms);
+  const sources = limit ? [abort, limit] : [abort];
+  for (const source of sources) {
+    if (source.aborted) stop();
+    else source.addEventListener('abort', stop, { once: true });
+  }
+  return {
+    signal: controller.signal,
+    release: () => {
+      clearTimeout(timer);
+      for (const source of sources) source.removeEventListener('abort', stop);
+    },
+  };
+}
+
 export const HEALTH_EVERY_MS = 15000;
 export const REFRESH_EVERY_MS = 15000;
 /** How long one window read may take before it is dropped and retried. */
@@ -129,8 +165,7 @@ export class PaymentsClient {
     private request: typeof fetch = fetch,
     private createStream: (url: string) => EventStream = (url) =>
       new EventSource(url),
-    private readTimeout: (ms: number) => AbortSignal = (ms) =>
-      AbortSignal.timeout(ms),
+    private readTimeout?: (ms: number) => AbortSignal,
   ) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
   }
@@ -341,12 +376,12 @@ export class PaymentsClient {
     const limit = readLimit(size);
     // One row more tells whether older payments exist; a full window has no Show more anyway.
     const asked = Math.min(limit + 1, PAYMENT_LIST_MAX);
-    // A stalled request is dropped after the timeout, so it cannot hold back later refreshes.
-    const signal = AbortSignal.any([
-      abort.signal,
-      this.readTimeout(READ_TIMEOUT_MS),
-    ]);
+    let release = () => {};
     try {
+      // A stalled request is dropped after the timeout, so it cannot hold back later refreshes.
+      const bound = readSignal(abort.signal, READ_TIMEOUT_MS, this.readTimeout);
+      const signal = bound.signal;
+      release = bound.release;
       const get = async <T>(path: string, schema: z.ZodMiniType<T>) => {
         const request = this.request;
         const response = await request(`${this.baseUrl}${path}`, { signal });
@@ -385,6 +420,7 @@ export class PaymentsClient {
       if (more) this.olderFailed = true;
       else if (!this.feed) this.status = 'offline';
     }
+    release();
     this.reading = undefined;
     this.abort = undefined;
     this.retry = setTimeout(() => {

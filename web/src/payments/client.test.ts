@@ -592,6 +592,42 @@ describe('receipt window', () => {
     expect(s.reads).toHaveLength(reads + 2);
     stop();
   });
+  /** Runs `body` with one static method of AbortSignal removed, then restores it. */
+  async function without(name: 'any' | 'timeout', body: () => Promise<void>) {
+    const original: unknown = Reflect.get(AbortSignal, name);
+    Reflect.deleteProperty(AbortSignal, name);
+    try {
+      await body();
+    } finally {
+      Reflect.set(AbortSignal, name, original);
+    }
+  }
+  it('completes a read in a browser without AbortSignal.any', async () => {
+    await without('any', async () => {
+      const s = windowed(30);
+      const stop = s.client.subscribe(() => {});
+      await s.load();
+      expect(s.client.getSnapshot().status).toBe('live');
+      stop();
+    });
+  });
+  it('times out a stalled read without AbortSignal.timeout', async () => {
+    vi.useFakeTimers();
+    await without('timeout', async () => {
+      const s = windowed(30);
+      const stop = s.client.subscribe(() => {});
+      await s.load();
+      s.holdReads();
+      const reads = s.reads.length;
+      s.stream.send(row('fresh'));
+      await vi.waitFor(() => {
+        expect(s.reads).toHaveLength(reads + 1);
+      });
+      await vi.advanceTimersByTimeAsync(READ_TIMEOUT_MS + REFRESH_EVERY_MS);
+      expect(s.reads).toHaveLength(reads + 2);
+      stop();
+    });
+  });
   /** Counts of the shown receipts at every update, to catch a collapse that a later update hides. */
   function watchCounts(s: ReturnType<typeof windowed>) {
     const counts: number[] = [];
