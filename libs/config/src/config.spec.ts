@@ -202,6 +202,17 @@ describe('visitor, refill and retention settings', () => {
     ).toBe('whsec_abc');
   });
 
+  it('reads empty Stripe keys as unset, as the example env leaves them', () => {
+    expect(
+      validateConfig(buyerSchema, { ...minimal, STRIPE_SECRET_KEY: '' })
+        .STRIPE_SECRET_KEY,
+    ).toBe(undefined);
+    expect(
+      validateConfig(apiSchema, { ...minimal, STRIPE_WEBHOOK_SECRET: '' })
+        .STRIPE_WEBHOOK_SECRET,
+    ).toBe(undefined);
+  });
+
   it('refuses a live key in the setup script', () => {
     expect(() =>
       validateConfig(stripeSetupSchema, { STRIPE_SECRET_KEY: 'sk_live_abc' }),

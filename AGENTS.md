@@ -27,4 +27,4 @@ Run before calling work done:
 
 ## Text
 
-Tracked text (code, comments, docs and commit messages) describes this project only. It names no other project, personal host, address or local path.
+Tracked text (code, comments, docs and commit messages) describes this project only. It names no other project, personal host, address or local path. The README's live-demo links are the exception.

@@ -106,7 +106,7 @@ export class HealthService {
       this.readRedis(),
     ]);
     if (database.status === 'rejected')
-      throw new ApiError(503, 'Live health state is unavailable');
+      throw new ApiError(503, 'health_unavailable');
     const [cursor, openGaps, monitoring, cardAvailable] = database.value;
     const [depths, cooldowns, pausedSince] =
       live.status === 'fulfilled' ? live.value : [null, null, null];

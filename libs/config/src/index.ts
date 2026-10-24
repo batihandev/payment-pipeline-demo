@@ -50,7 +50,7 @@ export const buyerSchema = z.object({
   REFILL_BELOW: microUnits.default(5_000_000n),
   REFILL_COOLDOWN_SECONDS: positiveInteger.default(20),
   RPC_REQUESTS_PER_SECOND_BUYER: positiveInteger.default(2),
-  STRIPE_SECRET_KEY: sandboxSecretKey.optional(),
+  STRIPE_SECRET_KEY: z.preprocess(emptyAsUnset, sandboxSecretKey.optional()),
   STRIPE_REQUESTS_PER_SECOND: positiveInteger.default(5),
 });
 
@@ -113,7 +113,10 @@ export const apiSchema = z.object({
     z.enum(['cf-connecting-ip']).optional(),
   ),
   RPC_REQUESTS_PER_SECOND_API: positiveInteger.default(1),
-  STRIPE_WEBHOOK_SECRET: z.string().startsWith('whsec_').optional(),
+  STRIPE_WEBHOOK_SECRET: z.preprocess(
+    emptyAsUnset,
+    z.string().startsWith('whsec_').optional(),
+  ),
 });
 
 export const stripeSetupSchema = z.object({
