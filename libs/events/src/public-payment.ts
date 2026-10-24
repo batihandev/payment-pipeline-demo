@@ -6,6 +6,19 @@ import type {
 } from '@app/core/api';
 import { donorName } from '@app/core/donor-name';
 
+/** The order fields a public payment shows: list reads and payment events both select exactly these. */
+export const publicOrderSelect = {
+  id: true,
+  item: true,
+  price: true,
+  expectedAmount: true,
+  status: true,
+  source: true,
+  createdAt: true,
+  expiresAt: true,
+  customer: { select: { cardBrand: true, cardLast4: true } },
+} as const;
+
 /** The order fields a payment read selects, with the customer when it was included. */
 export type OrderRow = Omit<PublicOrderRecord, 'customer'> & {
   customer?: PublicCard | null;

@@ -73,6 +73,7 @@ it('saves full payment snapshots for every stage change and finality without dup
         (key) => key !== 'fromAddress' && key !== 'reconciledAt',
       ),
       'donorName',
+      'order',
     ].sort(),
   );
 });
