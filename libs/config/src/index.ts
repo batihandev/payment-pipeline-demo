@@ -29,7 +29,7 @@ const chain = {
 
 const confirmations = { CONFIRMATIONS: positiveInteger.default(10) };
 
-const retention = { RETENTION_DAYS: positiveInteger.default(30) };
+const retention = { RETENTION_DAYS: positiveInteger.default(15) };
 
 const purchase = {
   DAILY_COUNT_CAP: positiveInteger.default(100),

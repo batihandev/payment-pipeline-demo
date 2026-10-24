@@ -66,7 +66,7 @@ Visitor chain purchases pause while the buyer's gas balance is below `GAS_FLOOR`
 
 USDC circulates only between the buyer and shop wallets. A nightly sweep at 03:00 UTC returns the shop's USDC to the buyer. A refill does the same on demand: when the buyer's USDC falls below `REFILL_BELOW` and the shop holds USDC and enough gas, the shop sends its whole USDC balance to the buyer, at most once per `REFILL_COOLDOWN_SECONDS`. The running cost is gas.
 
-A nightly job deletes orders, payments, ledger entries, notices, payment events, order events, Stripe events and incidents older than `RETENTION_DAYS` (default 30), and resolved scan gaps of the same age. Open orders and payments that are unsettled or not final are kept until they close. A transfer closed because it can never land is deleted by its send time.
+A nightly job deletes orders, payments, ledger entries, notices, payment events, order events, Stripe events and incidents older than `RETENTION_DAYS` (default 15), and resolved scan gaps of the same age. Open orders and payments that are unsettled or not final are kept until they close. A transfer closed because it can never land is deleted by its send time.
 
 ## RPC and Stripe budgets
 
@@ -265,7 +265,7 @@ Optional settings and their defaults:
 | `GAS_FLOOR`                                  | 200000000000000                | Native balance floor in wei (0.0002 ETH)                                                                                                                        |
 | `REFILL_BELOW`, `REFILL_COOLDOWN_SECONDS`    | 5000000, 20                    | Buyer USDC balance in micro-units (5 USDC) that triggers a refill, and the wait between refills                                                                 |
 | `MAX_IN_FLIGHT`                              | 10                             | Buyer purchases in flight at once                                                                                                                               |
-| `RETENTION_DAYS`                             | 30                             | Days that records are kept                                                                                                                                      |
+| `RETENTION_DAYS`                             | 15                             | Days that records are kept; above the 14 days the charts show, and below the 30 days a Stripe receipt link lasts                                                |
 | `STREAMS_PER_IP`                             | 5                              | Open live-stream connections allowed per client address                                                                                                         |
 | `STREAMS_TOTAL`                              | 500                            | Open live-stream connections allowed in all                                                                                                                     |
 | `STRIPE_SECRET_KEY`                          | unset                          | Stripe test-mode secret key (`sk_test_…`) for the buyer and `pnpm stripe:setup`; other prefixes, `sk_live_` included, are refused; card charges fail without it |

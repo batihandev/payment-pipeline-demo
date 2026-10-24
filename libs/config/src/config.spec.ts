@@ -96,7 +96,7 @@ describe('visitor, refill and retention settings', () => {
     expect(api.VISITOR_QUEUE_LIMIT).toBe(30);
     expect(api.VISITOR_DAILY_LIMIT).toBe(2000);
     expect(api.GAS_FLOOR).toBe(200000000000000n);
-    expect(api.RETENTION_DAYS).toBe(30);
+    expect(api.RETENTION_DAYS).toBe(15);
     expect(api.CLIENT_IP_HEADER).toBe(undefined);
     expect(api.RPC_REQUESTS_PER_SECOND_API).toBe(1);
     for (const config of [api, validateConfig(buyerSchema, minimal)])
@@ -111,7 +111,7 @@ describe('visitor, refill and retention settings', () => {
     expect(buyer.MAX_IN_FLIGHT).toBe(10);
     expect(buyer.REFILL_BELOW).toBe(5000000n);
     expect(buyer.REFILL_COOLDOWN_SECONDS).toBe(20);
-    expect(buyer.RETENTION_DAYS).toBe(30);
+    expect(buyer.RETENTION_DAYS).toBe(15);
     expect(buyer.RPC_REQUESTS_PER_SECOND_BUYER).toBe(2);
     const tracker = validateConfig(trackerSchema, minimal);
     expect(tracker.RPC_REQUESTS_PER_SECOND_TRACKER).toBe(2);

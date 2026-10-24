@@ -194,7 +194,7 @@ Failures are quiet. Once the page has data, a failed refresh or health read keep
 
 Stats are computed from these tables, never stored as running totals.
 
-**Retention:** a nightly job deletes orders, payments, ledger entries, notices, payment events, order events, Stripe events and incidents older than `RETENTION_DAYS` (default 30), and resolved gaps of the same age. Open orders and unsettled or non-final payments are kept until they close.
+**Retention:** a nightly job deletes orders, payments, ledger entries, notices, payment events, order events, Stripe events and incidents older than `RETENTION_DAYS` (default 15), and resolved gaps of the same age. Open orders and unsettled or non-final payments are kept until they close.
 
 ## Monitoring
 
