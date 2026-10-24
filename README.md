@@ -281,6 +281,7 @@ Optional settings and their defaults:
 `apps/api` is an Express application; `apps/buyer` and `apps/tracker` are application contexts with `@nestjs/bullmq` processors. Each app is split into feature folders holding a module, its controller or processor, its service and `dto/` classes, with specs beside the files they test. `libs/db` owns the Prisma schema and client module; `libs/config` owns environment validation, which each app runs once at its entry point; `libs/logging` owns the JSON logger. Shared chain, domain and event code belongs in `libs/chain`, `libs/core` and `libs/events`. `web/` uses React, Vite and Vitest; `scripts/` holds command-line utilities.
 
 ```sh
+pnpm prisma generate   # once after install, if lint or tests run before the first build or migration
 pnpm lint
 pnpm test
 pnpm build
