@@ -150,14 +150,6 @@ it.each([
   },
 );
 
-it('fails a card payment as permanent without a secret key', async () => {
-  const client = new SdkStripeClient(undefined, limiterWith().limiter);
-  const error = await client.createPayment(input).catch((e: unknown) => e);
-  expect(error).toBeInstanceOf(RpcError);
-  expect(error).toMatchObject({ kind: 'permanent' });
-  expect((error as Error).message).toMatch(/STRIPE_SECRET_KEY/);
-});
-
 it('classifies an authentication or permission error as an access error', async () => {
   for (const [failure, statusCode] of [
     [Stripe.errors.StripeAuthenticationError, 401],

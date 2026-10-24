@@ -67,10 +67,11 @@ describe('checkout accessibility', () => {
     expect(busy).not.toHaveProperty('disabled', true);
     expect(busy.getAttribute('aria-disabled')).toBe('true');
     expect(document.activeElement).toBe(busy);
+    const other = screen.getByRole('button', { name: 'Pay with a test card' });
+    expect(other).not.toHaveProperty('disabled', true);
+    expect(other.getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(busy);
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Pay with a test card' }),
-    );
+    fireEvent.click(other);
     expect(purchase).toHaveBeenCalledTimes(1);
   });
 
@@ -78,12 +79,14 @@ describe('checkout accessibility', () => {
     const onChoose = vi.fn();
     render(<RailChoice card="checking" disabled={false} onChoose={onChoose} />);
     const card = screen.getByRole('button', { name: 'Pay with a test card' });
+    const chain = screen.getByRole('button', {
+      name: 'Pay on the test network',
+    });
     expect(card.getAttribute('aria-disabled')).toBe('true');
+    expect(chain.getAttribute('aria-disabled')).toBe('false');
     fireEvent.click(card);
     expect(onChoose).not.toHaveBeenCalled();
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Pay on the test network' }),
-    );
+    fireEvent.click(chain);
     expect(onChoose).toHaveBeenCalledWith('chain');
   });
 

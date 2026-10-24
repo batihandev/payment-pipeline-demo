@@ -17,37 +17,23 @@ afterAll(async () => {
   await app.close();
 });
 
-it.each([
-  [
-    'health',
-    HealthModule,
-    Object.values(QUEUES).filter((name) => name !== QUEUES.buyer),
-  ],
-  ['orders', OrdersModule, [QUEUES.buyer]],
-] as const)(
-  'logs only the fixed line and the error name for a %s queue connection failure',
-  (_name, module, names) => {
-    const log = vi
-      .spyOn(Logger.prototype, 'error')
-      .mockImplementation(() => {});
-    try {
-      for (const name of names) {
-        const queue = app
-          .select(module)
-          .get<Queue>(getQueueToken(name), { strict: false });
-        queue.emit('error', new Error('refused'));
-      }
-      expect(log).toHaveBeenCalledTimes(names.length);
-      for (const call of log.mock.calls)
-        expect(call).toEqual([
-          'API queue connection failed.',
-          { name: 'Error' },
-        ]);
-    } finally {
-      log.mockRestore();
+it('logs only the fixed line and the error name for a health queue connection failure', () => {
+  const names = Object.values(QUEUES).filter((name) => name !== QUEUES.buyer);
+  const log = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
+  try {
+    for (const name of names) {
+      const queue = app
+        .select(HealthModule)
+        .get<Queue>(getQueueToken(name), { strict: false });
+      queue.emit('error', new Error('refused'));
     }
-  },
-);
+    expect(log).toHaveBeenCalledTimes(names.length);
+    for (const call of log.mock.calls)
+      expect(call).toEqual(['API queue connection failed.', { name: 'Error' }]);
+  } finally {
+    log.mockRestore();
+  }
+});
 
 it('reads health from the buyer queue that orders owns, logging one line per failure', () => {
   const log = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
