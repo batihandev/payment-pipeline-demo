@@ -29,6 +29,7 @@ export class RefillService {
     this.cooldownMs =
       config.get('REFILL_COOLDOWN_SECONDS', { infer: true }) * 1000;
   }
+
   async run(exhausted = false): Promise<RefillResult> {
     const now = this.now();
     const latest = await this.db.sweep.findFirst({

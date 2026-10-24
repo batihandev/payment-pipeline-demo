@@ -15,6 +15,7 @@ export class RpcLimiter {
     if (rate <= 0 || cooldown <= 0)
       throw new RangeError('RPC limits must be positive');
   }
+
   run<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.tail.then(async () => {
       const wait = Math.max(this.nextStart, this.cooldownUntil) - this.now();

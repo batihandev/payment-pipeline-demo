@@ -43,6 +43,7 @@ export class PurchasesService {
     private readonly rng: () => number,
     private readonly customers: CustomersService,
   ) {}
+
   async ensureBudget(now: Date) {
     const day = utcDay(now);
     const target = dailyTarget(this.options.cap, day, this.options.seed);
@@ -53,6 +54,7 @@ export class PurchasesService {
     `;
     return this.db.dailyBudget.findUniqueOrThrow({ where: { day } });
   }
+
   async pace(now: Date) {
     const id = minuteId(now);
     const existing = await this.db.order.findUnique({ where: { id } });
@@ -96,6 +98,7 @@ export class PurchasesService {
       customer,
     );
   }
+
   async visitor(
     orderId: string,
     rail: PaymentRail,
@@ -111,9 +114,11 @@ export class PurchasesService {
       await this.customers.demo(),
     );
   }
+
   visitorsToday(now: Date) {
     return this.countVisitors(this.db, now);
   }
+
   private countVisitors(
     db: Prisma.TransactionClient | PrismaClient,
     now: Date,
@@ -126,6 +131,7 @@ export class PurchasesService {
       },
     });
   }
+
   private async create(
     source: 'visitor' | 'schedule',
     id: string,
@@ -148,6 +154,7 @@ export class PurchasesService {
       return this.reserveOrder(tx, source, id, now, rail, customer?.id);
     });
   }
+
   private async reserveOrder(
     tx: Prisma.TransactionClient,
     source: 'visitor' | 'schedule',

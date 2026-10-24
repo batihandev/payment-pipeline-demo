@@ -17,6 +17,7 @@ export class DeliveryService {
     private readonly queue: Queue<{ paymentId: string }>,
     @Optional() private readonly now = () => new Date(),
   ) {}
+
   async flush(): Promise<void> {
     const events = await this.db.paymentEvent.findMany({
       where: { publishedAt: null },

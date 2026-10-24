@@ -14,6 +14,7 @@ export class SweepService {
     private readonly sender: OrderSenderService,
     @Inject(SHOP_ADDRESS) private readonly shop: Address,
   ) {}
+
   async run(day: Date, exhausted = false): Promise<void> {
     const id = utcDateKey(day);
     const existing = await this.db.sweep.findUnique({ where: { id } });

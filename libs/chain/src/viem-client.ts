@@ -52,6 +52,7 @@ export class ViemChainClient implements ChainClient, TransferSigner {
     });
     this.accounts = (options.keys ?? []).map((key) => privateKeyToAccount(key));
   }
+
   private call<T>(operation: () => Promise<T>): Promise<T> {
     return this.limiter.run(async () => {
       try {
@@ -61,18 +62,21 @@ export class ViemChainClient implements ChainClient, TransferSigner {
       }
     });
   }
+
   getHead(): Promise<{ number: bigint; hash: Hex }> {
     return this.call(async () => {
       const block = await this.client.getBlock({ blockTag: 'latest' });
       return { number: block.number, hash: block.hash };
     });
   }
+
   getFinalized(): Promise<bigint> {
     return this.call(async () => {
       const block = await this.client.getBlock({ blockTag: 'finalized' });
       return block.number;
     });
   }
+
   getBlockHash(n: bigint): Promise<Hex | null> {
     return this.call(async () => {
       try {
@@ -83,6 +87,7 @@ export class ViemChainClient implements ChainClient, TransferSigner {
       }
     });
   }
+
   getTransferLogs(from: bigint, to: bigint): Promise<TransferLog[]> {
     return this.call(async () => {
       const logs = await this.client.getLogs({
@@ -108,6 +113,7 @@ export class ViemChainClient implements ChainClient, TransferSigner {
       }));
     });
   }
+
   async getBalances(addr: Address): Promise<{ native: bigint; usdc: bigint }> {
     const native = await this.call(() =>
       this.client.getBalance({ address: addr }),
@@ -122,6 +128,7 @@ export class ViemChainClient implements ChainClient, TransferSigner {
     );
     return { native, usdc };
   }
+
   sendRawTransaction(raw: Hex): Promise<Hex> {
     return this.call(async () => {
       try {
@@ -135,6 +142,7 @@ export class ViemChainClient implements ChainClient, TransferSigner {
       }
     });
   }
+
   getTransactionReceipt(hash: Hex): Promise<TransactionReceipt | null> {
     return this.call(async () => {
       try {
@@ -148,11 +156,13 @@ export class ViemChainClient implements ChainClient, TransferSigner {
       }
     });
   }
+
   getNonce(addr: Address): Promise<number> {
     return this.call(() =>
       this.client.getTransactionCount({ address: addr, blockTag: 'pending' }),
     );
   }
+
   private cachedGasPrice(): Promise<bigint> {
     const now = Date.now();
     if (this.gasPrice && now - this.gasPrice.at < GAS_PRICE_TTL_MS)
@@ -165,11 +175,13 @@ export class ViemChainClient implements ChainClient, TransferSigner {
     });
     return value;
   }
+
   getConfirmedNonce(addr: Address): Promise<number> {
     return this.call(() =>
       this.client.getTransactionCount({ address: addr, blockTag: 'latest' }),
     );
   }
+
   async signTransfer(
     from: Address,
     to: Address,

@@ -30,14 +30,17 @@ class AppLogger extends ConsoleLogger {
     const [first, ...others] = withoutErrorDetail([message, ...rest]);
     super.log(first, ...others);
   }
+
   override error(message: unknown, ...rest: unknown[]): void {
     const [first, ...others] = withoutErrorDetail([message, ...rest]);
     super.error(first, ...others);
   }
+
   override warn(message: unknown, ...rest: unknown[]): void {
     const [first, ...others] = withoutErrorDetail([message, ...rest]);
     super.warn(first, ...others);
   }
+
   override fatal(message: unknown, ...rest: unknown[]): void {
     const [first, ...others] = withoutErrorDetail([message, ...rest]);
     super.fatal(first, ...others);

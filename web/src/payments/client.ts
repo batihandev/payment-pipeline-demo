@@ -169,6 +169,7 @@ export class PaymentsClient {
   ) {
     this.baseUrl = baseUrl.replace(/\/$/, '');
   }
+
   getSnapshot = (): Snapshot => this.snapshot;
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -191,6 +192,7 @@ export class PaymentsClient {
       }
     };
   };
+
   /** Follows visitor order changes on the event stream; the stream itself follows `subscribe`. */
   onOrderUpdate = (listener: (update: OrderUpdate) => void): (() => void) => {
     this.orderListeners.add(listener);
@@ -198,9 +200,11 @@ export class PaymentsClient {
       this.orderListeners.delete(listener);
     };
   };
+
   private sendOrderUpdate(update: OrderUpdate) {
     for (const listener of this.orderListeners) listener(update);
   }
+
   private publish() {
     const feed = this.feed;
     this.snapshot = {
@@ -222,12 +226,14 @@ export class PaymentsClient {
     };
     for (const listener of this.listeners) listener();
   }
+
   /** Reads the window one page larger; on failure the window keeps its size. */
   showMoreReceipts = (): void => {
     if (this.snapshot.data?.olderReceipts !== 'more') return;
     this.olderFailed = false;
     void this.read(this.windowSize + RECEIPT_PAGE, true);
   };
+
   private openStream() {
     this.stream = this.createStream(`${this.baseUrl}/events`);
     this.stream.onopen = () => {
@@ -269,6 +275,7 @@ export class PaymentsClient {
       this.refreshForEvents();
     };
   }
+
   /** Reads once for a burst of events: the first schedules the read and later ones join it. */
   private refreshForEvents() {
     if (this.failing || this.eventRefresh) return;
@@ -277,6 +284,7 @@ export class PaymentsClient {
       void this.refresh();
     }, EVENT_REFRESH_MS);
   }
+
   private buffer(payment: PaymentEvent) {
     const held = this.buffered.get(payment.id);
     if (held && isNewer(held, payment)) return;
@@ -288,12 +296,14 @@ export class PaymentsClient {
       this.buffered.delete(id);
     }
   }
+
   /** Drops the read in flight and aborts its requests. */
   private supersede() {
     this.epoch++;
     this.abort?.abort();
     this.abort = undefined;
   }
+
   private start() {
     void this.refresh();
     void this.refreshHealth();
@@ -301,6 +311,7 @@ export class PaymentsClient {
       void this.refreshHealth();
     }, HEALTH_EVERY_MS);
   }
+
   // Health is polled on its own timer, not per event, and a failed read keeps the last one:
   // it describes the services behind the demo and never takes the page offline.
   private async refreshHealth(): Promise<void> {
@@ -314,6 +325,7 @@ export class PaymentsClient {
     }
     if (this.listeners.size && this.feed) this.publish();
   }
+
   /** Merges live events into the rows; a row with a higher version is newer and stays. */
   private applyEvents(events: Iterable<PaymentEvent>) {
     if (!this.feed) return;
@@ -337,6 +349,7 @@ export class PaymentsClient {
         .slice(0, readLimit(this.windowSize)),
     };
   }
+
   async purchase(rail: Rail): Promise<PurchaseAnswer> {
     const request = this.request;
     const response = await request(`${this.baseUrl}/test-purchases`, {
@@ -351,11 +364,13 @@ export class PaymentsClient {
       body: await readBody(purchaseBody, response),
     };
   }
+
   /** Reads the window again at its size, unless a read is already in flight. */
   async refresh(): Promise<void> {
     if (this.reading || !this.listeners.size) return;
     await this.read(this.windowSize, false);
   }
+
   /**
    * Reads the newest `size` receipts in one request, with the statistics, and replaces the
    * window. Starting a read drops any read still in flight. Only a Show more read that fails

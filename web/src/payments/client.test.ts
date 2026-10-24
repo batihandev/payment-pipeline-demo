@@ -21,27 +21,33 @@ class FakeEventSource implements EventStream {
   addEventListener(type: string, listener: (event: { data: string }) => void) {
     this.named.set(type, listener);
   }
+
   emit(type: string, value: unknown) {
     this.named.get(type)?.({ data: JSON.stringify(value) });
   }
+
   close() {
     this.closed = true;
     this.readyState = 2;
   }
+
   open() {
     this.readyState = 1;
     this.onopen?.();
   }
+
   /** A dropped connection, which the browser reconnects on its own. */
   disconnect() {
     this.readyState = 0;
     this.onerror?.();
   }
+
   /** A refused connection, such as a 429 from the stream cap, which the browser does not retry. */
   refuse() {
     this.readyState = 2;
     this.onerror?.();
   }
+
   send(value: unknown) {
     this.onmessage?.({ data: JSON.stringify(value) });
   }

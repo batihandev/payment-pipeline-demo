@@ -70,19 +70,23 @@ export class TrackerChain implements Pick<
       return Promise.resolve();
     },
   );
+
   private request<T>(work: () => T): Promise<T> {
     return this.limiter.run(() => {
       this.starts.push(this.time);
       return Promise.resolve(work());
     });
   }
+
   getHead = () =>
     this.request(() => ({ number: this.head, hash: hash(this.head) }));
+
   getFinalized = () => this.request(() => this.finalized);
   getBlockHash = (n: bigint) =>
     this.request(() =>
       this.hashes.has(n) ? (this.hashes.get(n) ?? null) : hash(n),
     );
+
   getTransferLogs = (from: bigint, to: bigint) =>
     this.request(() => {
       this.ranges.push([from, to]);
