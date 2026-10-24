@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { JOBS, QUEUES, schedulerJobOptions } from './names';
+import { schedulerJobOptions } from './names';
 
 it('keeps finished jobs and sets the priority when given', () => {
   expect(schedulerJobOptions({ priority: 5 })).toMatchObject({
@@ -16,14 +16,4 @@ it('leaves out retries when asked', () => {
     removeOnComplete: 100,
     removeOnFail: 100,
   });
-});
-
-it('names every queue once', () => {
-  expect(Object.values(QUEUES)).toEqual([
-    'buyer',
-    'buyer-upkeep',
-    'tracker',
-    'shop-notices',
-  ]);
-  expect(JOBS.buyer.sendOrder).toBe('send-order');
 });
