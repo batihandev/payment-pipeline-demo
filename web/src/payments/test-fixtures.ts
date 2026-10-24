@@ -67,6 +67,7 @@ export function health(overrides: Partial<Health> = {}): Health {
       oldestUnsettledAt: null,
       oldestUnnotifiedAt: null,
       lastScheduledPurchaseAt: null,
+      lastCardSettledAt: null,
       visitorPausedSince: null,
     },
     ...overrides,

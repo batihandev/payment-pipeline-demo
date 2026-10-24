@@ -21,6 +21,7 @@ const healthRead = z.object({
     oldestUnsettledAt: at,
     oldestUnnotifiedAt: at,
     lastScheduledPurchaseAt: at,
+    lastCardSettledAt: at,
     visitorPausedSince: at,
   }),
 });
@@ -125,6 +126,7 @@ it('reports monitoring timestamps in /health', async () => {
     oldestUnsettledAt: null,
     oldestUnnotifiedAt: null,
     lastScheduledPurchaseAt: null,
+    lastCardSettledAt: null,
     visitorPausedSince: null,
   });
   await state.database.db.cursor.create({
@@ -198,6 +200,7 @@ it('reports monitoring timestamps in /health', async () => {
       oldestUnsettledAt: '2026-10-22T08:00:00.000Z',
       oldestUnnotifiedAt: '2026-10-22T06:30:00.000Z',
       lastScheduledPurchaseAt: '2026-10-22T05:00:00.000Z',
+      lastCardSettledAt: null,
       visitorPausedSince: '2026-10-21T00:00:00.000Z',
     });
   } finally {
@@ -211,6 +214,26 @@ it('leaves settled donations out of the unnotified signal', async () => {
     settledAt: new Date('2026-10-01T00:00:00Z'),
   });
   expect((await health()).monitoring.oldestUnnotifiedAt).toBeNull();
+});
+it('reports when the newest card payment settled, leaving network payments out', async () => {
+  for (const [key, settledAt] of [
+    ['pi_older', '2026-10-22T07:00:00Z'],
+    ['pi_newer', '2026-10-22T09:00:00Z'],
+  ] as const)
+    await payment({
+      provider: 'stripe',
+      externalKey: key,
+      transactionHash: null,
+      stage: 'notified',
+      settledAt: new Date(settledAt),
+    });
+  await payment({
+    stage: 'notified',
+    settledAt: new Date('2026-10-22T10:00:00Z'),
+  });
+  expect((await health()).monitoring.lastCardSettledAt).toBe(
+    '2026-10-22T09:00:00.000Z',
+  );
 });
 it('reports a processing card payment as unsettled', async () => {
   const order = await state.database.db.order.create({

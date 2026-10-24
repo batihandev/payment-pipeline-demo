@@ -30,7 +30,7 @@ export class HealthService {
   ) {}
 
   private async readMonitoring() {
-    const [unsettled, unnotified, scheduled] = await Promise.all([
+    const [unsettled, unnotified, scheduled, card] = await Promise.all([
       this.db.$queryRaw<
         { at: Date | null }[]
       >`SELECT MIN(COALESCE(p.processing_at, p.sent_at, p.received_at)) AS at FROM payments p JOIN orders o ON o.id = p.order_id WHERE o.send_state <> 'failed' AND p.stage IN ('sent', 'received', 'confirming', 'processing')`,
@@ -43,11 +43,18 @@ export class HealthService {
         orderBy: { createdAt: 'desc' },
         select: { createdAt: true },
       }),
+      // A disabled Stripe account or a broken webhook fails card sends without leaving a payment open, so
+      // only the time since the last card settlement shows it.
+      this.db.payment.aggregate({
+        where: { provider: 'stripe', settledAt: { not: null } },
+        _max: { settledAt: true },
+      }),
     ]);
     return {
       oldestUnsettledAt: unsettled[0]?.at ?? null,
       oldestUnnotifiedAt: unnotified._min.settledAt,
       lastScheduledPurchaseAt: scheduled?.createdAt ?? null,
+      lastCardSettledAt: card._max.settledAt,
     };
   }
 
