@@ -1,9 +1,20 @@
 import type { Payment } from '../../db/generated/client';
-import { donorName } from '../../core/src/donor-name';
+import { donorName } from '@app/core/donor-name';
+import { bigintReplacer } from '@app/core/json';
 import { publicPayment } from './public-payment';
 import { serializePayment } from './publish-payment';
 
 const sender = `0x${'Ab'.repeat(20)}`;
+const orderRow = {
+  id: 'o1',
+  item: 'Duck',
+  price: 14000000n,
+  expectedAmount: 14000731n,
+  status: 'open',
+  source: 'visitor',
+  createdAt: new Date('2026-10-23T12:00:00Z'),
+  expiresAt: new Date('2026-10-23T12:30:00Z'),
+} as const;
 const payment = (data: Partial<Payment>) =>
   ({
     id: 'p1',
@@ -50,20 +61,25 @@ it("shows only the card brand and last 4 of the order's customer", () => {
   };
   const result = publicPayment({
     ...payment({}),
-    order: { id: 'o1', item: 'Duck', customer },
+    order: { ...orderRow, customer },
   });
   expect(result.order).toEqual({
-    id: 'o1',
-    item: 'Duck',
+    ...orderRow,
     customer: { cardBrand: 'visa', cardLast4: '4242' },
   });
 });
 it('leaves an order without a customer with a null customer', () => {
   const result = publicPayment({
     ...payment({}),
-    order: { id: 'o1', customer: null },
+    order: { ...orderRow, customer: null },
   });
-  expect(result.order).toEqual({ id: 'o1', customer: null });
+  expect(result.order).toEqual({ ...orderRow, customer: null });
+});
+it('copies only the public fields, so a new column stays private', () => {
+  const row = { ...payment({}), internalNote: 'private' };
+  const order = { ...orderRow, customer: null, signedTransaction: 'private' };
+  const shown = publicPayment({ ...row, order });
+  expect(JSON.stringify(shown, bigintReplacer)).not.toContain('private');
 });
 it('omits the PaymentIntent id from a card payment', () => {
   const card = payment({ provider: 'stripe', externalKey: 'pi_secret' });

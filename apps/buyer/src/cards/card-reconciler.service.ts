@@ -1,13 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import type Stripe from 'stripe';
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
-import { cooldownKey } from '../../../../libs/chain/src/service-limiter';
-import { DAY_MS } from '../../../../libs/core/src/time';
-import { PrismaService, type Prisma } from '../../../../libs/db/src';
-import { REDIS } from '../../../../libs/redis/src';
-import { StripeClient, applyIntent } from '../../../../libs/stripe/src';
-import { StripeAccessError } from '../../../../libs/stripe/src/stripe-client';
+import { RpcError } from '@app/chain/rpc-error';
+import { cooldownKey } from '@app/chain/service-limiter';
+import { DAY_MS } from '@app/core/time';
+import { PrismaService, type Prisma, recordIncident } from '@app/db';
+import { REDIS } from '@app/redis';
+import { StripeClient, applyIntent } from '@app/stripe';
+import { StripeAccessError } from '@app/stripe/stripe-client';
 
 const STALE_AFTER_MS = 3 * 60_000;
 const RECHECK_AFTER_MS = 5 * 60_000;
@@ -135,13 +135,11 @@ export class CardReconcilerService {
       for (const intent of intents) await applyIntent(tx, intent, now);
       return;
     }
-    const where = { kind: 'reconcile_failed', ...refused };
+    const where = { kind: 'reconcile_failed' as const, ...refused };
     if (await tx.incident.findFirst({ where })) return;
-    await tx.incident.create({
-      data: {
-        ...where,
-        howHandled: 'Changed nothing; reconciliation checks it again later.',
-      },
+    await recordIncident(tx, {
+      ...where,
+      howHandled: 'Changed nothing; reconciliation checks it again later.',
     });
   }
 }

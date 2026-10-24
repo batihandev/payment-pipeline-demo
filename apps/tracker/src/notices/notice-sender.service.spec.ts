@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { Queue, Worker } from 'bullmq';
-import { verifyNotice } from '../../../../libs/core/src/notices';
+import { verifyNotice } from '@app/core/notices';
 import {
   fixture,
   clear,
@@ -15,8 +15,8 @@ import { ScannerService } from '../scanning/scanner.service';
 import { ProgressService } from '../scanning/progress.service';
 import { DeliveryService } from '../delivery/delivery.service';
 import { NoticeSenderService } from './notice-sender.service';
-import { testRedisUrl } from '../../../../libs/config/testing/redis';
-import { fakeConfig } from '../../../../libs/config/testing/config';
+import { testRedisUrl } from '@testing/config/redis';
+import { fakeConfig } from '@testing/config/config';
 import type { TrackerConfig } from '../tracker-config';
 let f: Awaited<ReturnType<typeof fixture>>;
 let server: Server;
@@ -68,7 +68,10 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await new Promise<void>((resolve, fail) =>
-    server.close((error) => (error ? fail(error) : resolve())),
+    server.close((error) => {
+      if (error) fail(error);
+      else resolve();
+    }),
   );
   await f.close();
 });
@@ -138,12 +141,14 @@ it('retries a shop outage through BullMQ and delivers the same payment after rec
   );
   try {
     const complete = new Promise<void>((resolve, fail) => {
-      worker.once('completed', () => resolve());
+      worker.once('completed', () => {
+        resolve();
+      });
       worker.once('error', fail);
     });
     await new DeliveryService(
       f.db,
-      { publish: async () => 0 },
+      { publish: () => Promise.resolve(0) },
       queue,
       () => now,
     ).flush();

@@ -1,12 +1,13 @@
 import { PrismaPg } from '@prisma/adapter-pg';
 import Stripe from 'stripe';
 import {
+  ConfigError,
   buyerSchema,
   stripeSetupSchema,
   validateConfig,
-} from '../libs/config/src';
-import { PrismaClient } from '../libs/db/src';
-import { setupDemoCustomer } from '../libs/stripe/src/setup-demo-customer';
+} from '@app/config';
+import { PrismaClient } from '@app/db';
+import { setupDemoCustomer } from '@app/stripe/setup-demo-customer';
 
 const setupSchema = stripeSetupSchema.extend(
   buyerSchema.pick({ DATABASE_URL: true, BUYER_PRIVATE_KEY: true }).shape,
@@ -37,7 +38,7 @@ async function main(): Promise<void> {
 if (require.main === module) {
   main().catch((error: unknown) => {
     console.error(
-      error instanceof Error && error.message.startsWith('Invalid or missing')
+      error instanceof ConfigError
         ? error.message
         : 'Could not set up the demo customer. Check the Stripe test key and database settings.',
     );

@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import type Stripe from 'stripe';
-import { StripeEventVerifier } from '../../../../libs/stripe/src';
+import { StripeEventVerifier } from '@app/stripe';
 import { ApiError } from '../common/api-error';
 
 export type StripeWebhookRequest = RawBodyRequest<Request> & {

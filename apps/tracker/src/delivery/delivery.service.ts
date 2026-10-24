@@ -2,15 +2,12 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Optional } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import type { Queue } from 'bullmq';
-import { PrismaService } from '../../../../libs/db/src';
-import { JOBS, QUEUES } from '../../../../libs/queues/src';
-import { InjectRedis } from '../../../../libs/redis/src';
+import { PrismaService, recordIncident } from '@app/db';
+import { JOBS, QUEUES } from '@app/queues';
+import { InjectRedis } from '@app/redis';
 import { noticeRetryOptions } from '../notices/notice-retry';
-import {
-  orderChannel,
-  serializeOrder,
-} from '../../../../libs/events/src/order-events';
-import { paymentChannel } from '../../../../libs/events/src/publish-payment';
+import { orderChannel, serializeOrder } from '@app/events/order-events';
+import { paymentChannel } from '@app/events/publish-payment';
 @Injectable()
 export class DeliveryService {
   constructor(
@@ -30,14 +27,12 @@ export class DeliveryService {
       try {
         await this.redis.publish(paymentChannel, event.body);
       } catch {
-        await this.db.incident.create({
-          data: {
-            kind: 'event_failed',
-            paymentId: event.paymentId,
-            whatHappened: 'Payment event publication failed.',
-            howHandled:
-              'Retained the persisted event for the next delivery pass.',
-          },
+        await recordIncident(this.db, {
+          kind: 'event_failed',
+          paymentId: event.paymentId,
+          whatHappened: 'Payment event publication failed.',
+          howHandled:
+            'Retained the persisted event for the next delivery pass.',
         });
         throw new Error('Payment event publication failed');
       }
@@ -82,13 +77,11 @@ export class DeliveryService {
       try {
         await this.redis.publish(orderChannel, serializeOrder(order));
       } catch {
-        await this.db.incident.create({
-          data: {
-            kind: 'event_failed',
-            whatHappened: 'Order event publication failed.',
-            howHandled:
-              'Retained the persisted event for the next delivery pass.',
-          },
+        await recordIncident(this.db, {
+          kind: 'event_failed',
+          whatHappened: 'Order event publication failed.',
+          howHandled:
+            'Retained the persisted event for the next delivery pass.',
         });
         throw new Error('Order event publication failed');
       }

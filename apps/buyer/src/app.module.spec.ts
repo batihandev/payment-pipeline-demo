@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { getQueueToken, getSharedConfigToken } from '@nestjs/bullmq';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -5,11 +6,12 @@ import { Test } from '@nestjs/testing';
 import { Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { generatePrivateKey } from 'viem/accounts';
-import { testRedisUrl } from '../../../libs/config/testing/redis';
-import { PrismaClient, PrismaService } from '../../../libs/db/src';
-import { OrderQueueService } from '../../../libs/orders/src';
-import { QUEUES } from '../../../libs/queues/src';
-import { REDIS } from '../../../libs/redis/src';
+import { buyerSchema, validateConfig } from '@app/config';
+import { testRedisUrl } from '@testing/config/redis';
+import { PrismaClient, PrismaService } from '@app/db';
+import { OrderQueueService } from '@app/orders';
+import { QUEUES } from '@app/queues';
+import { REDIS } from '@app/redis';
 import { AppModule } from './app.module';
 import { ExpiryService } from './expiry/expiry.service';
 import { BuyerProcessor } from './jobs/buyer.processor';
@@ -40,7 +42,7 @@ it('closes both workers and Redis on shutdown', async () => {
   let orderId = '';
   let afterClose: Promise<unknown> | undefined;
   const sender = {
-    inFlight: async () => 0,
+    inFlight: () => Promise.resolve(0),
     checkUnseen: async () => {},
     sendForOrder: async (id: string) => {
       if (id !== orderId) return;
@@ -54,22 +56,22 @@ it('closes both workers and Redis on shutdown', async () => {
     },
   };
   const module = await Test.createTestingModule({
-    imports: [AppModule.forRoot()],
+    imports: [AppModule.forRoot(validateConfig(buyerSchema, process.env))],
   })
     .overrideProvider(getSharedConfigToken())
     .useValue({ connection: { url: testRedisUrl() }, prefix })
     .overrideProvider(OrderSenderService)
     .useValue(sender)
     .overrideProvider(FundsService)
-    .useValue({ covers: async () => true })
+    .useValue({ covers: () => Promise.resolve(true) })
     .overrideProvider(PaceService)
-    .useValue({ pace: async () => null })
+    .useValue({ pace: () => Promise.resolve(null) })
     .overrideProvider(RefillService)
-    .useValue({ run: async () => 'not-needed' })
+    .useValue({ run: () => Promise.resolve('not-needed') })
     .overrideProvider(SweepService)
     .useValue({ run: async () => {} })
     .overrideProvider(ExpiryService)
-    .useValue({ expireOrders: async () => 0 })
+    .useValue({ expireOrders: () => Promise.resolve(0) })
     .compile();
   const probe = new Queue(QUEUES.buyer, {
     connection: { url: testRedisUrl() },
@@ -80,7 +82,7 @@ it('closes both workers and Redis on shutdown', async () => {
   const upkeep = module.get(UpkeepProcessor);
   const redis = module.get<Redis>(REDIS);
   let order: { id: string } | undefined;
-  let closed = false;
+  const shutdown = { closed: false };
   try {
     await module.init();
     order = await db.order.create({
@@ -98,7 +100,9 @@ it('closes both workers and Redis on shutdown', async () => {
     expect(buyer.worker.isRunning()).toBe(true);
     expect(upkeep.worker.isRunning()).toBe(true);
 
-    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const log = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => {});
     try {
       for (const name of Object.values(QUEUES).slice(0, 2))
         module
@@ -107,18 +111,20 @@ it('closes both workers and Redis on shutdown', async () => {
       buyer.worker.emit('error', new Error('refused'));
       upkeep.worker.emit('error', new Error('refused'));
       expect(log.mock.calls).toEqual([
-        ['Buyer queue connection failed.'],
-        ['Buyer upkeep queue connection failed.'],
-        ['Buyer worker connection failed.'],
-        ['Buyer upkeep worker connection failed.'],
+        ['Buyer queue connection failed.', { name: 'Error' }],
+        ['Buyer upkeep queue connection failed.', { name: 'Error' }],
+        ['Buyer worker connection failed.', { name: 'Error' }],
+        ['Buyer upkeep worker connection failed.', { name: 'Error' }],
       ]);
     } finally {
       log.mockRestore();
     }
 
-    const closing = module.close().then(() => (closed = true));
+    const closing = module.close().then(() => {
+      shutdown.closed = true;
+    });
     await wait(500);
-    expect(closed).toBe(false);
+    expect(shutdown.closed).toBe(false);
     release();
     await closing;
 
@@ -131,7 +137,7 @@ it('closes both workers and Redis on shutdown', async () => {
     expect(redis.status).toBe('end');
   } finally {
     release();
-    if (!closed) await module.close();
+    if (!shutdown.closed) await module.close();
     if (order) {
       const admin = new PrismaClient({
         adapter: new PrismaPg({

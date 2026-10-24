@@ -1,8 +1,9 @@
+import { Logger } from '@nestjs/common';
 import { getQueueToken } from '@nestjs/bullmq';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { Queue } from 'bullmq';
-import { OrdersModule } from '../../../../libs/orders/src/orders.module';
-import { QUEUES } from '../../../../libs/queues/src';
+import { OrdersModule } from '@app/orders/orders.module';
+import { QUEUES } from '@app/queues';
 import { createTestApp } from '../../testing/app';
 import { HealthModule } from './health.module';
 import { HEALTH_QUEUES } from './health.service';
@@ -23,9 +24,11 @@ it.each([
   ],
   ['orders', OrdersModule, [QUEUES.buyer]],
 ] as const)(
-  'logs only the fixed line for a %s queue connection failure',
+  'logs only the fixed line and the error name for a %s queue connection failure',
   (_name, module, names) => {
-    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const log = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => {});
     try {
       for (const name of names) {
         const queue = app
@@ -35,7 +38,10 @@ it.each([
       }
       expect(log).toHaveBeenCalledTimes(names.length);
       for (const call of log.mock.calls)
-        expect(call).toEqual(['API queue connection failed.']);
+        expect(call).toEqual([
+          'API queue connection failed.',
+          { name: 'Error' },
+        ]);
     } finally {
       log.mockRestore();
     }
@@ -43,7 +49,9 @@ it.each([
 );
 
 it('reads health from the buyer queue that orders owns, logging one line per failure', () => {
-  const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+  const log = jest
+    .spyOn(Logger.prototype, 'error')
+    .mockImplementation(() => {});
   try {
     const owned = app
       .select(OrdersModule)
@@ -53,7 +61,9 @@ it('reads health from the buyer queue that orders owns, logging one line per fai
       .find((queue) => queue.name === QUEUES.buyer);
     expect(read).toBe(owned);
     owned.emit('error', new Error('refused'));
-    expect(log.mock.calls).toEqual([['API queue connection failed.']]);
+    expect(log.mock.calls).toEqual([
+      ['API queue connection failed.', { name: 'Error' }],
+    ]);
   } finally {
     log.mockRestore();
   }

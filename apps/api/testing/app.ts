@@ -1,10 +1,10 @@
 import { getSharedConfigToken } from '@nestjs/bullmq';
-import type { Type } from '@nestjs/common';
+import type { LoggerService, Type } from '@nestjs/common';
 import { Test, type TestingModuleBuilder } from '@nestjs/testing';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { apiSchema, validateConfig } from '../../../libs/config/src';
-import { restoreEnvironmentAfterAll } from '../../../libs/config/testing/environment';
-import { testRedisUrl } from '../../../libs/config/testing/redis';
+import { apiSchema, validateConfig } from '@app/config';
+import { restoreEnvironmentAfterAll } from '@testing/config/environment';
+import { testRedisUrl } from '@testing/config/redis';
 import { destroyEventStreams } from './event-stream';
 import { AppModule } from '../src/app.module';
 import { applicationOptions, configureApp } from '../src/bootstrap';
@@ -36,11 +36,14 @@ export async function createTestApp(
     controllers?: Type[];
     /** Keeps the queues' Redis keys apart from other tests'. */
     queuePrefix?: string;
+    /** The app's logger; tests run silent unless they pass one. */
+    logger?: LoggerService;
   } = {},
 ): Promise<NestExpressApplication> {
   Object.assign(process.env, apiTestEnvironment(), options.environment);
+  const config = validateConfig(apiSchema, process.env);
   const builder = Test.createTestingModule({
-    imports: [AppModule.forRoot()],
+    imports: [AppModule.forRoot(config)],
     controllers: options.controllers ?? [],
   });
   if (options.queuePrefix)
@@ -50,9 +53,10 @@ export async function createTestApp(
     });
   options.override?.(builder);
   const module = await builder.compile();
-  const config = validateConfig(apiSchema, process.env);
-  const app =
-    module.createNestApplication<NestExpressApplication>(applicationOptions);
+  const app = module.createNestApplication<NestExpressApplication>({
+    ...applicationOptions,
+    logger: options.logger ?? false,
+  });
   configureApp(app, config);
   try {
     await app.listen(0, '127.0.0.1');

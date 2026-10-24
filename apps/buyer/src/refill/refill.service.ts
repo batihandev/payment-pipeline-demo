@@ -1,16 +1,10 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  ChainClient,
-  type Address,
-} from '../../../../libs/chain/src/chain-client';
-import { PrismaService } from '../../../../libs/db/src';
+import { ChainClient, type Address } from '@app/chain/chain-client';
+import { PrismaService } from '@app/db';
 import type { BuyerConfig } from '../buyer-config';
 import { OrderSenderService } from '../sending/order-sender.service';
-import {
-  BUYER_ADDRESS,
-  SHOP_ADDRESS,
-} from '../../../../libs/chain/src/wallet-addresses';
+import { BUYER_ADDRESS, SHOP_ADDRESS } from '@app/chain/wallet-addresses';
 
 // The scheduler fires every cooldown and job starts jitter, so allow a short margin.
 const COOLDOWN_TOLERANCE_MS = 1000;

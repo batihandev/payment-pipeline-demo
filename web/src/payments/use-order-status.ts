@@ -1,16 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { OrderUpdate, PaymentsClient } from './client';
+import type { OrderPosition } from '@app/core/api';
+import { orderPosition } from './schemas';
 import { paymentsClient } from './use-payments';
 
 /** Where a visitor's order stands: its place in the queue, and whether it closed unsent. */
-export type OrderStatus = { position: number; closed: boolean };
-
-function readStatus(body: unknown): OrderStatus | undefined {
-  if (typeof body !== 'object' || body === null) return undefined;
-  const { position, closed } = body as Record<string, unknown>;
-  if (typeof position !== 'number') return undefined;
-  return { position, closed: closed === true };
-}
+export type OrderStatus = OrderPosition;
 
 /**
  * Follows an order on the event stream. `GET /test-purchases/:id` is read once at the start and
@@ -42,8 +37,9 @@ export function followOrder({
         `${client.baseUrl}/test-purchases/${orderId}`,
         { signal: controller.signal },
       );
-      const read = response.ok ? readStatus(await response.json()) : undefined;
-      if (read) show(read);
+      if (!response.ok) return;
+      const read = orderPosition.safeParse(await response.json());
+      if (read.success) show(read.data);
     } catch {
       // the next stream open reads it again
     }
@@ -79,7 +75,9 @@ export function useOrderStatus(
     return followOrder({
       client: paymentsClient(apiBaseUrl),
       orderId,
-      onStatus: (status) => setFollowed({ orderId, status }),
+      onStatus: (status) => {
+        setFollowed({ orderId, status });
+      },
     });
   }, [apiBaseUrl, orderId, paid]);
   if (!orderId || paid) return { position: 0, closed: false };

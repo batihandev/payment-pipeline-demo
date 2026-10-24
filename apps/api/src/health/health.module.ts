@@ -3,16 +3,11 @@ import { BullModule, getQueueToken } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import type { Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
-import { ChainModule } from '../../../../libs/chain/src/chain.module';
-import { ChainClient } from '../../../../libs/chain/src/chain-client';
-import type { Address } from '../../../../libs/chain/src/chain-client';
-import { OrdersModule } from '../../../../libs/orders/src';
-import {
-  QUEUES,
-  QUEUE_ERROR_MESSAGE,
-  logQueueErrors,
-} from '../../../../libs/queues/src';
-import { REDIS } from '../../../../libs/redis/src';
+import { ChainModule } from '@app/chain/chain.module';
+import { ChainClient } from '@app/chain/chain-client';
+import { OrdersModule } from '@app/orders';
+import { QUEUES, QUEUE_ERROR_MESSAGE, logQueueErrors } from '@app/queues';
+import { REDIS } from '@app/redis';
 import type { ApiConfig } from '../common/api-config';
 import { NOW, type Now } from '../common/clock.module';
 import { recordGasPause } from '../test-purchases/visitor-limits';
@@ -63,8 +58,8 @@ import { HealthController } from './health.controller';
         return new ChainSnapshotService(
           chain,
           {
-            buyer: config.get('BUYER_ADDRESS', { infer: true }) as Address,
-            shop: config.get('SHOP_ADDRESS', { infer: true }) as Address,
+            buyer: config.get('BUYER_ADDRESS', { infer: true }),
+            shop: config.get('SHOP_ADDRESS', { infer: true }),
           },
           {
             now: clock,

@@ -1,14 +1,16 @@
+import { Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { getQueueToken, getSharedConfigToken } from '@nestjs/bullmq';
 import { Test } from '@nestjs/testing';
 import { Queue } from 'bullmq';
 import type { Redis } from 'ioredis';
-import { ChainClient } from '../../../libs/chain/src/chain-client';
-import { restoreEnvironmentAfterAll } from '../../../libs/config/testing/environment';
-import { testRedisUrl } from '../../../libs/config/testing/redis';
-import { PrismaService } from '../../../libs/db/src';
-import { QUEUES } from '../../../libs/queues/src';
-import { REDIS } from '../../../libs/redis/src';
+import { ChainClient } from '@app/chain/chain-client';
+import { restoreEnvironmentAfterAll } from '@testing/config/environment';
+import { trackerSchema, validateConfig } from '@app/config';
+import { testRedisUrl } from '@testing/config/redis';
+import { PrismaService } from '@app/db';
+import { QUEUES } from '@app/queues';
+import { REDIS } from '@app/redis';
 import { fixture, shop, buyer, TrackerChain } from '../testing/fixtures';
 import { AppModule } from './app.module';
 import { TrackerProcessor } from './delivery/tracker.processor';
@@ -50,17 +52,18 @@ it('stops the poll loop before closing workers, Redis and the database', async (
     return getHead();
   };
   const module = await Test.createTestingModule({
-    imports: [AppModule.forRoot()],
+    imports: [AppModule.forRoot(validateConfig(trackerSchema, process.env))],
   })
     .overrideProvider(getSharedConfigToken())
     .useValue({ connection: { url: testRedisUrl() }, prefix })
     .overrideProvider(PrismaService)
     .useValue(
       new Proxy(f.db, {
-        get: (target, name) =>
+        get: (target, name): unknown =>
           name === 'onModuleDestroy'
-            ? async () => {
+            ? () => {
                 order.push('database');
+                return Promise.resolve();
               }
             : Reflect.get(target, name, target),
       }),
@@ -71,7 +74,7 @@ it('stops the poll loop before closing workers, Redis and the database', async (
   const tracker = module.get(TrackerProcessor);
   const notices = module.get(ShopNoticesProcessor);
   const redis = module.get<Redis>(REDIS);
-  let closed = false;
+  const shutdown = { closed: false };
   try {
     await module.init();
     await inPass;
@@ -94,7 +97,9 @@ it('stops the poll loop before closing workers, Redis and the database', async (
     expect(tracker.worker.isRunning()).toBe(true);
     expect(notices.worker.isRunning()).toBe(true);
 
-    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const log = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => {});
     try {
       module
         .get<Queue>(getQueueToken(QUEUES.tracker), { strict: false })
@@ -105,18 +110,20 @@ it('stops the poll loop before closing workers, Redis and the database', async (
       tracker.worker.emit('error', new Error('refused'));
       notices.worker.emit('error', new Error('refused'));
       expect(log.mock.calls).toEqual([
-        ['Tracker queue connection failed.'],
-        ['Shop notice queue connection failed.'],
-        ['Tracker worker connection failed.'],
-        ['Shop notice worker connection failed.'],
+        ['Tracker queue connection failed.', { name: 'Error' }],
+        ['Shop notice queue connection failed.', { name: 'Error' }],
+        ['Tracker worker connection failed.', { name: 'Error' }],
+        ['Shop notice worker connection failed.', { name: 'Error' }],
       ]);
     } finally {
       log.mockRestore();
     }
 
-    const closing = module.close().then(() => (closed = true));
+    const closing = module.close().then(() => {
+      shutdown.closed = true;
+    });
     await wait(300);
-    expect(closed).toBe(false);
+    expect(shutdown.closed).toBe(false);
     release();
     await closing;
 
@@ -133,7 +140,7 @@ it('stops the poll loop before closing workers, Redis and the database', async (
     expect(redis.status).toBe('end');
   } finally {
     release();
-    if (!closed) await module.close();
+    if (!shutdown.closed) await module.close();
     for (const name of [QUEUES.tracker, QUEUES.shopNotices]) {
       const probe = new Queue(name, {
         connection: { url: testRedisUrl() },

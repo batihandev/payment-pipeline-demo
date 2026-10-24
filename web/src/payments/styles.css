@@ -71,7 +71,8 @@
   color: var(--tp-paper);
   cursor: pointer;
 }
-.tp button:disabled {
+.tp button:disabled,
+.tp button[aria-disabled='true'] {
   background: var(--tp-grey-dark);
   border-color: var(--tp-grey-dark);
   cursor: default;

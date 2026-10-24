@@ -1,8 +1,9 @@
-import type {
-  Address,
-  ChainClient,
-} from '../../../../libs/chain/src/chain-client';
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
+import type { Address, ChainClient } from '@app/chain/chain-client';
+import { Logger } from '@nestjs/common';
+import { RpcError } from '@app/chain/rpc-error';
+import { errorFields } from '@app/logging';
+
+const logger = new Logger('ChainSnapshotService');
 
 export type GasReading = { native: bigint; at: number } | null;
 export type Balance = { native: bigint; usdc: bigint };
@@ -49,11 +50,13 @@ export class ChainSnapshotService {
     return this.loading;
   }
   /** The buyer's gas balance as visitor admission reads it, without an RPC call. */
-  async buyerGas(): Promise<GasReading> {
+  buyerGas(): Promise<GasReading> {
     const { reading } = this.current();
-    return reading
-      ? { native: reading.balances.buyer.native, at: reading.at }
-      : null;
+    return Promise.resolve(
+      reading
+        ? { native: reading.balances.buyer.native, at: reading.at }
+        : null,
+    );
   }
   private async load(): Promise<void> {
     this.startedAt = this.now();
@@ -77,8 +80,8 @@ export class ChainSnapshotService {
     this.error = null;
     try {
       await this.options.onRefresh?.(reading);
-    } catch {
-      console.error('Could not record the chain reading.');
+    } catch (error) {
+      logger.error('Could not record the chain reading.', errorFields(error));
     }
   }
 }

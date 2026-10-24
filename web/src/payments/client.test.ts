@@ -1,12 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  EVENT_REFRESH_MS,
   HEALTH_EVERY_MS,
   PaymentsClient,
+  READ_TIMEOUT_MS,
+  REFRESH_EVERY_MS,
   STREAM_REOPEN_MS,
   type EventStream,
 } from './client';
+import { health, order, payment } from './test-fixtures';
+import type { Payment, Stats } from './types';
 
 class FakeEventSource implements EventStream {
+  readyState = 0;
+  closed = false;
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
@@ -17,38 +24,66 @@ class FakeEventSource implements EventStream {
   emit(type: string, value: unknown) {
     this.named.get(type)?.({ data: JSON.stringify(value) });
   }
-  close() {}
+  close() {
+    this.closed = true;
+    this.readyState = 2;
+  }
   open() {
+    this.readyState = 1;
     this.onopen?.();
   }
+  /** A dropped connection, which the browser reconnects on its own. */
   disconnect() {
+    this.readyState = 0;
+    this.onerror?.();
+  }
+  /** A refused connection, such as a 429 from the stream cap, which the browser does not retry. */
+  refuse() {
+    this.readyState = 2;
     this.onerror?.();
   }
   send(value: unknown) {
     this.onmessage?.({ data: JSON.stringify(value) });
   }
 }
-const row = (id: string, stage = 'received') => ({
-  id,
-  orderId: `order-${id}`,
-  stage,
-  amount: '14000731',
-  confirmations: 0,
-  provider: 'chain',
-  blockNumber: '91',
-  final: false,
-  sentAt: '2026-10-20T12:00:00Z',
-  receivedAt: null,
-  order: { id: `order-${id}`, item: 'Gold rubber duck', price: '14000000' },
-  explorerUrl: 'https://example.com/tx/123',
-  noteKinds: ['payment_reorg'],
-  version: 0,
+const row = (id: string, stage: Payment['stage'] = 'received') =>
+  payment({
+    id,
+    orderId: `order-${id}`,
+    stage,
+    amount: '14000731',
+    confirmations: 0,
+    blockNumber: '91',
+    sentAt: '2026-10-20T12:00:00Z',
+    receivedAt: null,
+    order: order({
+      id: `order-${id}`,
+      item: 'Gold rubber duck',
+      price: '14000000',
+    }),
+    explorerUrl: 'https://example.com/tx/123',
+    noteKinds: ['payment_reorg'],
+  });
+const todayStats = (settledCount = 0): Stats => ({
+  settledCount,
+  averageTimeToSettleMs: null,
+  duplicatesSkipped: 0,
+  failuresRecovered: 0,
 });
+/** The URL a fetch was called with, whatever form it took. */
+const href = (input: RequestInfo | URL) =>
+  typeof input === 'string'
+    ? input
+    : input instanceof URL
+      ? input.href
+      : input.url;
+
 function server() {
   let payments = [row('old')];
   let settledCount = 0;
   let available = true;
   let healthAvailable = true;
+  const replies = new Map<string, unknown>();
   const requested: string[] = [];
   let hold: Promise<void> = Promise.resolve();
   const stream = new FakeEventSource();
@@ -58,37 +93,29 @@ function server() {
     async function (this: unknown, url) {
       if (this !== undefined) throw new TypeError('Illegal invocation');
       const snapshot = structuredClone({
-        '/payments?limit=100': payments,
-        '/stats': {
-          settledCount,
-          averageTimeToSettleMs: null,
-          duplicatesSkipped: 0,
-          failuresRecovered: 0,
-        },
+        '/payments?limit=101': payments,
+        '/stats': todayStats(settledCount),
         '/stats/daily': [],
-        '/health': {
+        '/health': health({
           confirmations: 7,
-          head: '100',
           cursor: '99',
           lag: '1',
-          openGaps: 0,
           queueDepth: {},
           cooldowns: {},
-          balances: {},
-        },
+        }),
       });
-      const path = new URL(String(url)).pathname;
+      const path = new URL(href(url)).pathname;
       requested.push(path);
       await hold;
       if (!available) throw new Error('offline');
       if (path === '/health' && !healthAvailable)
         return new Response('{}', { status: 503 });
+      const key = new URL(href(url)).pathname + new URL(href(url)).search;
       return new Response(
         JSON.stringify(
-          snapshot[
-            (new URL(String(url)).pathname +
-              new URL(String(url)).search) as keyof typeof snapshot
-          ],
+          replies.has(key)
+            ? replies.get(key)
+            : snapshot[key as keyof typeof snapshot],
         ),
       );
     },
@@ -104,6 +131,10 @@ function server() {
     streamsOpened: () => streamsOpened,
     healthOffline: () => {
       healthAvailable = false;
+    },
+    /** Answers `path` with `body` from now on. */
+    reply: (path: string, body: unknown) => {
+      replies.set(path, body);
     },
     replace: () => {
       payments = [row('new', 'settled')];
@@ -125,17 +156,17 @@ describe('live payments', () => {
     const s = server();
     const stop = s.client.subscribe(() => {});
     s.stream.open();
-    await vi.waitFor(() =>
-      expect(s.client.getSnapshot().data?.payments[0]?.id).toBe('old'),
-    );
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().data?.payments[0]?.id).toBe('old');
+    });
     s.stream.disconnect();
     s.replace();
     s.stream.open();
-    await vi.waitFor(() =>
+    await vi.waitFor(() => {
       expect(s.client.getSnapshot().data?.payments.map((p) => p.id)).toEqual([
         'new',
-      ]),
-    );
+      ]);
+    });
     expect(s.client.getSnapshot().data?.stats.settledCount).toBe(1);
     expect(s.client.getSnapshot().data?.daily).toEqual([]);
     stop();
@@ -144,7 +175,9 @@ describe('live payments', () => {
     const s = server();
     const stop = s.client.subscribe(() => {});
     s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
     s.stream.disconnect();
     let release = () => {};
     s.hold(
@@ -162,9 +195,9 @@ describe('live payments', () => {
     expect(s.client.getSnapshot().status).toBe('live');
     expect(s.client.getSnapshot().data?.payments[0]?.id).toBe('old');
     release();
-    await vi.waitFor(() =>
-      expect(s.client.getSnapshot().data?.payments[0]?.confirmations).toBe(3),
-    );
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().data?.payments[0]?.confirmations).toBe(3);
+    });
     expect(s.client.getSnapshot().data?.payments[0]?.order?.item).toBe(
       'Gold rubber duck',
     );
@@ -177,7 +210,9 @@ describe('live payments', () => {
     const s = server();
     const stop = s.client.subscribe(() => {});
     s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
     s.stream.send({ ...row('old', 'settled'), noteKinds: undefined });
     expect(
       s.client.getSnapshot().data?.payments.find((p) => p.id === 'old'),
@@ -195,7 +230,9 @@ describe('live payments', () => {
     const s = server();
     const stop = s.client.subscribe(() => {});
     s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
     expect(s.requested).not.toContain('/incidents');
     expect(s.client.getSnapshot().data).not.toHaveProperty('incidents');
     stop();
@@ -205,19 +242,21 @@ describe('live payments', () => {
     const s = server();
     const stop = s.client.subscribe(() => {});
     s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
-    await vi.waitFor(() =>
-      expect(s.client.getSnapshot().data?.health?.head).toBe('100'),
-    );
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().data?.health?.head).toBe('100');
+    });
     const health = () => s.requested.filter((p) => p === '/health').length;
     expect(health()).toBe(1);
     for (let index = 0; index < 5; index++) {
       s.stream.send(row(`event-${index}`, 'received'));
-      await vi.waitFor(() =>
+      await vi.waitFor(() => {
         expect(
           s.requested.filter((p) => p === '/payments').length,
-        ).toBeGreaterThan(index + 1),
-      );
+        ).toBeGreaterThan(index + 1);
+      });
       await vi.advanceTimersByTimeAsync(0);
     }
     expect(health()).toBe(1);
@@ -225,12 +264,48 @@ describe('live payments', () => {
     expect(health()).toBe(2);
     stop();
   });
+  it('treats a malformed response as offline', async () => {
+    const s = server();
+    s.reply('/stats', { settledCount: 'many' });
+    const stop = s.client.subscribe(() => {});
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('offline');
+    });
+    expect(s.client.getSnapshot().data).toBeNull();
+    stop();
+  });
+  it('keeps the last health when /health answers a malformed body', async () => {
+    vi.useFakeTimers();
+    const s = server();
+    const stop = s.client.subscribe(() => {});
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().data?.health?.head).toBe('100');
+    });
+    s.reply('/health', { head: 7 });
+    const reads = s.requested.filter((p) => p === '/health').length;
+    await vi.advanceTimersByTimeAsync(HEALTH_EVERY_MS);
+    expect(s.requested.filter((p) => p === '/health')).toHaveLength(reads + 1);
+    expect(s.client.getSnapshot().data?.health?.head).toBe('100');
+    stop();
+  });
+  it('skips a malformed payment event', async () => {
+    const s = server();
+    const stop = s.client.subscribe(() => {});
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
+    s.stream.send({ ...row('old', 'settled'), stage: 'lost', version: 9 });
+    expect(s.client.getSnapshot().data?.payments[0]?.stage).toBe('received');
+    stop();
+  });
   it('stays live with checkout data when /health fails', async () => {
     const s = server();
     s.healthOffline();
     const stop = s.client.subscribe(() => {});
     s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
     expect(s.client.getSnapshot().data?.payments[0]?.id).toBe('old');
     expect(s.client.getSnapshot().data?.health).toBeNull();
     stop();
@@ -239,9 +314,9 @@ describe('live payments', () => {
     const s = server();
     s.offline();
     const stop = s.client.subscribe(() => {});
-    await vi.waitFor(() =>
-      expect(s.client.getSnapshot().status).toBe('offline'),
-    );
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('offline');
+    });
     expect(s.client.getSnapshot().data).toBeNull();
     stop();
   });
@@ -249,7 +324,9 @@ describe('live payments', () => {
     const s = server();
     const stop = s.client.subscribe(() => {});
     s.stream.disconnect();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
     expect(s.client.getSnapshot().data?.payments[0]?.id).toBe('old');
     stop();
   });
@@ -257,24 +334,68 @@ describe('live payments', () => {
     const s = server();
     const stop = s.client.subscribe(() => {});
     s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
     const before = s.client.getSnapshot();
     s.stream.disconnect();
     expect(s.client.getSnapshot()).toBe(before);
     stop();
   });
-  it('reopens the stream after 30 s', async () => {
+  it('lets the browser reconnect a dropped stream', async () => {
+    vi.useFakeTimers();
+    const s = server();
+    const stop = s.client.subscribe(() => {});
+    s.stream.open();
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
+    s.stream.disconnect();
+    await vi.advanceTimersByTimeAsync(STREAM_REOPEN_MS * 2);
+    expect(s.streamsOpened()).toBe(1);
+    expect(s.stream.closed).toBe(false);
+    const reads = s.requested.filter((p) => p === '/payments').length;
+    s.stream.open();
+    await vi.waitFor(() => {
+      expect(s.requested.filter((p) => p === '/payments')).toHaveLength(
+        reads + 1,
+      );
+    });
+    stop();
+  });
+  it('reads once for a burst of events', async () => {
+    vi.useFakeTimers();
+    const s = server();
+    const stop = s.client.subscribe(() => {});
+    s.stream.open();
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
+    const reads = () => s.requested.filter((p) => p === '/payments').length;
+    const before = reads();
+    for (let index = 0; index < 5; index++) {
+      s.stream.send(row(`burst-${index}`));
+      await vi.advanceTimersByTimeAsync(EVENT_REFRESH_MS / 5);
+    }
+    await vi.advanceTimersByTimeAsync(EVENT_REFRESH_MS);
+    expect(reads()).toBe(before + 1);
+    expect(s.client.getSnapshot().data?.payments.map((p) => p.id)).toContain(
+      'burst-4',
+    );
+    stop();
+  });
+  it('reopens a refused stream after 30 s', async () => {
     vi.useFakeTimers();
     const s = server();
     const stop = s.client.subscribe(() => {});
     expect(s.streamsOpened()).toBe(1);
-    s.stream.disconnect();
+    s.stream.refuse();
     await vi.advanceTimersByTimeAsync(STREAM_REOPEN_MS - 1);
     expect(s.streamsOpened()).toBe(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(s.streamsOpened()).toBe(2);
     stop();
-    s.stream.disconnect();
+    s.stream.refuse();
     await vi.advanceTimersByTimeAsync(STREAM_REOPEN_MS * 2);
     expect(s.streamsOpened()).toBe(2);
   });
@@ -283,7 +404,9 @@ describe('live payments', () => {
     const s = server();
     const stop = s.client.subscribe(() => {});
     s.stream.open();
-    await vi.waitFor(() => expect(s.client.getSnapshot().status).toBe('live'));
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
     s.offline();
     const requests = s.requested.length;
     await vi.advanceTimersByTimeAsync(15000);
@@ -327,12 +450,14 @@ describe('test purchases', () => {
     const calls: { url: string; init?: RequestInit }[] = [];
     const client = new PaymentsClient(
       'https://api.example.com/',
-      async (url, init) => {
-        calls.push({ url: String(url), init });
-        return new Response(JSON.stringify({ error: 'card_unavailable' }), {
-          status: 503,
-          headers: { 'retry-after': '5' },
-        });
+      (url, init) => {
+        calls.push({ url: href(url), init });
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: 'card_unavailable' }), {
+            status: 503,
+            headers: { 'retry-after': '5' },
+          }),
+        );
       },
       () => new FakeEventSource(),
     );
@@ -361,7 +486,10 @@ describe('receipt window', () => {
       Date.parse('2026-10-20T12:00:00Z') - minutes * 60000,
     ).toISOString();
   /** A client over `count` payments whose `/payments` reads can be held or failed. */
-  function windowed(count = 250) {
+  function windowed(
+    count = 250,
+    readTimeout?: ConstructorParameters<typeof PaymentsClient>[3],
+  ) {
     const rows = Array.from({ length: count }, (_, i) => ({
       ...row(`p${String(i).padStart(3, '0')}`, 'received'),
       sentAt: at(i),
@@ -376,20 +504,22 @@ describe('receipt window', () => {
     const client = new PaymentsClient(
       'https://api.example.com',
       async (url, init) => {
-        const { pathname, search, searchParams } = new URL(String(url));
+        const { pathname, search, searchParams } = new URL(href(url));
         if (pathname === '/payments') {
           reads.push(search);
           signals.push(init?.signal ?? undefined);
-          await server.hold;
+          await Promise.race([server.hold, aborted(init?.signal)]);
           if (server.fail) return new Response('{}', { status: 503 });
           return Response.json(
             rows.slice(0, Number(searchParams.get('limit'))),
           );
         }
         if (pathname === '/stats/daily') return Response.json([]);
-        return Response.json({});
+        if (pathname === '/stats') return Response.json(todayStats());
+        return Response.json(health());
       },
       () => stream,
+      readTimeout,
     );
     const data = () => {
       const current = client.getSnapshot().data;
@@ -409,13 +539,15 @@ describe('receipt window', () => {
     const showMore = async () => {
       const shown = data().receipts.length;
       client.showMoreReceipts();
-      await vi.waitFor(() =>
-        expect(data().receipts.length).toBeGreaterThan(shown),
-      );
+      await vi.waitFor(() => {
+        expect(data().receipts.length).toBeGreaterThan(shown);
+      });
     };
     const load = async () => {
       stream.open();
-      await vi.waitFor(() => expect(client.getSnapshot().status).toBe('live'));
+      await vi.waitFor(() => {
+        expect(client.getSnapshot().status).toBe('live');
+      });
     };
     return {
       client,
@@ -430,6 +562,119 @@ describe('receipt window', () => {
       load,
     };
   }
+  /** Rejects when `signal` aborts, as fetch does. */
+  const aborted = (signal?: AbortSignal | null) =>
+    new Promise<never>((_, reject) => {
+      signal?.addEventListener('abort', () => {
+        reject(new Error('aborted'));
+      });
+    });
+  /** A timeout signal on the faked timers, which AbortSignal.timeout does not use. */
+  const fakeTimeout = (ms: number) => {
+    const controller = new AbortController();
+    setTimeout(() => {
+      controller.abort();
+    }, ms);
+    return controller.signal;
+  };
+  it('starts the next refresh after a stalled read times out', async () => {
+    vi.useFakeTimers();
+    const s = windowed(30, fakeTimeout);
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    s.holdReads();
+    const reads = s.reads.length;
+    s.stream.send(row('fresh'));
+    await vi.waitFor(() => {
+      expect(s.reads).toHaveLength(reads + 1);
+    });
+    await vi.advanceTimersByTimeAsync(READ_TIMEOUT_MS + REFRESH_EVERY_MS);
+    expect(s.reads).toHaveLength(reads + 2);
+    stop();
+  });
+  /** Runs `body` with one static method of AbortSignal removed, then restores it. */
+  async function without(name: 'any' | 'timeout', body: () => Promise<void>) {
+    const original: unknown = Reflect.get(AbortSignal, name);
+    Reflect.deleteProperty(AbortSignal, name);
+    try {
+      await body();
+    } finally {
+      Reflect.set(AbortSignal, name, original);
+    }
+  }
+  it('completes a read in a browser without AbortSignal.any', async () => {
+    await without('any', async () => {
+      const s = windowed(30);
+      const stop = s.client.subscribe(() => {});
+      await s.load();
+      expect(s.client.getSnapshot().status).toBe('live');
+      stop();
+    });
+  });
+  it('times out a stalled read without AbortSignal.timeout', async () => {
+    vi.useFakeTimers();
+    await without('timeout', async () => {
+      const s = windowed(30);
+      const stop = s.client.subscribe(() => {});
+      await s.load();
+      s.holdReads();
+      const reads = s.reads.length;
+      s.stream.send(row('fresh'));
+      await vi.waitFor(() => {
+        expect(s.reads).toHaveLength(reads + 1);
+      });
+      await vi.advanceTimersByTimeAsync(READ_TIMEOUT_MS + REFRESH_EVERY_MS);
+      expect(s.reads).toHaveLength(reads + 2);
+      stop();
+    });
+  });
+  it('clears the read timer when a read is superseded', async () => {
+    vi.useFakeTimers();
+    await without('any', async () => {
+      await without('timeout', async () => {
+        const s = windowed(250);
+        const stop = s.client.subscribe(() => {});
+        await s.load();
+        const baseline = vi.getTimerCount();
+        const release = s.holdReads();
+        const reads = s.reads.length;
+        s.client.showMoreReceipts();
+        await vi.waitFor(() => {
+          expect(s.reads).toHaveLength(reads + 1);
+        });
+        s.stream.open();
+        await vi.waitFor(() => {
+          expect(s.reads).toHaveLength(reads + 2);
+        });
+        release();
+        await vi.waitFor(() => {
+          expect(s.data().receipts.length).toBeGreaterThan(20);
+        });
+        expect(vi.getTimerCount()).toBe(baseline);
+        stop();
+      });
+    });
+  });
+  it('clears the read timer on unsubscribe', async () => {
+    vi.useFakeTimers();
+    await without('any', async () => {
+      await without('timeout', async () => {
+        const baseline = vi.getTimerCount();
+        const s = windowed(30);
+        const stop = s.client.subscribe(() => {});
+        await s.load();
+        s.holdReads();
+        const reads = s.reads.length;
+        s.stream.send(row('fresh'));
+        await vi.waitFor(() => {
+          expect(s.reads).toHaveLength(reads + 1);
+        });
+        stop();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(vi.getTimerCount()).toBe(baseline);
+      });
+    });
+  });
   /** Counts of the shown receipts at every update, to catch a collapse that a later update hides. */
   function watchCounts(s: ReturnType<typeof windowed>) {
     const counts: number[] = [];
@@ -439,6 +684,21 @@ describe('receipt window', () => {
     });
     return { counts, stop };
   }
+  it('hides Show more when exactly the window size exists', async () => {
+    const s = windowed(120);
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    for (let shown = 20; shown < 120; shown += 20) {
+      expect(s.data().olderReceipts).toBe('more');
+      await s.showMore();
+    }
+    await vi.waitFor(() => {
+      expect(s.data().olderReceipts).not.toBe('loading');
+    });
+    expect(s.data().receipts).toHaveLength(120);
+    expect(s.data().olderReceipts).toBe('none');
+    stop();
+  });
   it('shows the newest 20 and adds 20 with each Show more', async () => {
     const s = windowed();
     const stop = s.client.subscribe(() => {});
@@ -466,7 +726,7 @@ describe('receipt window', () => {
     const reads = s.reads.length;
     await s.showMore();
     expect(s.data().receipts).toHaveLength(120);
-    expect(s.reads.slice(reads)).toEqual(['?limit=120']);
+    expect(s.reads.slice(reads)).toEqual(['?limit=121']);
     expect(s.reads.every((search) => !search.includes('before='))).toBe(true);
     stop();
   });
@@ -483,12 +743,12 @@ describe('receipt window', () => {
     changed.stage = 'settled';
     s.stream.disconnect();
     s.stream.open();
-    await vi.waitFor(() =>
+    await vi.waitFor(() => {
       expect(s.data().receipts.find((p) => p.id === 'p110')?.stage).toBe(
         'settled',
-      ),
-    );
-    expect(s.reads.slice(reads)).toEqual(['?limit=120']);
+      );
+    });
+    expect(s.reads.slice(reads)).toEqual(['?limit=121']);
     expect(Math.min(...counts.slice(updates))).toBe(120);
     expect(s.data().receipts).toHaveLength(120);
     expect(s.data().olderReceipts).toBe('more');
@@ -526,9 +786,9 @@ describe('receipt window', () => {
       confirmations: 0,
       receivedAt: null,
     });
-    await vi.waitFor(() =>
-      expect(s.data().receipts[0]?.noteKinds).toEqual(['payment_reorg']),
-    );
+    await vi.waitFor(() => {
+      expect(s.data().receipts[0]?.noteKinds).toEqual(['payment_reorg']);
+    });
     expect(s.data().receipts[0]).toMatchObject({ stage: 'sent', version: 4 });
     stop();
   });
@@ -554,6 +814,29 @@ describe('receipt window', () => {
     });
     stop();
   });
+  it('treats a missing version as older', async () => {
+    const s = windowed();
+    Object.assign(s.rows[0] ?? {}, { stage: 'confirming', version: 2 });
+    const stop = s.client.subscribe(() => {});
+    await s.load();
+    // An event without a version does not replace the versioned row the page holds.
+    s.stream.send({ ...s.rows[0], stage: 'sent', version: undefined });
+    expect(s.data().receipts[0]).toMatchObject({
+      stage: 'confirming',
+      version: 2,
+    });
+    await settle();
+    // Nor does a read whose copy has no version.
+    s.stream.send({ ...s.rows[1], stage: 'settled', version: 1 });
+    await settle();
+    Object.assign(s.rows[1] ?? {}, { stage: 'confirming', version: undefined });
+    await s.client.refresh();
+    expect(s.data().receipts[1]).toMatchObject({
+      stage: 'settled',
+      version: 1,
+    });
+    stop();
+  });
   it('keeps a newer event over a late read with a lower version', async () => {
     const s = windowed();
     const stop = s.client.subscribe(() => {});
@@ -562,7 +845,9 @@ describe('receipt window', () => {
     const release = s.holdReads();
     const reads = s.reads.length;
     s.client.showMoreReceipts();
-    await vi.waitFor(() => expect(s.reads.length).toBe(reads + 1));
+    await vi.waitFor(() => {
+      expect(s.reads.length).toBe(reads + 1);
+    });
     // The read is in flight; the event moves p110 on, and the read's copy is the older one.
     s.stream.send({ ...s.rows[110], stage: 'settled', version: 5 });
     const p110 = () => s.data().receipts.find((p) => p.id === 'p110');
@@ -570,7 +855,9 @@ describe('receipt window', () => {
     // Notes come from incidents, so the read's notes apply even to a row the client keeps.
     Object.assign(s.rows[110] ?? {}, { noteKinds: ['paid_after_expiry'] });
     release();
-    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(140));
+    await vi.waitFor(() => {
+      expect(s.data().receipts).toHaveLength(140);
+    });
     expect(p110()).toMatchObject({
       stage: 'settled',
       version: 5,
@@ -591,7 +878,9 @@ describe('receipt window', () => {
     expect(s.data().olderReceipts).toBe('loading');
     expect(s.data().receipts).toHaveLength(120);
     release();
-    await vi.waitFor(() => expect(s.data().olderFailed).toBe(true));
+    await vi.waitFor(() => {
+      expect(s.data().olderFailed).toBe(true);
+    });
     expect(s.data().olderReceipts).toBe('more');
     expect(s.data().receipts).toHaveLength(120);
     expect(s.client.getSnapshot().status).toBe('live');
@@ -599,8 +888,10 @@ describe('receipt window', () => {
     const reads = s.reads.length;
     s.client.showMoreReceipts();
     expect(s.data().olderFailed).toBe(false);
-    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(140));
-    expect(s.reads.slice(reads)).toEqual(['?limit=140']);
+    await vi.waitFor(() => {
+      expect(s.data().receipts).toHaveLength(140);
+    });
+    expect(s.reads.slice(reads)).toEqual(['?limit=141']);
     stop();
   });
   it('stops offering more at 200 or when the server has no more', async () => {
@@ -638,7 +929,9 @@ describe('receipt window', () => {
     const reads = s.reads.length;
     s.stream.disconnect();
     s.stream.open();
-    await vi.waitFor(() => expect(s.reads.length).toBeGreaterThan(reads));
+    await vi.waitFor(() => {
+      expect(s.reads.length).toBeGreaterThan(reads);
+    });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(s.data().olderFailed).toBe(false);
     expect(s.data().olderReceipts).toBe('more');
@@ -651,7 +944,9 @@ describe('receipt window', () => {
     await s.load();
     s.server.fail = true;
     s.client.showMoreReceipts();
-    await vi.waitFor(() => expect(s.data().olderFailed).toBe(true));
+    await vi.waitFor(() => {
+      expect(s.data().olderFailed).toBe(true);
+    });
     s.server.fail = false;
     await s.client.refresh();
     expect(s.data().olderFailed).toBe(false);
@@ -688,12 +983,16 @@ describe('receipt window', () => {
     const reads = s.reads.length;
     void s.client.refresh();
     s.client.showMoreReceipts();
-    await vi.waitFor(() => expect(s.reads.length).toBe(reads + 2));
+    await vi.waitFor(() => {
+      expect(s.reads.length).toBe(reads + 2);
+    });
     const [first, second] = s.signals.slice(reads);
     expect(first?.aborted).toBe(true);
     expect(second?.aborted).toBe(false);
     release();
-    await vi.waitFor(() => expect(s.data().receipts).toHaveLength(40));
+    await vi.waitFor(() => {
+      expect(s.data().receipts).toHaveLength(40);
+    });
     stop();
     expect(second?.aborted).toBe(false);
   });

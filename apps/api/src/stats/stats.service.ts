@@ -1,24 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../../../../libs/db/src';
-import { DAY_MS, utcDateKey, utcDay } from '../../../../libs/core/src/time';
+import { PrismaService } from '@app/db';
+import type { DailyStat, TodayStats } from '@app/core/api';
+import { DAY_MS, utcDateKey, utcDay } from '@app/core/time';
 import type { ApiConfig } from '../common/api-config';
 import { InjectNow, type Now } from '../common/clock.module';
 import { ttlCache } from '../common/ttl-cache';
 
-type TodayStats = {
-  settledCount: number;
-  averageTimeToSettleMs: number | null;
-  duplicatesSkipped: number;
-  failuresRecovered: number;
-};
-type DailyStats = {
-  day: string;
-  settled: number;
-  scheduled: number;
-  visitor: number;
-  averageTimeToSettleMs: number | null;
-}[];
+type DailyStats = DailyStat[];
 
 @Injectable()
 export class StatsService {

@@ -1,7 +1,8 @@
-import { DAY_MS } from '../../../../libs/core/src/time';
-import { savePaymentEvent } from '../../../../libs/events/src/save-payment-event';
-import type { TransferLog } from '../../../../libs/chain/src/chain-client';
-import type { Prisma } from '../../../../libs/db/src';
+import { DAY_MS } from '@app/core/time';
+import { savePaymentEvent } from '@app/events/save-payment-event';
+import type { TransferLog } from '@app/chain/chain-client';
+import type { Prisma } from '@app/db';
+import { recordIncident } from '@app/db';
 /** The unlogged `sent` row that a transfer's transaction hash and amount belong to. */
 function findDroppedPayment(
   tx: Prisma.TransactionClient,
@@ -90,17 +91,15 @@ export async function receiveTransfer(
     ? await tx.payment.update({ where: { id: sent.id }, data })
     : await tx.payment.create({ data: { ...data, provider: 'chain' } });
   if (!order || order.status === 'expired' || order.expiresAt < now)
-    await tx.incident.create({
-      data: {
-        paymentId: payment.id,
-        kind: order ? 'paid_after_expiry' : 'unmatched',
-        whatHappened: order
-          ? 'Order paid after expiry.'
-          : 'Transfer amount matched no recent order.',
-        howHandled: order
-          ? 'Matched the late payment and continued confirmation.'
-          : 'Stored the unmatched payment without order credit.',
-      },
+    await recordIncident(tx, {
+      paymentId: payment.id,
+      kind: order ? 'paid_after_expiry' : 'unmatched',
+      whatHappened: order
+        ? 'Order paid after expiry.'
+        : 'Transfer amount matched no recent order.',
+      howHandled: order
+        ? 'Matched the late payment and continued confirmation.'
+        : 'Stored the unmatched payment without order credit.',
     });
   await savePaymentEvent(tx, payment);
   return payment;

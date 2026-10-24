@@ -7,8 +7,8 @@ import {
   Min,
   ValidateBy,
 } from 'class-validator';
-import { decodePaymentCursor } from '../../../../../libs/core/src/payment-cursor';
-import { PAYMENT_LIST_MAX } from '../../../../../libs/core/src/payment-list';
+import { decodePaymentCursor } from '@app/core/payment-cursor';
+import { PAYMENT_LIST_MAX } from '@app/core/payment-list';
 
 export class PaymentsQueryDto {
   @IsOptional()

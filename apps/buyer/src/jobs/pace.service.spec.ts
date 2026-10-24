@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { Queue } from 'bullmq';
-import { testDatabase } from '../../../../libs/db/testing/database';
+import { testDatabase } from '@testing/db/database';
 import {
   OrderQueueService,
   CustomersService,
   PurchasesService,
-} from '../../../../libs/orders/src';
-import type { BuyerJobData } from '../../../../libs/queues/src';
-import { testRedisUrl } from '../../../../libs/config/testing/redis';
+} from '@app/orders';
+import type { BuyerJobData } from '@app/queues';
+import { testRedisUrl } from '@testing/config/redis';
 import { PaceService } from './pace.service';
 
 let database: Awaited<ReturnType<typeof testDatabase>>;

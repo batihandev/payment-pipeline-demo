@@ -1,6 +1,6 @@
 import { Redis } from 'ioredis';
-import type { Hex } from '../../../libs/chain/src/chain-client';
-import { ScriptedChain } from '../../../libs/chain/testing/scripted-chain';
+import type { Hex } from '@app/chain/chain-client';
+import { ScriptedChain } from '@testing/chain/scripted-chain';
 import { OrderSenderService } from '../../buyer/src/sending/order-sender.service';
 import { RedisLock } from '../../buyer/src/sending/redis-lock';
 import {
@@ -15,8 +15,8 @@ import {
   shop,
 } from '../testing/fixtures';
 import { ScannerService } from './scanning/scanner.service';
-import { testRedisUrl } from '../../../libs/config/testing/redis';
-import { fakeConfig } from '../../../libs/config/testing/config';
+import { testRedisUrl } from '@testing/config/redis';
+import { fakeConfig } from '@testing/config/config';
 import type { BuyerConfig } from '../../buyer/src/buyer-config';
 let f: Awaited<ReturnType<typeof fixture>>;
 let redis: Redis;

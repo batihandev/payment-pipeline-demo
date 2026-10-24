@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../../../libs/db/src';
-import { saveOrderEvents } from '../../../../libs/events/src/order-events';
+import { PrismaService } from '@app/db';
+import { saveOrderEvents } from '@app/events/order-events';
 
 @Injectable()
 export class ExpiryService {

@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import { payment } from './payments/test-fixtures';
+import { health, payment } from './payments/test-fixtures';
 import type { Dashboard } from './payments/types';
 
 const data: Dashboard = {
@@ -42,18 +42,7 @@ describe('PaymentsPanel', () => {
   });
   it('shows no balance warning when an account runs low', async () => {
     const low = { native: '0', usdc: '0', lowNative: true, lowUsdc: true };
-    data.health = {
-      confirmations: 10,
-      head: '100',
-      cursor: '100',
-      lag: '0',
-      openGaps: 0,
-      queueDepth: null,
-      cooldowns: null,
-      balances: { buyer: low, shop: low },
-      chainError: null,
-      cardAvailable: false,
-    };
+    data.health = health({ balances: { buyer: low, shop: low } });
     const { PaymentsPanel } = await import('./panel');
     const html = renderToStaticMarkup(<PaymentsPanel apiBaseUrl="/api" />);
     data.health = null;

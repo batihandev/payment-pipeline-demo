@@ -3,9 +3,15 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/client';
-import type { PrismaService } from '../src/database.module';
+import type { DatabasePool, PrismaService } from '../src/database.module';
 
-export async function testDatabase(): Promise<{
+/**
+ * A Prisma client on a fresh schema with every migration applied. `pool` replaces the
+ * driver's pool settings, for tests that depend on them.
+ */
+export async function testDatabase(
+  pool: Partial<Omit<DatabasePool, 'connectionString'>> = {},
+): Promise<{
   db: PrismaService;
   close: () => Promise<void>;
 }> {
@@ -20,9 +26,13 @@ export async function testDatabase(): Promise<{
   const url = new URL(connectionString);
   url.searchParams.set('options', `-c search_path=${schema}`);
   const client = new PrismaClient({
-    adapter: new PrismaPg({ connectionString: url.toString() }, { schema }),
+    adapter: new PrismaPg(
+      { ...pool, connectionString: url.toString() },
+      { schema },
+    ),
   });
   const db = Object.assign(client, {
+    onModuleInit: async () => {},
     onModuleDestroy: async () => {
       await client.$disconnect();
     },
@@ -48,20 +58,18 @@ export async function testDatabase(): Promise<{
 
 /**
  * Splits a migration into statements at each `;` outside a `$$` body, since the driver runs
- * one statement per call.
+ * one statement per call. Only untagged `$$` bodies are recognised: a tagged body such as
+ * `$fn$ ... $fn$` would be split at its semicolons.
  */
 function sqlStatements(sql: string): string[] {
   return sql
     .split(/(\$\$[\s\S]*?\$\$)/)
     .reduce<string[]>(
       (statements, part, index) => {
-        if (index % 2) {
-          statements[statements.length - 1] += part;
-          return statements;
-        }
+        const [current = '', ...earlier] = statements.toReversed();
+        if (index % 2) return [...earlier.toReversed(), current + part];
         const [first = '', ...rest] = part.split(';');
-        statements[statements.length - 1] += first;
-        return [...statements, ...rest];
+        return [...earlier.toReversed(), current + first, ...rest];
       },
       [''],
     )

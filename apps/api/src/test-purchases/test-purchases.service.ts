@@ -2,19 +2,19 @@ import { randomUUID, createHash } from 'node:crypto';
 import {
   Inject,
   Injectable,
+  Logger,
   type OnModuleDestroy,
   type OnModuleInit,
 } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import type { Subscription } from 'rxjs';
-import { PrismaService, type PaymentRail } from '../../../../libs/db/src';
-import {
-  OrderQueueService,
-  PurchasesService,
-} from '../../../../libs/orders/src';
-import { orderClosed } from '../../../../libs/events/src/order-events';
-import { utcDateKey } from '../../../../libs/core/src/time';
-import { InjectRedis } from '../../../../libs/redis/src';
+import { PrismaService, type PaymentRail } from '@app/db';
+import { errorFields } from '@app/logging';
+import { OrderQueueService, PurchasesService } from '@app/orders';
+import { orderClosed } from '@app/events/order-events';
+import type { OrderPosition, PurchaseAccepted } from '@app/core/api';
+import { utcDateKey } from '@app/core/time';
+import { InjectRedis } from '@app/redis';
 import { ApiError } from '../common/api-error';
 import { InjectNow, type Now } from '../common/clock.module';
 import { EventsService } from '../events/events.service';
@@ -34,6 +34,8 @@ const waiting = {
   sendState: 'pending',
   status: 'open',
 } as const;
+
+const logger = new Logger('TestPurchasesService');
 
 @Injectable()
 export class TestPurchasesService implements OnModuleInit, OnModuleDestroy {
@@ -83,8 +85,8 @@ export class TestPurchasesService implements OnModuleInit, OnModuleDestroy {
             select: { id: true },
           });
           this.events.publishQueue(orders.map(({ id }) => id));
-        } catch {
-          console.error('Could not read the visitor queue.');
+        } catch (error) {
+          logger.error('Could not read the visitor queue.', errorFields(error));
         }
       }
       this.queueReading = undefined;
@@ -153,21 +155,10 @@ export class TestPurchasesService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  buy(
-    address: string,
-    rail: PaymentRail,
-  ): Promise<{
-    orderId: string;
-    position: number;
-    item: string;
-    price: string;
-    expiresAt: string;
-  }> {
+  buy(address: string, rail: PaymentRail): Promise<PurchaseAccepted> {
     return this.exclusive(async () => {
       const now = this.now();
-      let created:
-        | { orderId: string; item: string; price: string; expiresAt: string }
-        | undefined;
+      let created: Omit<PurchaseAccepted, 'position'> | undefined;
       try {
         if (rail === 'card') {
           if (!(await this.cardRail.available()))
@@ -205,7 +196,7 @@ export class TestPurchasesService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** The queue position of a waiting order, and whether it closed without a payment being sent. */
-  async positionOf(id: string): Promise<{ position: number; closed: boolean }> {
+  async positionOf(id: string): Promise<OrderPosition> {
     const unknown = { position: 0, closed: false };
     if (!uuid.test(id)) return unknown;
     const order = await this.db.order.findUnique({ where: { id } });

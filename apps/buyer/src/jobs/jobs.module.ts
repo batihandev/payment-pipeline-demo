@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
 import { BullModule, getQueueToken } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
-import { OrdersModule } from '../../../../libs/orders/src';
-import { QUEUES, logQueueErrors } from '../../../../libs/queues/src';
+import { OrdersModule } from '@app/orders';
+import { QUEUES, logQueueErrors } from '@app/queues';
 import { CardsModule } from '../cards/cards.module';
 import { ExpiryModule } from '../expiry/expiry.module';
 import { RefillModule } from '../refill/refill.module';

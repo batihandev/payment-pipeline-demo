@@ -1,15 +1,10 @@
 import { Module, type DynamicModule, type Provider } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Redis } from 'ioredis';
-import type { apiSchema, buyerSchema, trackerSchema } from '../../config/src';
+import type { apiSchema, buyerSchema, trackerSchema } from '@app/config';
 import type { z } from 'zod';
-import { REDIS } from '../../redis/src';
-import {
-  ChainClient,
-  TransferSigner,
-  type Address,
-  type Hex,
-} from './chain-client';
+import { REDIS } from '@app/redis';
+import { ChainClient, TransferSigner, type Address } from './chain-client';
 import { BUYER_ADDRESS, SHOP_ADDRESS, walletAddress } from './wallet-addresses';
 import { serviceLimiter } from './service-limiter';
 import { ViemChainClient } from './viem-client';
@@ -35,16 +30,15 @@ function viemClient(
     config.get(key, { infer: true });
   const keys =
     service === 'buyer'
-      ? [get('BUYER_PRIVATE_KEY') as Hex, get('SHOP_PRIVATE_KEY') as Hex]
+      ? [get('BUYER_PRIVATE_KEY'), get('SHOP_PRIVATE_KEY')]
       : undefined;
   const shopAddress =
-    walletShop ??
-    (service === 'tracker' ? (get('SHOP_ADDRESS') as Address) : undefined);
+    walletShop ?? (service === 'tracker' ? get('SHOP_ADDRESS') : undefined);
   return new ViemChainClient(
     {
       chainId: get('CHAIN_ID'),
       rpcUrl: get('RPC_URL'),
-      usdcAddress: get('USDC_ADDRESS') as Address,
+      usdcAddress: get('USDC_ADDRESS'),
       ...(shopAddress && { shopAddress }),
       ...(keys && { keys }),
     },

@@ -1,4 +1,4 @@
-import { testDatabase } from '../../../../libs/db/testing/database';
+import { testDatabase } from '@testing/db/database';
 import { RetentionService } from './retention.service';
 let database: Awaited<ReturnType<typeof testDatabase>>;
 const now = new Date('2026-10-22T12:00:00Z');

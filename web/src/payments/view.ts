@@ -80,7 +80,7 @@ export function cardRail(
   health: Pick<Health, 'cardAvailable'> | null,
 ): CardRail {
   if (!health) return 'checking';
-  return health.cardAvailable === true ? 'available' : 'unavailable';
+  return health.cardAvailable ? 'available' : 'unavailable';
 }
 const brandNames: Record<string, string> = {
   amex: 'American Express',

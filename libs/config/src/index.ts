@@ -2,8 +2,11 @@ import { z } from 'zod';
 
 const positiveInteger = z.coerce.number().int().positive();
 const microUnits = z.string().regex(/^\d+$/).transform(BigInt);
-const address = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
-const privateKey = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
+/** Typed as viem's `0x${string}` once the pattern has matched. */
+const hex = (pattern: RegExp) =>
+  z.string().regex(pattern).pipe(z.custom<`0x${string}`>());
+const address = hex(/^0x[0-9a-fA-F]{40}$/);
+const privateKey = hex(/^0x[0-9a-fA-F]{64}$/);
 const sandboxSecretKey = z.string().startsWith('sk_test_');
 const emptyAsUnset = (value: unknown) => (value === '' ? undefined : value);
 /** A bare http(s) origin: scheme, host and optional port, with no path or trailing slash. */
@@ -12,6 +15,9 @@ const webOrigin = z
   .refine((value) => URL.canParse(value) && new URL(value).origin === value);
 const connection = {
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
+  DATABASE_POOL_MAX: positiveInteger.default(10),
+  DATABASE_CONNECT_TIMEOUT_MS: positiveInteger.default(5000),
+  DATABASE_IDLE_TIMEOUT_MS: positiveInteger.default(10_000),
   REDIS_URL: z.url({ protocol: /^rediss?$/ }),
 };
 const chain = {
@@ -114,18 +120,24 @@ export const stripeSetupSchema = z.object({
   STRIPE_PAYMENT_METHOD: z.string().startsWith('pm_').default('pm_card_visa'),
 });
 
+/** A configuration that failed validation. It names the variables, never their values. */
+export class ConfigError extends Error {
+  override readonly name = 'ConfigError';
+
+  constructor(readonly variables: string[]) {
+    super(`Invalid or missing environment variables: ${variables.join(', ')}`);
+  }
+}
+
 export function validateConfig<T extends z.ZodType>(
   schema: T,
   environment: Record<string, string | undefined>,
 ): z.output<T> {
   const result = schema.safeParse(environment);
   if (!result.success) {
-    const names = [
+    throw new ConfigError([
       ...new Set(result.error.issues.map((issue) => issue.path.join('.'))),
-    ];
-    throw new Error(
-      `Invalid or missing environment variables: ${names.join(', ')}`,
-    );
+    ]);
   }
   return result.data;
 }

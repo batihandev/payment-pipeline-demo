@@ -1,7 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
-import { REDIS } from '../../redis/src';
+import { REDIS } from '@app/redis';
 import { ChainClient, TransferSigner } from './chain-client';
 import { ChainModule } from './chain.module';
 import { privateKeyToAccount } from 'viem/accounts';
@@ -67,6 +67,10 @@ it('derives the buyer and shop addresses from their keys once, for the buyer onl
     privateKeyToAccount(shopKey as `0x${string}`).address,
   );
   const tracker = await build('tracker');
-  expect(() => tracker.get(BUYER_ADDRESS)).toThrow();
-  expect(() => tracker.get(SHOP_ADDRESS)).toThrow();
+  expect(() => {
+    tracker.get(BUYER_ADDRESS);
+  }).toThrow();
+  expect(() => {
+    tracker.get(SHOP_ADDRESS);
+  }).toThrow();
 });

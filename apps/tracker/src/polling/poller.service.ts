@@ -1,15 +1,19 @@
 import { setTimeout } from 'node:timers/promises';
 import {
   Injectable,
+  Logger,
   Optional,
   type OnApplicationBootstrap,
   type OnModuleDestroy,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../../../../libs/db/src';
+import { PrismaService, recordIncident } from '@app/db';
+import { errorFields } from '@app/logging';
 import { ScannerService } from '../scanning/scanner.service';
 import { ProgressService } from '../scanning/progress.service';
 import type { TrackerConfig } from '../tracker-config';
+const logger = new Logger('PollerService');
+
 @Injectable()
 export class PollerService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly stopped = new AbortController();
@@ -46,16 +50,16 @@ export class PollerService implements OnApplicationBootstrap, OnModuleDestroy {
         delay = await this.pass();
       } catch {
         try {
-          await this.db.incident.create({
-            data: {
-              kind: 'tracker_pass_failed',
-              whatHappened: 'The tracker pass could not finish.',
-              howHandled:
-                'Retained database state and scheduled the next poll.',
-            },
+          await recordIncident(this.db, {
+            kind: 'tracker_pass_failed',
+            whatHappened: 'The tracker pass could not finish.',
+            howHandled: 'Retained database state and scheduled the next poll.',
           });
-        } catch {
-          console.error('Tracker database connection failed.');
+        } catch (error) {
+          logger.error(
+            'Tracker database connection failed.',
+            errorFields(error),
+          );
         }
       }
       try {

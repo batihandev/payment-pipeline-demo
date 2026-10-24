@@ -6,13 +6,10 @@ import {
   paymentChannel,
   publishPayment,
   serializePayment,
-} from '../../../../libs/events/src/publish-payment';
-import {
-  orderChannel,
-  serializeOrder,
-} from '../../../../libs/events/src/order-events';
-import { testDatabase } from '../../../../libs/db/testing/database';
-import { testRedisUrl } from '../../../../libs/config/testing/redis';
+} from '@app/events/publish-payment';
+import { orderChannel, serializeOrder } from '@app/events/order-events';
+import { testDatabase } from '@testing/db/database';
+import { testRedisUrl } from '@testing/config/redis';
 import { createTestApp } from '../../testing/app';
 import { openEventStream } from '../../testing/event-stream';
 
@@ -55,7 +52,7 @@ it('relays full published payment rows to SSE clients and releases disconnected 
   });
   const received = once(stream, 'data');
   await publishPayment(redis, row);
-  const [chunk] = await received;
+  const chunk: unknown = (await received)[0];
   expect(String(chunk)).toContain(`data: ${serializePayment(row)}\n\n`);
   stream.destroy();
 });
@@ -97,7 +94,7 @@ it('streams donations without the sender', async () => {
   const stream = await connect();
   const received = once(stream, 'data');
   await publishPayment(redis, await donation('named-donation', 10000n));
-  const [chunk] = await received;
+  const chunk: unknown = (await received)[0];
   const message = JSON.parse(
     /^data: (.*)$/m.exec(String(chunk))?.[1] ?? '',
   ) as Record<string, unknown>;
@@ -157,7 +154,7 @@ it('relays order events to the stream as named order events', async () => {
     orderChannel,
     serializeOrder({ id, status: 'expired', sendState: 'failed' }),
   );
-  const [chunk] = await received;
+  const chunk: unknown = (await received)[0];
   expect(String(chunk)).toMatch(/^event: order\n(id: \d+\n)?data: (.*)\n\n$/m);
   expect(String(chunk)).toContain(
     `data: {"type":"order","id":"${id}","closed":true}\n\n`,

@@ -1,5 +1,5 @@
 import type { Redis } from 'ioredis';
-import { VISITOR_PAUSED_SINCE } from '../../../../libs/core/src/redis-keys';
+import { VISITOR_PAUSED_SINCE } from '@app/core/redis-keys';
 
 export type VisitorLimits = {
   perMinute: number;

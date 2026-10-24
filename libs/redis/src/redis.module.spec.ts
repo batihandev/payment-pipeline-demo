@@ -1,8 +1,9 @@
+import { Logger } from '@nestjs/common';
 import { once } from 'node:events';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import type { Redis } from 'ioredis';
-import { testRedisUrl } from '../../config/testing/redis';
+import { testRedisUrl } from '@testing/config/redis';
 import { REDIS, RedisModule } from './redis.module';
 
 it('quits Redis on shutdown', async () => {
@@ -36,10 +37,14 @@ it('names the service in its connection-failure log line', async () => {
       RedisModule.forRoot({ service: 'API' }),
     ],
   }).compile();
-  const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+  const log = jest
+    .spyOn(Logger.prototype, 'error')
+    .mockImplementation(() => {});
   try {
     module.get<Redis>(REDIS).emit('error', new Error('refused'));
-    expect(log).toHaveBeenCalledWith('API Redis connection failed.');
+    expect(log.mock.calls).toEqual([
+      ['API Redis connection failed.', { name: 'Error' }],
+    ]);
   } finally {
     log.mockRestore();
     await module.close();

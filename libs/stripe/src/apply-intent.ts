@@ -1,14 +1,11 @@
 import type Stripe from 'stripe';
 import type { Order, Payment } from '../../db/generated/client';
-import { BudgetReservation, type Prisma } from '../../db/src';
-import { savePaymentEvent } from '../../events/src/save-payment-event';
-import {
-  BEFORE_PROCESSING,
-  BEFORE_SETTLED,
-} from '../../orders/src/card-stages';
-import { failCardPayment } from '../../orders/src/fail-card-payment';
-import { lockOrder } from '../../orders/src/lock-order';
-import { settlePayment } from '../../orders/src/settle-payment';
+import { BudgetReservation, type Prisma, recordIncident } from '@app/db';
+import { savePaymentEvent } from '@app/events/save-payment-event';
+import { BEFORE_PROCESSING, BEFORE_SETTLED } from '@app/orders/card-stages';
+import { failCardPayment } from '@app/orders/fail-card-payment';
+import { lockOrder } from '@app/orders/lock-order';
+import { settlePayment } from '@app/orders/settle-payment';
 
 const CENTS = 10000n;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -30,12 +27,10 @@ export async function applyIntent(
 ): Promise<IntentOutcome> {
   const locked = await lockPayment(tx, intent, now);
   if (!locked) {
-    await tx.incident.create({
-      data: {
-        kind: 'unmatched',
-        whatHappened: `Card payment ${intent.id} matches no card order.`,
-        howHandled: 'Stored the event and changed nothing.',
-      },
+    await recordIncident(tx, {
+      kind: 'unmatched',
+      whatHappened: `Card payment ${intent.id} matches no card order.`,
+      howHandled: 'Stored the event and changed nothing.',
     });
     return 'unmatched';
   }
@@ -60,13 +55,11 @@ export async function applyIntent(
         receiptUrl: receiptUrlOf(intent) ?? payment.receiptUrl,
       });
       if (order.status === 'expired' || order.expiresAt < now)
-        await tx.incident.create({
-          data: {
-            kind: 'paid_after_expiry',
-            paymentId: payment.id,
-            whatHappened: 'Order paid after expiry.',
-            howHandled: 'Settled the late card payment.',
-          },
+        await recordIncident(tx, {
+          kind: 'paid_after_expiry',
+          paymentId: payment.id,
+          whatHappened: 'Order paid after expiry.',
+          howHandled: 'Settled the late card payment.',
         });
       // Closing a scheduled order gave its budget back; the late payment spends it again.
       if (order.source === 'schedule' && order.sendState === 'failed')
@@ -95,7 +88,7 @@ async function lockPayment(
   intent: Stripe.PaymentIntent,
   now: Date,
 ): Promise<{ payment: OrderPayment; order: Order } | null> {
-  const orderId = intent.metadata?.orderId;
+  const orderId = intent.metadata.orderId;
   if (!orderId || !UUID.test(orderId)) return null;
   // The buyer locks the order before it writes the payment, so both sides agree on the order.
   await lockOrder(tx, orderId);

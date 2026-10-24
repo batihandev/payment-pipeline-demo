@@ -1,5 +1,5 @@
 import { DelayedError, type Job } from 'bullmq';
-import type { BuyerJobData } from '../../../../libs/queues/src';
+import type { BuyerJobData } from '@app/queues';
 import type { FundsService } from '../sending/funds.service';
 export const IN_FLIGHT_DELAY_MS = 500;
 /** Puts a send back in the queue, without using an attempt, while the wallet is at its cap. */

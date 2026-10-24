@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { testDatabase } from '../../../../libs/db/testing/database';
+import type { SendState } from '@app/db';
+import { testDatabase } from '@testing/db/database';
 import { FundsService } from './funds.service';
 
 let database: Awaited<ReturnType<typeof testDatabase>>;
@@ -18,7 +19,7 @@ beforeEach(async () => {
 function order(
   expectedAmount: bigint,
   extra: {
-    sendState?: string;
+    sendState?: SendState;
     status?: 'open' | 'expired';
     signedTransaction?: string;
     rail?: 'chain' | 'card';
@@ -48,7 +49,7 @@ function order(
   });
 }
 function chainWith(usdc: bigint) {
-  return { getBalances: jest.fn(async () => ({ native: 0n, usdc })) };
+  return { getBalances: jest.fn(() => Promise.resolve({ native: 0n, usdc })) };
 }
 
 it('covers an order the balance can pay', async () => {
@@ -84,8 +85,8 @@ it('lets an already-signed order through without reading the balance', async () 
 it('holds the order when the balance read fails', async () => {
   const row = await order(1_000_000n);
   const chain = {
-    getBalances: jest.fn(async () => {
-      throw new Error('rpc down');
+    getBalances: jest.fn(() => {
+      return Promise.reject(new Error('rpc down'));
     }),
   };
   const funds = new FundsService(database.db, chain, buyer);

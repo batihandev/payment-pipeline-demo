@@ -1,20 +1,13 @@
 import { Injectable } from '@nestjs/common';
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
-import { PrismaService } from '../../../../libs/db/src';
-import {
-  BEFORE_PROCESSING,
-  BEFORE_SETTLED,
-} from '../../../../libs/orders/src/card-stages';
-import { saveOrderEvents } from '../../../../libs/events/src/order-events';
-import { closeOrder } from '../../../../libs/orders/src/close-order';
-import { failCardPayment } from '../../../../libs/orders/src/fail-card-payment';
-import { lockOrder } from '../../../../libs/orders/src/lock-order';
-import { CustomersService, hasSavedCard } from '../../../../libs/orders/src';
-import {
-  CardDeclinedError,
-  StripeClient,
-  type CardPayment,
-} from '../../../../libs/stripe/src';
+import { RpcError } from '@app/chain/rpc-error';
+import { PrismaService, recordIncident } from '@app/db';
+import { BEFORE_PROCESSING, BEFORE_SETTLED } from '@app/orders/card-stages';
+import { saveOrderEvents } from '@app/events/order-events';
+import { closeOrder } from '@app/orders/close-order';
+import { failCardPayment } from '@app/orders/fail-card-payment';
+import { lockOrder } from '@app/orders/lock-order';
+import { CustomersService, hasSavedCard } from '@app/orders';
+import { CardDeclinedError, StripeClient, type CardPayment } from '@app/stripe';
 
 const CENTS = 10000n;
 const DECLINED = 'The test card was declined.';
@@ -156,12 +149,10 @@ export class CardSenderService {
         return;
       }
       await closeOrder(tx, order);
-      await tx.incident.create({
-        data: {
-          kind: 'card_failed',
-          whatHappened: DECLINED,
-          howHandled: 'Closed the order; nothing was credited.',
-        },
+      await recordIncident(tx, {
+        kind: 'card_failed',
+        whatHappened: DECLINED,
+        howHandled: 'Closed the order; nothing was credited.',
       });
     });
   }
@@ -187,18 +178,16 @@ export class CardSenderService {
         });
         await saveOrderEvents(tx, [orderId]);
       }
-      await tx.incident.create({
-        data: {
-          kind: 'send_failed',
-          whatHappened: accepted
-            ? `Card payment ${orderId}: charge accepted; recording failed, retrying.`
-            : `Card payment ${orderId} failed (${kind}).`,
-          howHandled: closed
-            ? 'No charge was made; released the reservation and closed the order.'
-            : exhausted
-              ? 'Automatic retries stopped; kept the reservation for manual review.'
-              : 'Kept the reservation; retry with backoff.',
-        },
+      await recordIncident(tx, {
+        kind: 'send_failed',
+        whatHappened: accepted
+          ? `Card payment ${orderId}: charge accepted; recording failed, retrying.`
+          : `Card payment ${orderId} failed (${kind}).`,
+        howHandled: closed
+          ? 'No charge was made; released the reservation and closed the order.'
+          : exhausted
+            ? 'Automatic retries stopped; kept the reservation for manual review.'
+            : 'Kept the reservation; retry with backoff.',
       });
     });
   }

@@ -29,6 +29,13 @@ enum PaymentProvider {
   stripe
 }
 
+enum SendState {
+  pending
+  sent
+  failed
+  review
+}
+
 enum PaymentStage {
   sent
   received
@@ -52,7 +59,7 @@ model Order {
   nonce             BigInt?
   signedTransaction String?      @map("signed_transaction")
   transactionHash   String?      @map("transaction_hash")
-  sendState         String       @default("pending") @map("send_state")
+  sendState         SendState    @default(pending) @map("send_state")
   sendAttempts      Int          @default(0) @map("send_attempts")
   createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
   expiresAt         DateTime     @map("expires_at") @db.Timestamptz(3)
@@ -63,6 +70,9 @@ model Order {
 
   @@index([expectedAmount, createdAt])
   @@index([customerId])
+  @@index([status, expiresAt])
+  @@index([sendState, rail])
+  @@index([source, createdAt])
   @@map("orders")
 }
 
@@ -149,6 +159,7 @@ model Payment {
   @@unique([provider, externalKey])
   @@unique([chainId, transactionHash, logIndex])
   @@index([orderId])
+  @@index([provider, chainId, final, stage])
   @@map("payments")
 }
 
@@ -174,6 +185,7 @@ model Incident {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([paymentId])
+  @@index([kind, createdAt])
   @@map("incidents")
 }
 
@@ -193,6 +205,7 @@ model Notice {
   attempts    Int       @default(0)
   deliveredAt DateTime? @map("delivered_at") @db.Timestamptz(3)
 
+  @@index([deliveredAt])
   @@map("notices")
 }
 
@@ -204,14 +217,14 @@ model WalletNonce {
 }
 
 model Sweep {
-  id                String   @id
+  id                String    @id
   amount            BigInt
   nonce             BigInt?
-  signedTransaction String?  @map("signed_transaction")
-  transactionHash   String?  @map("transaction_hash")
-  sendAttempts      Int      @default(0) @map("send_attempts")
-  sendState         String   @default("pending") @map("send_state")
-  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  signedTransaction String?   @map("signed_transaction")
+  transactionHash   String?   @map("transaction_hash")
+  sendAttempts      Int       @default(0) @map("send_attempts")
+  sendState         SendState @default(pending) @map("send_state")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@map("sweeps")
 }

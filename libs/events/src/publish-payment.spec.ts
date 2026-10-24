@@ -1,7 +1,7 @@
 import { Redis } from 'ioredis';
-import { testDatabase } from '../../db/testing/database';
+import { testDatabase } from '@testing/db/database';
 import { paymentChannel, publishPayment } from './publish-payment';
-import { testRedisUrl } from '../../config/testing/redis';
+import { testRedisUrl } from '@testing/config/redis';
 
 it('publishes the complete saved payment with integer amounts encoded as decimal strings', async () => {
   const database = await testDatabase();
@@ -20,9 +20,9 @@ it('publishes the complete saved payment with integer amounts encoded as decimal
     });
     await subscriber.subscribe(paymentChannel);
     const delivered = new Promise<string>((resolve) =>
-      subscriber.once('message', (_channel, message: string) =>
-        resolve(message),
-      ),
+      subscriber.once('message', (_channel, message: string) => {
+        resolve(message);
+      }),
     );
     await publishPayment(publisher, row);
     const message = JSON.parse(await delivered) as Record<string, unknown>;

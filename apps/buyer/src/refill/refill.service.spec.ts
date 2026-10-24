@@ -1,12 +1,12 @@
 import { Redis } from 'ioredis';
-import { testDatabase } from '../../../../libs/db/testing/database';
-import { ScriptedChain } from '../../../../libs/chain/testing/scripted-chain';
-import { testRedisUrl } from '../../../../libs/config/testing/redis';
+import { testDatabase } from '@testing/db/database';
+import { ScriptedChain } from '@testing/chain/scripted-chain';
+import { testRedisUrl } from '@testing/config/redis';
 import { RedisLock } from '../sending/redis-lock';
 import { OrderSenderService } from '../sending/order-sender.service';
 import { RefillService } from './refill.service';
 import { SweepService } from '../sweep/sweep.service';
-import { fakeConfig } from '../../../../libs/config/testing/config';
+import { fakeConfig } from '@testing/config/config';
 import type { BuyerConfig } from '../buyer-config';
 const buyer = `0x${'11'.repeat(20)}` as const;
 const shop = `0x${'22'.repeat(20)}` as const;
@@ -31,10 +31,11 @@ beforeEach(async () => {
   await database.db.walletNonce.deleteMany();
   chain = new ScriptedChain();
   usdc = { [buyer]: 4_999_999n, [shop]: 38_000_000n };
-  chain.getBalances = async (address) => ({
-    native: 1n,
-    usdc: usdc[address] ?? 0n,
-  });
+  chain.getBalances = (address) =>
+    Promise.resolve({
+      native: 1n,
+      usdc: usdc[address] ?? 0n,
+    });
   sender = new OrderSenderService(
     database.db,
     chain,

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Queue, Worker, type Job } from 'bullmq';
-import { testDatabase } from '../../db/testing/database';
-import { testRedisUrl } from '../../config/testing/redis';
-import type { BuyerJobData } from '../../queues/src';
+import { testDatabase } from '@testing/db/database';
+import { testRedisUrl } from '@testing/config/redis';
+import type { BuyerJobData } from '@app/queues';
 import { OrderQueueService } from './order-queue.service';
 import { CustomersService } from './customers.service';
 import { PurchasesService } from './purchases.service';
@@ -70,7 +70,9 @@ it('runs a visitor purchase ahead of queued scheduled sends without pacing or a 
   );
   try {
     const first = new Promise<void>((resolve, reject) => {
-      worker.once('completed', () => resolve());
+      worker.once('completed', () => {
+        resolve();
+      });
       worker.once('error', reject);
     });
     const running = worker.run();

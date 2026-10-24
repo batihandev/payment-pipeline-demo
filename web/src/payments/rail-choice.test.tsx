@@ -28,16 +28,16 @@ describe('RailChoice', () => {
       'Pay on the test network',
     ]);
   });
-  it('holds the card button in place, disabled, until /health answers', () => {
+  it('holds the card button in place, marked unavailable, until /health answers', () => {
     const html = renderToStaticMarkup(
       <RailChoice card="checking" disabled={false} onChoose={() => {}} />,
     );
     const [chain, card] = buttons(html);
     expect(card?.label).toBe('Pay with a test card');
-    expect(card?.tag).toContain('disabled');
-    expect(chain?.tag).not.toContain('disabled');
+    expect(card?.tag).toContain('aria-disabled="true"');
+    expect(chain?.tag).toContain('aria-disabled="false"');
   });
-  it('shows progress on the chosen rail and disables both', () => {
+  it('shows progress on the chosen rail and marks both unavailable', () => {
     const html = renderToStaticMarkup(
       <RailChoice
         card="available"
@@ -51,7 +51,9 @@ describe('RailChoice', () => {
       expect.objectContaining({ label: 'Pay on the test network' }),
       expect.objectContaining({ label: 'Placing your order…' }),
     ]);
-    for (const button of buttons(html))
-      expect(button.tag).toContain('disabled');
+    for (const button of buttons(html)) {
+      expect(button.tag).toContain('aria-disabled="true"');
+      expect(button.tag).not.toMatch(/ disabled=/);
+    }
   });
 });

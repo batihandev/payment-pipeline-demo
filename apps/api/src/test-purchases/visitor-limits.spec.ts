@@ -1,5 +1,5 @@
 import { Redis } from 'ioredis';
-import { testRedisUrl } from '../../../../libs/config/testing/redis';
+import { testRedisUrl } from '@testing/config/redis';
 import { ChainSnapshotService } from '../health/chain-snapshot.service';
 import { recordGasPause } from './visitor-limits';
 
@@ -21,8 +21,8 @@ it('records the gas-floor pause on each chain refresh, without visitor clicks', 
   let time = start;
   const snapshot = new ChainSnapshotService(
     {
-      getHead: async () => ({ number: 1n, hash: '0x01' }),
-      getBalances: async () => ({ native, usdc: 0n }),
+      getHead: () => Promise.resolve({ number: 1n, hash: '0x01' }),
+      getBalances: () => Promise.resolve({ native, usdc: 0n }),
     },
     { buyer: `0x${'11'.repeat(20)}`, shop: `0x${'22'.repeat(20)}` },
     {

@@ -2,19 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { CardTerminal } from './card-terminal';
 import { ChainTerminal } from './chain-terminal';
 import { checkoutDeadline, checkoutState } from './checkout-state';
-import type { Rail } from './client';
 import { RailChoice } from './rail-choice';
 import { Receipt } from './receipt';
-import { paymentsClient, usePayments } from './use-payments';
+import { usePayments } from './use-payments';
+import { usePurchase } from './use-purchase';
 import { useOrderStatus } from './use-order-status';
 import { useStageSequence } from './use-stage-sequence';
-import {
-  cardRail,
-  confirmationsNeeded,
-  money,
-  purchaseMessage,
-  stageView,
-} from './view';
+import { cardRail, confirmationsNeeded, money, stageView } from './view';
 import './styles.css';
 import './checkout.css';
 
@@ -24,10 +18,14 @@ function useTimeAfter(deadline: number | null): number {
   useEffect(() => {
     if (deadline === null) return;
     const timer = setTimeout(
-      () => setNow(Math.max(Date.now(), deadline + 1)),
+      () => {
+        setNow(Math.max(Date.now(), deadline + 1));
+      },
       Math.max(0, deadline + 1 - Date.now()),
     );
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+    };
   }, [deadline]);
   return now;
 }
@@ -43,14 +41,20 @@ export function Checkout({
 }) {
   const { data, status } = usePayments(apiBaseUrl);
   const [opened, setOpened] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [orderId, setOrderId] = useState<string>();
-  const [rail, setRail] = useState<Rail>();
-  const [message, setMessage] = useState('');
-  const [accepted, setAccepted] = useState(0);
-  const inFlight = useRef(false);
-  const [ordered, setOrdered] = useState<{ item: string; price: string }>();
-  const [expiresAt, setExpiresAt] = useState<string>();
+  const drawerHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (opened) drawerHeading.current?.focus();
+  }, [opened]);
+  const {
+    sending,
+    orderId,
+    rail,
+    message,
+    accepted,
+    ordered,
+    expiresAt,
+    purchase,
+  } = usePurchase(apiBaseUrl, onOrder);
   const latest = data?.payments.find((p) => p.orderId === orderId);
   const frame = useStageSequence(latest);
   const payment = latest && frame ? { ...latest, ...frame } : undefined;
@@ -73,44 +77,6 @@ export function Checkout({
     now,
   });
 
-  async function purchase(chosen: Rail) {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    setRail(chosen);
-    setSending(true);
-    setMessage('');
-    try {
-      const client = paymentsClient(apiBaseUrl);
-      const response = await client.purchase(chosen);
-      const { body } = response;
-      if (body.orderId) {
-        setOrderId(body.orderId);
-        setExpiresAt(body.expiresAt);
-        setOrdered(
-          body.item && body.price
-            ? { item: body.item, price: body.price }
-            : undefined,
-        );
-        setAccepted(response.ok ? (body.position ?? 0) : 0);
-        onOrder?.(body.orderId);
-        setMessage(
-          response.ok
-            ? ''
-            : 'Your order was accepted. Sending is pending; please wait.',
-        );
-        await client.refresh();
-      } else if (!response.ok)
-        setMessage(
-          purchaseMessage(response.status, body.error, response.retryAfter),
-        );
-      else setMessage('Demo offline');
-    } catch {
-      setMessage('Demo offline');
-    } finally {
-      setSending(false);
-      inFlight.current = false;
-    }
-  }
   return (
     <section className="tp tp-checkout" aria-labelledby="checkout-title">
       <div className="tp-counter-heading">
@@ -126,13 +92,17 @@ export function Checkout({
         <button
           type="button"
           disabled={status !== 'live'}
-          onClick={() => setOpened(true)}
+          onClick={() => {
+            setOpened(true);
+          }}
         >
           Open the counter
         </button>
       ) : (
         <div className="tp-drawer">
-          <h3>How would you like to pay?</h3>
+          <h3 ref={drawerHeading} tabIndex={-1}>
+            How would you like to pay?
+          </h3>
           <p className="tp-muted">
             The shop chooses an item when your order is accepted.
           </p>

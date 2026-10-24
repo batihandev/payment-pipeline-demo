@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { catalogue } from '../../core/src/catalogue';
-import { dailyTarget } from '../../core/src/pacing';
-import { testDatabase } from '../../db/testing/database';
+import { catalogue } from '@app/core/catalogue';
+import { dailyTarget } from '@app/core/pacing';
+import { testDatabase } from '@testing/db/database';
 import { CustomersService } from './customers.service';
 import { PurchasesService, purchaseOptions } from './purchases.service';
 
@@ -174,9 +174,9 @@ it('creates a card order at the item price without an offset', async () => {
   expect(order).toMatchObject({
     rail: 'card',
     customerId: customer.id,
-    item: item?.name,
-    price: item?.priceCents && item.priceCents * 10000n,
-    expectedAmount: item?.priceCents && item.priceCents * 10000n,
+    item: item.name,
+    price: item.priceCents * 10000n,
+    expectedAmount: item.priceCents * 10000n,
   });
 });
 it('creates chain orders with a unique offset and the demo customer', async () => {

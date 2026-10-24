@@ -8,15 +8,17 @@ it('spaces every RPC method through one service limiter', async () => {
     2,
     30000,
     () => now,
-    async (ms) => {
+    (ms) => {
       now += ms;
+      return Promise.resolve();
     },
   );
   const starts: number[] = [];
   await Promise.all(
     Array.from({ length: 4 }, () =>
-      limiter.run(async () => {
+      limiter.run(() => {
         starts.push(now);
+        return Promise.resolve();
       }),
     ),
   );
@@ -29,16 +31,17 @@ it('starts a service cooldown after a rate limit without retrying the rejected o
     5,
     30000,
     () => now,
-    async (ms) => {
+    (ms) => {
       now += ms;
+      return Promise.resolve();
     },
   );
   await expect(
-    limiter.run(async () => {
-      throw new RpcError('rate_limit');
+    limiter.run(() => {
+      return Promise.reject(new RpcError('rate_limit'));
     }),
   ).rejects.toMatchObject({ kind: 'rate_limit' });
-  const resumed = await limiter.run(async () => now);
+  const resumed = await limiter.run(() => Promise.resolve(now));
   expect(resumed).toBe(30000);
 });
 

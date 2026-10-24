@@ -1,17 +1,15 @@
 import { Module, type DynamicModule } from '@nestjs/common';
 import { BullModule, getQueueToken } from '@nestjs/bullmq';
-import { ConfigService } from '@nestjs/config';
 import type { Queue } from 'bullmq';
-import { appConfig } from '../../../libs/config/src/config.module';
-import { trackerSchema } from '../../../libs/config/src';
-import { DatabaseModule } from '../../../libs/db/src';
+import { appConfig } from '@app/config/config.module';
+import { DatabaseModule } from '@app/db';
 import {
   QUEUES,
   QUEUE_ERROR_MESSAGE,
   QueueErrorsModule,
   logQueueErrors,
-} from '../../../libs/queues/src';
-import { RedisModule } from '../../../libs/redis/src';
+} from '@app/queues';
+import { RedisModule } from '@app/redis';
 import { DeliveryModule } from './delivery/delivery.module';
 import { NoticesModule } from './notices/notices.module';
 import { PollingModule } from './polling/polling.module';
@@ -22,23 +20,18 @@ const TRACKER_QUEUE_ERRORS = Symbol('TRACKER_QUEUE_ERRORS');
 
 @Module({})
 export class AppModule {
-  /** Reads and validates the environment when called, so it can be set up first. */
-  static forRoot(): DynamicModule {
+  /** Builds the app from a configuration the entry point has already validated. */
+  static forRoot(config: TrackerConfig): DynamicModule {
     return {
       module: AppModule,
       imports: [
-        appConfig(trackerSchema),
+        appConfig(config),
         DatabaseModule,
         RedisModule.forRoot({ service: 'Tracker' }),
         QueueErrorsModule.forRoot({
           message: 'Tracker queue connection failed.',
         }),
-        BullModule.forRootAsync({
-          inject: [ConfigService],
-          useFactory: (config: ConfigService<TrackerConfig, true>) => ({
-            connection: { url: config.get('REDIS_URL', { infer: true }) },
-          }),
-        }),
+        BullModule.forRoot({ connection: { url: config.REDIS_URL } }),
         BullModule.registerQueue({ name: QUEUES.tracker }),
         DeliveryModule,
         NoticesModule,

@@ -1,12 +1,8 @@
-import { fakeConfig } from '../../../libs/config/testing/config';
+import { fakeConfig } from '@testing/config/config';
 import type { TrackerConfig } from '../src/tracker-config';
-import type {
-  ChainClient,
-  Hex,
-  TransferLog,
-} from '../../../libs/chain/src/chain-client';
-import { RpcLimiter } from '../../../libs/chain/src/rpc-limiter';
-import { testDatabase } from '../../../libs/db/testing/database';
+import type { ChainClient, Hex, TransferLog } from '@app/chain/chain-client';
+import { RpcLimiter } from '@app/chain/rpc-limiter';
+import { testDatabase } from '@testing/db/database';
 
 export const shop = `0x${'22'.repeat(20)}` as const;
 export const buyer = `0x${'11'.repeat(20)}` as const;
@@ -67,14 +63,15 @@ export class TrackerChain implements Pick<
     5,
     30000,
     () => this.time,
-    async (ms) => {
+    (ms) => {
       this.time += ms;
+      return Promise.resolve();
     },
   );
   private request<T>(work: () => T): Promise<T> {
-    return this.limiter.run(async () => {
+    return this.limiter.run(() => {
       this.starts.push(this.time);
-      return work();
+      return Promise.resolve(work());
     });
   }
   getHead = () =>

@@ -2,14 +2,11 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import Stripe from 'stripe';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { testDatabase } from '../../../../libs/db/testing/database';
-import { PrismaService } from '../../../../libs/db/src';
-import { utcDay } from '../../../../libs/core/src/time';
-import { CustomersService } from '../../../../libs/orders/src';
-import {
-  CardDeclinedError,
-  type StripeClient,
-} from '../../../../libs/stripe/src';
+import { testDatabase } from '@testing/db/database';
+import { PrismaService } from '@app/db';
+import { utcDay } from '@app/core/time';
+import { CustomersService } from '@app/orders';
+import { CardDeclinedError, type StripeClient } from '@app/stripe';
 import { CardSenderService } from '../../../buyer/src/cards/card-sender.service';
 import { createTestApp } from '../../testing/app';
 
@@ -162,10 +159,11 @@ it('creates the payment when the webhook arrives first', async () => {
   const [created] = await payments();
   await (
     await cardSender({
-      createPayment: async () => ({
-        id: 'pi_1',
-        receiptUrl: 'https://pay.stripe.com/receipts/test',
-      }),
+      createPayment: () =>
+        Promise.resolve({
+          id: 'pi_1',
+          receiptUrl: 'https://pay.stripe.com/receipts/test',
+        }),
     })
   ).charge(id, false);
   const all = await payments();
@@ -387,8 +385,8 @@ it('records card_failed once for a declined card', async () => {
   await db().order.update({ where: { id }, data: { sendState: 'pending' } });
   await (
     await cardSender({
-      createPayment: async () => {
-        throw new CardDeclinedError('card_declined', 'pi_1');
+      createPayment: () => {
+        return Promise.reject(new CardDeclinedError('card_declined', 'pi_1'));
       },
     })
   ).charge(id, false);

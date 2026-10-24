@@ -1,12 +1,12 @@
-import { ScriptedChain } from '../../../../libs/chain/testing/scripted-chain';
+import { ScriptedChain } from '@testing/chain/scripted-chain';
 import { Redis } from 'ioredis';
 import { keccak256, type Hex } from 'viem';
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
-import { testDatabase } from '../../../../libs/db/testing/database';
+import { RpcError } from '@app/chain/rpc-error';
+import { testDatabase } from '@testing/db/database';
 import { OrderSenderService } from './order-sender.service';
 import { RedisLock } from './redis-lock';
-import { testRedisUrl } from '../../../../libs/config/testing/redis';
-import { fakeConfig } from '../../../../libs/config/testing/config';
+import { testRedisUrl } from '@testing/config/redis';
+import { fakeConfig } from '@testing/config/config';
 import type { BuyerConfig } from '../buyer-config';
 
 const buyer = `0x${'11'.repeat(20)}` as const;
@@ -134,10 +134,9 @@ it('keeps an unknown send reserved and records a safe handling note', async () =
   expect(
     await database.db.dailyBudget.findUniqueOrThrow({ where: { day } }),
   ).toMatchObject({ reservedCount: 1, reservedAmount: 100n });
-  expect(await database.db.incident.findFirstOrThrow()).toMatchObject({
-    kind: 'send_failed',
-    howHandled: expect.stringContaining('same signed transaction'),
-  });
+  const incident = await database.db.incident.findFirstOrThrow();
+  expect(incident.kind).toBe('send_failed');
+  expect(incident.howHandled).toContain('same signed transaction');
 });
 it('releases a known unsigned failure once and never sends that order on a later retry', async () => {
   const row = await order('schedule');
@@ -314,9 +313,9 @@ it('does not re-sign when the stored transfer has landed', async () => {
     data: { address: buyer, nextNonce: 1n },
   });
   const row = await order();
-  chain.getTransactionReceipt = async () => {
+  chain.getTransactionReceipt = () => {
     chain.calls.push('getTransactionReceipt');
-    return { blockNumber: 1n, status: 'success' as const };
+    return Promise.resolve({ blockNumber: 1n, status: 'success' as const });
   };
   await sender.sendForOrder(row.id);
   const sent = await database.db.order.findUniqueOrThrow({

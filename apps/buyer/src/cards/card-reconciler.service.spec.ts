@@ -1,18 +1,13 @@
 import { Redis } from 'ioredis';
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
-import { cooldownKey } from '../../../../libs/chain/src/service-limiter';
-import { testRedisUrl } from '../../../../libs/config/testing/redis';
-import { testDatabase } from '../../../../libs/db/testing/database';
-import {
-  FakeStripe,
-  paymentIntent,
-} from '../../../../libs/stripe/testing/fake-stripe';
-import { RpcLimiter } from '../../../../libs/chain/src/rpc-limiter';
-import {
-  SdkStripeClient,
-  StripeAccessError,
-} from '../../../../libs/stripe/src/stripe-client';
-import { applyIntent } from '../../../../libs/stripe/src';
+import { RpcError } from '@app/chain/rpc-error';
+import { cooldownKey } from '@app/chain/service-limiter';
+import { testRedisUrl } from '@testing/config/redis';
+import type { SendState } from '@app/db';
+import { testDatabase } from '@testing/db/database';
+import { FakeStripe, paymentIntent } from '@testing/stripe/fake-stripe';
+import { RpcLimiter } from '@app/chain/rpc-limiter';
+import { SdkStripeClient, StripeAccessError } from '@app/stripe/stripe-client';
+import { applyIntent } from '@app/stripe';
 import { CardReconcilerService } from './card-reconciler.service';
 
 const now = new Date('2026-10-23T12:00:00Z');
@@ -45,7 +40,7 @@ const db = () => database.db;
 
 function order(
   data: {
-    sendState?: string;
+    sendState?: SendState;
     status?: 'open' | 'expired';
     source?: 'visitor' | 'schedule';
   } = {},
@@ -232,7 +227,7 @@ it('stops the run without incidents when Stripe rejects the API key', async () =
 });
 
 it('stops the run without incidents when no Stripe key is set', async () => {
-  const noop = async () => undefined;
+  const noop = () => Promise.resolve(undefined);
   const keyless = new SdkStripeClient(
     undefined,
     new RpcLimiter(1000, 1000, Date.now, noop, noop),

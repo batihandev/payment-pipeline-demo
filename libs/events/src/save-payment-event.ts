@@ -1,5 +1,5 @@
 import type { Payment } from '../../db/generated/client';
-import type { Prisma } from '../../db/src';
+import type { Prisma } from '@app/db';
 import { serializePayment } from './publish-payment';
 export async function savePaymentEvent(
   tx: Prisma.TransactionClient,

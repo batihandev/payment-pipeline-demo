@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { Receipt, StepStrip } from './receipt';
-import { payment } from './test-fixtures';
+import { order, payment } from './test-fixtures';
 
 const cardPayment = (overrides = {}) =>
   payment({
@@ -9,12 +9,7 @@ const cardPayment = (overrides = {}) =>
     confirmations: 0,
     blockNumber: null,
     receiptUrl: 'https://pay.stripe.com/receipts/1',
-    order: {
-      id: 'o1',
-      item: 'Duck',
-      price: '500000',
-      customer: { cardBrand: 'visa', cardLast4: '4242' },
-    },
+    order: order({ customer: { cardBrand: 'visa', cardLast4: '4242' } }),
     ...overrides,
   });
 
@@ -71,12 +66,9 @@ describe('Receipt', () => {
     const html = renderToStaticMarkup(
       <Receipt
         payment={cardPayment({
-          order: {
-            id: 'o1',
-            item: 'Duck',
-            price: '500000',
+          order: order({
             customer: { cardBrand: 'cartes_bancaires', cardLast4: '4242' },
-          },
+          }),
         })}
         threshold={7}
       />,

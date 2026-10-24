@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type Stripe from 'stripe';
-import { PrismaService, type Prisma } from '../../../../libs/db/src';
-import { applyIntent } from '../../../../libs/stripe/src';
+import { PrismaService, type Prisma, recordIncident } from '@app/db';
+import { applyIntent } from '@app/stripe';
 import { InjectNow, type Now } from '../common/clock.module';
 
 const INTENT_EVENTS = [
@@ -53,13 +53,11 @@ export class StripeWebhooksService {
           },
         })
       : null;
-    await tx.incident.create({
-      data: {
-        kind: 'duplicate',
-        paymentId: payment?.id,
-        whatHappened: 'Stripe event delivered again.',
-        howHandled: 'Skipped the duplicate event.',
-      },
+    await recordIncident(tx, {
+      kind: 'duplicate',
+      paymentId: payment?.id,
+      whatHappened: 'Stripe event delivered again.',
+      howHandled: 'Skipped the duplicate event.',
     });
   }
 }

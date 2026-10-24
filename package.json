@@ -8,11 +8,11 @@
     "pnpm": ">=10 <11"
   },
   "scripts": {
-    "lint": "eslint . && tsc --noEmit && prettier --check .",
+    "lint": "eslint . && tsc --noEmit && tsc --noEmit -p tsconfig.build.json && pnpm --filter web exec tsc --noEmit && prettier --check .",
     "format": "prettier --write .",
     "test": "node --experimental-vm-modules --env-file-if-exists=.env node_modules/jest/bin/jest.js --runInBand && pnpm --filter web test",
     "test:local": "docker compose up -d --wait && DATABASE_URL=postgresql://testnet:local_testnet@127.0.0.1:55432/testnet_payments pnpm prisma migrate deploy && TEST_DATABASE_URL=postgresql://testnet:local_testnet@127.0.0.1:55432/testnet_payments TEST_REDIS_URL=redis://127.0.0.1:56379/1 pnpm test",
-    "build": "pnpm prisma generate && nest build buyer && nest build tracker && nest build api && tsc -p tsconfig.libs.json && tsc -p tsconfig.scripts.json && pnpm --filter web build",
+    "build": "pnpm prisma generate && nest build buyer && nest build tracker && nest build api && nest build scripts && pnpm --filter web build",
     "start:buyer": "node --env-file=.env dist/apps/buyer/apps/buyer/src/main.js",
     "start:tracker": "node --env-file=.env dist/apps/tracker/apps/tracker/src/main.js",
     "start:api": "node --env-file=.env dist/apps/api/apps/api/src/main.js",
@@ -46,6 +46,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@jest/globals": "30.5.2",
     "@nestjs/cli": "12.0.10",
     "@nestjs/testing": "12.2.0",
     "@types/express": "5.0.6",
@@ -54,6 +55,8 @@
     "@types/supertest": "7.2.1",
     "eslint": "^10.13.0",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-jsx-a11y": "6.10.2",
+    "eslint-plugin-react-hooks": "7.1.1",
     "jest": "^30.5.2",
     "prettier": "^3.9.10",
     "prisma": "catalog:",
@@ -61,6 +64,6 @@
     "ts-jest": "^29.4.15",
     "tsx": "^4.23.15",
     "typescript": "6.0.3",
-    "typescript-eslint": "^8.72.0"
+    "typescript-eslint": "8.71.1"
   }
 }

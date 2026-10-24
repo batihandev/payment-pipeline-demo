@@ -1,5 +1,6 @@
 import {
   Inject,
+  Logger,
   type OnApplicationBootstrap,
   type OnModuleDestroy,
 } from '@nestjs/common';
@@ -7,16 +8,13 @@ import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import { UnrecoverableError, type Job } from 'bullmq';
 import type { Redis } from 'ioredis';
-import { RpcError } from '../../../../libs/chain/src/rpc-error';
-import { DAY_MS } from '../../../../libs/core/src/time';
-import { PrismaService, type PaymentRail } from '../../../../libs/db/src';
-import { publishPayment } from '../../../../libs/events/src/publish-payment';
-import {
-  OrderQueueService,
-  PurchasesService,
-} from '../../../../libs/orders/src';
-import { JOBS, QUEUES, type BuyerJobData } from '../../../../libs/queues/src';
-import { REDIS } from '../../../../libs/redis/src';
+import { RpcError } from '@app/chain/rpc-error';
+import { DAY_MS } from '@app/core/time';
+import { PrismaService, type PaymentRail, recordIncident } from '@app/db';
+import { publishPayment } from '@app/events/publish-payment';
+import { OrderQueueService, PurchasesService } from '@app/orders';
+import { JOBS, QUEUES, type BuyerJobData } from '@app/queues';
+import { REDIS } from '@app/redis';
 import type { BuyerConfig } from '../buyer-config';
 import { CardSenderService } from '../cards/card-sender.service';
 import { RetentionService } from '../retention/retention.service';
@@ -25,12 +23,15 @@ import { OrderSenderService } from '../sending/order-sender.service';
 import { holdWhenFull, holdWhenShort } from './holds';
 import { mapJobError } from './job-errors';
 import { PaceService } from './pace.service';
+import { errorFields } from '@app/logging';
 
 @Processor(QUEUES.buyer, { concurrency: 1, autorun: false })
 export class BuyerProcessor
   extends WorkerHost
   implements OnApplicationBootstrap, OnModuleDestroy
 {
+  private readonly logger = new Logger(BuyerProcessor.name);
+
   private readonly maxInFlight: number;
   private readonly retentionMs: number;
 
@@ -52,7 +53,9 @@ export class BuyerProcessor
   }
 
   onApplicationBootstrap(): void {
-    void this.worker.run().catch(() => console.error('Buyer worker stopped.'));
+    void this.worker.run().catch((error: unknown) => {
+      this.logger.error('Buyer worker stopped.', errorFields(error));
+    });
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -60,8 +63,8 @@ export class BuyerProcessor
   }
 
   @OnWorkerEvent('error')
-  onError(): void {
-    console.error('Buyer worker connection failed.');
+  onError(error: Error): void {
+    this.logger.error('Buyer worker connection failed.', errorFields(error));
   }
 
   async process(job: Job<BuyerJobData>, token?: string): Promise<void> {
@@ -95,7 +98,7 @@ export class BuyerProcessor
           const counts = await this.retention.pruneOlderThan(
             new Date(now.getTime() - this.retentionMs),
           );
-          console.log(`Retention removed ${JSON.stringify(counts)}`);
+          this.logger.log('Retention removed old rows.', counts);
           return;
         }
         case JOBS.buyer.visitorPurchase: {
@@ -135,15 +138,13 @@ export class BuyerProcessor
     try {
       await publishPayment(this.redis, payment);
     } catch {
-      await this.db.incident.create({
-        data: {
-          kind: 'event_failed',
-          paymentId: payment.id,
-          whatHappened: 'Could not publish the saved payment event.',
-          howHandled: exhausted
-            ? 'Publication retries exhausted; the saved payment is available for clients to refetch.'
-            : 'Payment remains saved; retry publication with the purchase job.',
-        },
+      await recordIncident(this.db, {
+        kind: 'event_failed',
+        paymentId: payment.id,
+        whatHappened: 'Could not publish the saved payment event.',
+        howHandled: exhausted
+          ? 'Publication retries exhausted; the saved payment is available for clients to refetch.'
+          : 'Payment remains saved; retry publication with the purchase job.',
       });
       throw new RpcError('transient');
     }

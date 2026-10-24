@@ -48,11 +48,11 @@
   min-height: 52px;
   text-align: center;
 }
-.tp .tp-rail-card:not(:disabled) {
+.tp .tp-rail-card:not([aria-disabled='true']) {
   background: var(--tp-ivory);
   color: var(--tp-ink);
 }
-.tp .tp-rail-card:not(:disabled):hover {
+.tp .tp-rail-card:not([aria-disabled='true']):hover {
   background: #f4ead6;
 }
 .tp-purchase-status {

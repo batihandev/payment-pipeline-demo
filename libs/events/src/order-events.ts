@@ -1,12 +1,8 @@
 import type { Order } from '../../db/generated/client';
-import type { Prisma } from '../../db/src';
+import type { Prisma } from '@app/db';
+import type { OrderEvent } from '@app/core/api';
 
 export const orderChannel = 'orders';
-
-/** What the page learns about an order: its id, and whether it closed without a payment sent. */
-export type OrderEvent = { type: 'order'; id: string; closed: boolean };
-/** The visitor orders waiting to be sent, oldest first. */
-export type QueueEvent = { type: 'queue'; waiting: string[] };
 
 type OrderState = Pick<Order, 'id' | 'status' | 'sendState'>;
 

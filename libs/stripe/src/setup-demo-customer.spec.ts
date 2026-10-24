@@ -1,5 +1,5 @@
 import type Stripe from 'stripe';
-import { testDatabase } from '../../db/testing/database';
+import { testDatabase } from '@testing/db/database';
 import { setupDemoCustomer } from './setup-demo-customer';
 
 const config = {
@@ -8,13 +8,15 @@ const config = {
 };
 
 function fakeStripe() {
-  const customersCreate = jest.fn(async () => ({ id: 'cus_1' }));
-  const attach = jest.fn(async () => ({
-    id: 'pm_own',
-    card: { brand: 'visa', last4: '4242' },
-  }));
-  const list = jest.fn(async () => ({ data: [] as unknown[] }));
-  const update = jest.fn(async () => ({}));
+  const customersCreate = jest.fn(() => Promise.resolve({ id: 'cus_1' }));
+  const attach = jest.fn(() =>
+    Promise.resolve({
+      id: 'pm_own',
+      card: { brand: 'visa', last4: '4242' },
+    }),
+  );
+  const list = jest.fn(() => Promise.resolve({ data: [] as unknown[] }));
+  const update = jest.fn(() => Promise.resolve({}));
   return {
     stripe: {
       customers: { create: customersCreate, update },
@@ -92,9 +94,9 @@ it('reuses the attached card after a failed run', async () => {
   const { stripe, attach, list, update } = fakeStripe();
   const attached = { id: 'pm_own', card: { brand: 'visa', last4: '4242' } };
   update.mockRejectedValueOnce(new Error('network'));
-  attach.mockImplementation(async () => {
+  attach.mockImplementation(() => {
     list.mockResolvedValue({ data: [attached] });
-    return attached;
+    return Promise.resolve(attached);
   });
 
   await expect(setupDemoCustomer(db, stripe, config)).rejects.toThrow(

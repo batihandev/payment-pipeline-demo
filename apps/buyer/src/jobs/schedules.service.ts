@@ -2,13 +2,13 @@ import { Injectable, type OnModuleInit } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { ConfigService } from '@nestjs/config';
 import type { Queue } from 'bullmq';
-import { OrderQueueService } from '../../../../libs/orders/src';
+import { OrderQueueService } from '@app/orders';
 import {
   JOBS,
   QUEUES,
   schedulerJobOptions,
   type BuyerJobData,
-} from '../../../../libs/queues/src';
+} from '@app/queues';
 import type { BuyerConfig } from '../buyer-config';
 
 const UTC = 'UTC';

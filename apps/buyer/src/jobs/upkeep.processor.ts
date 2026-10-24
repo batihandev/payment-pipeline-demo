@@ -1,22 +1,26 @@
 import {
+  Logger,
   type OnApplicationBootstrap,
   type OnModuleDestroy,
 } from '@nestjs/common';
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
 import { UnrecoverableError, type Job } from 'bullmq';
-import { JOBS, QUEUES, type BuyerJobData } from '../../../../libs/queues/src';
+import { JOBS, QUEUES, type BuyerJobData } from '@app/queues';
 import { CardReconcilerService } from '../cards/card-reconciler.service';
 import { ExpiryService } from '../expiry/expiry.service';
 import { RefillService } from '../refill/refill.service';
 import { OrderSenderService } from '../sending/order-sender.service';
 import { SweepService } from '../sweep/sweep.service';
 import { mapJobError } from './job-errors';
+import { errorFields } from '@app/logging';
 
 @Processor(QUEUES.buyerUpkeep, { concurrency: 1, autorun: false })
 export class UpkeepProcessor
   extends WorkerHost
   implements OnApplicationBootstrap, OnModuleDestroy
 {
+  private readonly logger = new Logger(UpkeepProcessor.name);
+
   constructor(
     private readonly expiry: ExpiryService,
     private readonly sweep: SweepService,
@@ -28,9 +32,9 @@ export class UpkeepProcessor
   }
 
   onApplicationBootstrap(): void {
-    void this.worker
-      .run()
-      .catch(() => console.error('Buyer upkeep worker stopped.'));
+    void this.worker.run().catch((error: unknown) => {
+      this.logger.error('Buyer upkeep worker stopped.', errorFields(error));
+    });
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -38,8 +42,11 @@ export class UpkeepProcessor
   }
 
   @OnWorkerEvent('error')
-  onError(): void {
-    console.error('Buyer upkeep worker connection failed.');
+  onError(error: Error): void {
+    this.logger.error(
+      'Buyer upkeep worker connection failed.',
+      errorFields(error),
+    );
   }
 
   async process(job: Job<BuyerJobData>): Promise<void> {

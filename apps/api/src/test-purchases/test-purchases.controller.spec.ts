@@ -1,22 +1,20 @@
+import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { Redis } from 'ioredis';
 import { Queue } from 'bullmq';
 import request from 'supertest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { ChainClient } from '../../../../libs/chain/src/chain-client';
-import { testDatabase } from '../../../../libs/db/testing/database';
-import { PrismaService } from '../../../../libs/db/src';
+import { ChainClient } from '@app/chain/chain-client';
+import { testDatabase } from '@testing/db/database';
+import { PrismaService } from '@app/db';
 import {
   OrderQueueService,
   CustomersService,
   PurchasesService,
-} from '../../../../libs/orders/src';
-import type { BuyerJobData } from '../../../../libs/queues/src';
-import { testRedisUrl } from '../../../../libs/config/testing/redis';
-import {
-  orderChannel,
-  serializeOrder,
-} from '../../../../libs/events/src/order-events';
+} from '@app/orders';
+import type { BuyerJobData } from '@app/queues';
+import { testRedisUrl } from '@testing/config/redis';
+import { orderChannel, serializeOrder } from '@app/events/order-events';
 import { createTestApp } from '../../testing/app';
 import { openEventStream } from '../../testing/event-stream';
 import { NOW } from '../common/clock.module';
@@ -35,6 +33,7 @@ let database: Awaited<ReturnType<typeof testDatabase>>;
 let redis: Redis;
 let queue: Queue<BuyerJobData>;
 let app: NestExpressApplication;
+let built: NestExpressApplication | undefined;
 let prefix: string;
 let purchases: PurchasesService;
 let limits: VisitorLimits;
@@ -51,12 +50,12 @@ async function build(
   ) => void = (builder) => {
     builder
       .overrideProvider(ChainSnapshotService)
-      .useValue({ buyerGas: async () => gas });
+      .useValue({ buyerGas: () => Promise.resolve(gas) });
   },
   clientIpHeader = 'cf-connecting-ip',
 ) {
-  await app?.close();
-  app = await createTestApp({
+  await built?.close();
+  app = built = await createTestApp({
     environment: {
       CLIENT_IP_HEADER: clientIpHeader,
       STRIPE_WEBHOOK_SECRET: 'whsec_test',
@@ -132,6 +131,9 @@ const buy = (ip = '127.0.0.1', headers: Record<string, string> = {}) =>
   request(app.getHttpServer())
     .post('/test-purchases')
     .set({ 'cf-connecting-ip': ip, ...headers });
+const acceptedBody = z.object({ orderId: z.string(), position: z.number() });
+const queuedBody = z.object({ position: z.number() });
+const refusalBody = z.object({ error: z.string() });
 const position = (id: string) =>
   request(app.getHttpServer()).get(`/test-purchases/${id}`);
 const seedPending = async (count: number) => {
@@ -151,7 +153,7 @@ const seedPending = async (count: number) => {
 it('queues an immediate priority-one visitor job without taking scheduled budget', async () => {
   const response = await buy();
   expect(response.statusCode).toBe(202);
-  const { orderId, position } = response.body;
+  const { orderId, position } = acceptedBody.parse(response.body);
   expect(position).toBe(1);
   const order = await database.db.order.findUniqueOrThrow({
     where: { id: orderId },
@@ -186,7 +188,7 @@ it('admits back-to-back clicks from different visitors', async () => {
   const first = await buy('192.0.2.1');
   const second = await buy('192.0.2.2');
   expect([first.statusCode, second.statusCode]).toEqual([202, 202]);
-  expect(second.body.position).toBe(2);
+  expect(second.body).toMatchObject({ position: 2 });
 });
 
 it('limits one visitor to 10 a minute', async () => {
@@ -228,10 +230,12 @@ it('accepts 30 of 40 burst clicks in order', async () => {
   const busy = responses.filter((response) => response.statusCode === 429);
   expect(accepted).toHaveLength(30);
   expect(busy).toHaveLength(10);
-  expect(busy.every((response) => response.body.error === 'busy')).toBe(true);
-  expect(accepted.map((response) => response.body.position)).toEqual(
-    Array.from({ length: 30 }, (_, index) => index + 1),
-  );
+  expect(
+    busy.every((response) => refusalBody.parse(response.body).error === 'busy'),
+  ).toBe(true);
+  expect(
+    accepted.map((response) => queuedBody.parse(response.body).position),
+  ).toEqual(Array.from({ length: 30 }, (_, index) => index + 1));
 });
 
 it('refuses past the visitor daily limit', async () => {
@@ -262,8 +266,8 @@ it('admits when the gas reading is missing or stale', async () => {
 });
 
 it('reports queue position', async () => {
-  const first = (await buy('192.0.2.1')).body;
-  const second = (await buy('192.0.2.2')).body;
+  const first = acceptedBody.parse((await buy('192.0.2.1')).body);
+  const second = acceptedBody.parse((await buy('192.0.2.2')).body);
   expect((await position(first.orderId)).body).toEqual({
     position: 1,
     closed: false,
@@ -286,9 +290,9 @@ it('reports queue position', async () => {
 });
 
 it('reports an order that closed without a payment being sent', async () => {
-  const declined = (await buy('192.0.2.1')).body;
-  const failed = (await buy('192.0.2.2')).body;
-  const late = (await buy('192.0.2.3')).body;
+  const declined = acceptedBody.parse((await buy('192.0.2.1')).body);
+  const failed = acceptedBody.parse((await buy('192.0.2.2')).body);
+  const late = acceptedBody.parse((await buy('192.0.2.3')).body);
   await database.db.order.update({
     where: { id: declined.orderId },
     data: { sendState: 'failed', status: 'expired' },
@@ -333,20 +337,20 @@ it('ignores expired orders when checking the queue and counting position', async
   });
   const response = await buy();
   expect(response.statusCode).toBe(202);
-  expect(response.body.position).toBe(26);
+  expect(response.body).toMatchObject({ position: 26 });
 });
 
 it('admits from a fresh chain snapshot without an RPC call', async () => {
   const calls: string[] = [];
   await build((builder) => {
     builder.overrideProvider(ChainClient).useValue({
-      getHead: async () => {
+      getHead: () => {
         calls.push('getHead');
-        return { number: 1n, hash: '0x01' };
+        return Promise.resolve({ number: 1n, hash: '0x01' });
       },
-      getBalances: async () => {
+      getBalances: () => {
         calls.push('getBalances');
-        return { native: limits.gasFloor - 1n, usdc: 0n };
+        return Promise.resolve({ native: limits.gasFloor - 1n, usdc: 0n });
       },
     });
   });
@@ -396,15 +400,15 @@ it('gives orders created in the same millisecond distinct positions', async () =
   rows.sort((a, b) => a.id.localeCompare(b.id));
   const positions = [];
   for (const row of rows)
-    positions.push((await position(row.id)).body.position);
+    positions.push(queuedBody.parse((await position(row.id)).body).position);
   expect(positions).toEqual([1, 2, 3]);
-  expect((await buy()).body.position).toBe(4);
+  expect((await buy()).body).toMatchObject({ position: 4 });
 });
 
 it('answers with the item and price of the order it created', async () => {
   const response = await buy();
   const order = await database.db.order.findUniqueOrThrow({
-    where: { id: response.body.orderId },
+    where: { id: acceptedBody.parse(response.body).orderId },
   });
   expect(response.body).toEqual({
     orderId: order.id,
@@ -448,7 +452,7 @@ it('admits a card test purchase', async () => {
   const response = await buyBy('card');
   expect(response.statusCode).toBe(202);
   const order = await database.db.order.findUniqueOrThrow({
-    where: { id: response.body.orderId },
+    where: { id: acceptedBody.parse(response.body).orderId },
   });
   expect(order).toMatchObject({
     rail: 'card',
@@ -476,7 +480,13 @@ it('defaults to the chain rail and accepts an explicit chain rail', async () => 
   const plain = await buy('192.0.2.1');
   const explicit = await buyBy('chain', '192.0.2.2');
   const rails = await database.db.order.findMany({
-    where: { id: { in: [plain.body.orderId, explicit.body.orderId] } },
+    where: {
+      id: {
+        in: [plain, explicit].map(
+          (response) => acceptedBody.parse(response.body).orderId,
+        ),
+      },
+    },
   });
   expect(rails.map((order) => order.rail)).toEqual(['chain', 'chain']);
 });
@@ -509,8 +519,8 @@ it('publishes the waiting queue on the stream when it changes', async () => {
     while (queues().length < count)
       await new Promise((resolve) => setTimeout(resolve, 20));
   };
-  const first = (await buy('192.0.2.1')).body.orderId as string;
-  const second = (await buy('192.0.2.2')).body.orderId as string;
+  const first = acceptedBody.parse((await buy('192.0.2.1')).body).orderId;
+  const second = acceptedBody.parse((await buy('192.0.2.2')).body).orderId;
   await until(2);
   expect(queues().at(-1)).toEqual({ type: 'queue', waiting: [first, second] });
   const sent = await database.db.order.update({

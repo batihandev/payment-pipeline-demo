@@ -1,16 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { Queue, Worker, type Job } from 'bullmq';
-import { testDatabase } from '../../../../libs/db/testing/database';
-import {
-  CustomersService,
-  PurchasesService,
-} from '../../../../libs/orders/src';
-import type { BuyerJobData } from '../../../../libs/queues/src';
+import { testDatabase } from '@testing/db/database';
+import { CustomersService, PurchasesService } from '@app/orders';
+import type { BuyerJobData } from '@app/queues';
 import { ExpiryService } from '../expiry/expiry.service';
 import { holdWhenFull, holdWhenShort } from './holds';
 import { OrderSenderService } from '../sending/order-sender.service';
-import { testRedisUrl } from '../../../../libs/config/testing/redis';
-import { fakeConfig } from '../../../../libs/config/testing/config';
+import { testRedisUrl } from '@testing/config/redis';
+import { fakeConfig } from '@testing/config/config';
 import type { BuyerConfig } from '../buyer-config';
 
 let database: Awaited<ReturnType<typeof testDatabase>>;
@@ -98,7 +95,9 @@ it('delays a send while 10 are in flight without using an attempt', async () => 
   );
   try {
     const done = new Promise<void>((resolve, reject) => {
-      worker.once('completed', () => resolve());
+      worker.once('completed', () => {
+        resolve();
+      });
       worker.once('error', reject);
     });
     const running = worker.run();
@@ -123,7 +122,7 @@ it('delays a short send without using an attempt', async () => {
   const row = await purchases.visitor(randomUUID(), 'chain', now);
   if (!row) throw new Error('Expected order');
   await queue.add('send-order', { orderId: row.id }, { attempts: 1 });
-  const covers = jest.fn(async () => false);
+  const covers = jest.fn(() => Promise.resolve(false));
   let delays = 0;
   let sent = false;
   const worker = new Worker(
@@ -166,7 +165,12 @@ it('runs the refill while visitor sends are held', async () => {
     queue.name,
     async (job: Job<BuyerJobData>, token?: string) => {
       try {
-        await holdWhenShort(job, token, { covers: async () => false }, 'x');
+        await holdWhenShort(
+          job,
+          token,
+          { covers: () => Promise.resolve(false) },
+          'x',
+        );
       } catch (error) {
         holds += 1;
         throw error;
@@ -174,11 +178,12 @@ it('runs the refill while visitor sends are held', async () => {
     },
     { connection, concurrency: 1, autorun: false },
   );
-  let refilled = false;
+  const done = { refilled: false };
   const refills = new Worker(
     upkeep.name,
-    async () => {
-      refilled = true;
+    () => {
+      done.refilled = true;
+      return Promise.resolve();
     },
     { connection, concurrency: 1, autorun: false },
   );
@@ -190,12 +195,12 @@ it('runs the refill while visitor sends are held', async () => {
       await new Promise((r) => setTimeout(r, 25));
     await upkeep.add('refill-check', {}, { priority: 3 });
     const runningRefills = refills.run();
-    while (!refilled && Date.now() < deadline)
+    while (!done.refilled && Date.now() < deadline)
       await new Promise((r) => setTimeout(r, 25));
     await Promise.all([visitors.close(), refills.close()]);
     await Promise.all([runningVisitors, runningRefills]);
     expect(holds).toBeGreaterThan(0);
-    expect(refilled).toBe(true);
+    expect(done.refilled).toBe(true);
     expect(await queue.getJobCounts('completed')).toEqual({ completed: 0 });
   } finally {
     await Promise.all([visitors.close(), refills.close()]);
@@ -224,7 +229,12 @@ it('expires orders on the upkeep queue while visitor sends are held', async () =
     queue.name,
     async (job: Job<BuyerJobData>, token?: string) => {
       try {
-        await holdWhenShort(job, token, { covers: async () => false }, 'x');
+        await holdWhenShort(
+          job,
+          token,
+          { covers: () => Promise.resolve(false) },
+          'x',
+        );
       } catch (error) {
         holds += 1;
         throw error;
@@ -232,12 +242,12 @@ it('expires orders on the upkeep queue while visitor sends are held', async () =
     },
     { connection, concurrency: 1, autorun: false },
   );
-  let expired = false;
+  const done = { expired: false };
   const expiry = new Worker(
     upkeep.name,
     async () => {
       await new ExpiryService(database.db).expireOrders(now);
-      expired = true;
+      done.expired = true;
     },
     { connection, concurrency: 1, autorun: false },
   );
@@ -249,12 +259,12 @@ it('expires orders on the upkeep queue while visitor sends are held', async () =
       await new Promise((r) => setTimeout(r, 25));
     await upkeep.add('expire-orders', {}, { priority: 5 });
     const runningExpiry = expiry.run();
-    while (!expired && Date.now() < deadline)
+    while (!done.expired && Date.now() < deadline)
       await new Promise((r) => setTimeout(r, 25));
     await Promise.all([visitors.close(), expiry.close()]);
     await Promise.all([runningVisitors, runningExpiry]);
     expect(holds).toBeGreaterThan(0);
-    expect(expired).toBe(true);
+    expect(done.expired).toBe(true);
     expect(
       (await database.db.order.findUniqueOrThrow({ where: { id: stale.id } }))
         .status,

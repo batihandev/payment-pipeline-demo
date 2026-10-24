@@ -81,8 +81,6 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # The web types import the generated Prisma client, which is not committed.
-      - run: pnpm prisma generate
       - run: pnpm --filter web test
       - run: pnpm --filter web build
 
