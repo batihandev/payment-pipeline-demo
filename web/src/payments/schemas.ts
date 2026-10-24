@@ -121,6 +121,7 @@ export const health = z.object({
     oldestUnsettledAt: z.nullable(time),
     oldestUnnotifiedAt: z.nullable(time),
     lastScheduledPurchaseAt: z.nullable(time),
+    lastCardSettledAt: z.nullable(time),
     visitorPausedSince: z.nullable(time),
   }),
 }) satisfies z.ZodMiniType<Health>;

@@ -133,6 +133,7 @@ export type HealthRecord = {
     oldestUnsettledAt: Date | null;
     oldestUnnotifiedAt: Date | null;
     lastScheduledPurchaseAt: Date | null;
+    lastCardSettledAt: Date | null;
     visitorPausedSince: string | null;
   };
 };

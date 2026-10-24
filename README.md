@@ -109,14 +109,15 @@ The client address is the socket address. Set `CLIENT_IP_HEADER=cf-connecting-ip
 
 `GET /health` includes a `monitoring` object that an external monitor can alert on:
 
-| Signal                                                                        | Alert when      |
-| ----------------------------------------------------------------------------- | --------------- |
-| Time since the tracker cursor last advanced                                   | over 1 hour     |
-| Age of the oldest payment in `sent`, `received`, `confirming` or `processing` | over 1 hour     |
-| Age of the oldest settled payment not yet notified                            | over 1 hour     |
-| Time since the last scheduled purchase                                        | over 24 hours   |
-| Time visitor test buys have been paused by the gas floor                      | over 24 hours   |
-| `/health` itself unreachable                                                  | over 30 minutes |
+| Signal                                                                                              | Alert when      |
+| --------------------------------------------------------------------------------------------------- | --------------- |
+| Time since the tracker cursor last advanced                                                         | over 1 hour     |
+| Age of the oldest payment in `sent`, `received`, `confirming` or `processing`                       | over 1 hour     |
+| Age of the oldest settled payment not yet notified                                                  | over 1 hour     |
+| Time since the last scheduled purchase                                                              | over 24 hours   |
+| Time since the last card payment settled; a disabled Stripe account or a broken webhook stops these | over 6 hours    |
+| Time visitor test buys have been paused by the gas floor                                            | over 24 hours   |
+| `/health` itself unreachable                                                                        | over 30 minutes |
 
 Each condition must hold for its whole window, so failures that the services recover from on their own do not alert.
 
