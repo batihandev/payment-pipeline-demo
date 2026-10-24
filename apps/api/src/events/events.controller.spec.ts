@@ -1,3 +1,4 @@
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { EventEmitter, once } from 'node:events';
 import type { IncomingMessage } from 'node:http';
 import { Logger, type MessageEvent } from '@nestjs/common';
@@ -30,9 +31,7 @@ it('drops a client that stops reading as soon as one event is left unsent', asyn
         orderChanged: EMPTY,
       }),
   });
-  const warn = jest
-    .spyOn(Logger.prototype, 'warn')
-    .mockImplementation(() => {});
+  const warn = vi.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
   try {
     const stream = await openEventStream(app);
     stream.on('error', () => {});

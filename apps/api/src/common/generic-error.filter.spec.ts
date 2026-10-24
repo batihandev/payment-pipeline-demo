@@ -1,4 +1,4 @@
-import { expect } from '@jest/globals';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { Controller, Get, HttpException, Res } from '@nestjs/common';
 import type { Response } from 'express';
@@ -124,7 +124,7 @@ it('does not write a body after headers are sent', async () => {
 describe('error log', () => {
   let logged: NestExpressApplication;
   beforeAll(async () => {
-    const startup = jest
+    const startup = vi
       .spyOn(process.stdout, 'write')
       .mockImplementation(() => true);
     try {
@@ -142,7 +142,7 @@ describe('error log', () => {
   });
 
   async function logOf(...paths: string[]): Promise<string> {
-    const output = jest
+    const output = vi
       .spyOn(process.stderr, 'write')
       .mockImplementation(() => true);
     try {
@@ -163,7 +163,7 @@ describe('error log', () => {
       {
         level: 'error',
         pid: process.pid,
-        timestamp: expect.any(Number),
+        timestamp: expect.any(Number) as unknown,
         context: 'GenericErrorFilter',
         message: 'Request failed.',
         params: {
@@ -186,7 +186,7 @@ describe('error log', () => {
       {
         level: 'error',
         pid: process.pid,
-        timestamp: expect.any(Number),
+        timestamp: expect.any(Number) as unknown,
         context: 'GenericErrorFilter',
         message: 'Request failed after its response started.',
         params: { name: 'Error', route: 'GET /after-headers' },

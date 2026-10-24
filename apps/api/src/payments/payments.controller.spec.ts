@@ -1,4 +1,4 @@
-import { expect } from '@jest/globals';
+import { expect, it } from 'vitest';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
@@ -47,7 +47,7 @@ it('returns recent payments with safe order details, exact amounts and explorer 
         id: order.id,
         item: 'Duck',
         price: '14000000',
-      }),
+      }) as unknown,
     }),
   ]);
   expect(response.text).not.toContain('signedTransaction');
@@ -89,7 +89,7 @@ it('shows a card payment with its receipt link and only the card brand and last 
       order: expect.objectContaining({
         id: order.id,
         customer: { cardBrand: 'visa', cardLast4: '4242' },
-      }),
+      }) as unknown,
     }),
   ]);
   expect(response.text).not.toContain('pm_private');
@@ -119,7 +119,7 @@ it('lists note kinds on each payment', async () => {
     ),
   ).toEqual([
     { id: noted.id, noteKinds: ['payment_reorg'] },
-    { id: expect.any(String), noteKinds: [] },
+    { id: expect.any(String) as unknown, noteKinds: [] },
   ]);
   expect(response.text).not.toContain('Private detail.');
 });

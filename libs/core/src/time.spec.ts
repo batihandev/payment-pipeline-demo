@@ -1,3 +1,4 @@
+import { expect, it } from 'vitest';
 import { DAY_MS, utcDateKey, utcDay } from './time';
 
 it('keys a date by its UTC day', () => {

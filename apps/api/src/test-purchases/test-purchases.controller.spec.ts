@@ -1,3 +1,12 @@
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { Redis } from 'ioredis';
@@ -28,7 +37,7 @@ import {
   type VisitorLimits,
 } from './visitor-limits';
 
-jest.setTimeout(120000);
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 let database: Awaited<ReturnType<typeof testDatabase>>;
 let redis: Redis;
 let queue: Queue<BuyerJobData>;
@@ -420,9 +429,9 @@ it('answers with the item and price of the order it created', async () => {
 });
 
 it('keeps the item and price when sending could not be queued', async () => {
-  jest
-    .spyOn(app.get(OrderQueueService), 'queueSend')
-    .mockRejectedValue(new Error('queue down'));
+  vi.spyOn(app.get(OrderQueueService), 'queueSend').mockRejectedValue(
+    new Error('queue down'),
+  );
   const response = await buy();
   const order = await database.db.order.findFirstOrThrow();
   expect(response.statusCode).toBe(503);

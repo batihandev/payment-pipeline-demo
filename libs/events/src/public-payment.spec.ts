@@ -1,3 +1,4 @@
+import { expect, it } from 'vitest';
 import type { Payment } from '../../db/generated/client';
 import { donorName } from '@app/core/donor-name';
 import { bigintReplacer } from '@app/core/json';

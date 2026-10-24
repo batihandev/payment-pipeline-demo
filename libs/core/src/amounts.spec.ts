@@ -1,3 +1,4 @@
+import { expect, it } from 'vitest';
 import { allocateOffset, expectedAmount } from './amounts';
 
 it('never allocates a taken offset even when the random choice collides', () => {

@@ -1,3 +1,4 @@
+import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
 import { Redis } from 'ioredis';
 import type { Hex } from '@app/chain/chain-client';
 import { ScriptedChain } from '@testing/chain/scripted-chain';

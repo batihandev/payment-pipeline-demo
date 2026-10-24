@@ -1,3 +1,4 @@
+import { expect, it, vi } from 'vitest';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { DatabaseModule, PrismaService } from './database.module';
@@ -14,7 +15,7 @@ it('provides one Prisma client built from DATABASE_URL and disconnects on shutdo
     ],
   }).compile();
   const prisma = module.get(PrismaService);
-  const disconnect = jest.spyOn(prisma, '$disconnect');
+  const disconnect = vi.spyOn(prisma, '$disconnect');
   await module.close();
   expect(disconnect).toHaveBeenCalledTimes(1);
 });

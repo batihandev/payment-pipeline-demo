@@ -1,3 +1,4 @@
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { createHash, randomUUID } from 'node:crypto';
 import { catalogue } from '@app/core/catalogue';
 import { dailyTarget } from '@app/core/pacing';
@@ -231,7 +232,7 @@ it('schedules every purchase on chain without a saved card', async () => {
 it('schedules exactly the card ids among fixed ids', async () => {
   await database.db.customer.create({ data: savedCard });
   const customers = new CustomersService(database.db);
-  const demo = jest.spyOn(customers, 'demo');
+  const demo = vi.spyOn(customers, 'demo');
   purchases = new PurchasesService(
     database.db,
     { ...options, cap: { count: 500, amount: 100000000000n } },

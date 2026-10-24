@@ -1,3 +1,4 @@
+import { afterAll, beforeAll, expect, it } from 'vitest';
 import request from 'supertest';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { createTestApp, testOrigin as origin } from '../testing/app';

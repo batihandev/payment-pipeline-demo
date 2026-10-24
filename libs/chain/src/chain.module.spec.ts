@@ -1,3 +1,4 @@
+import { expect, it } from 'vitest';
 import { Global, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test } from '@nestjs/testing';

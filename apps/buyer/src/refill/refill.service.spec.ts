@@ -1,3 +1,4 @@
+import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
 import { Redis } from 'ioredis';
 import { testDatabase } from '@testing/db/database';
 import { ScriptedChain } from '@testing/chain/scripted-chain';

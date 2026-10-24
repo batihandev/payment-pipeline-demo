@@ -1,3 +1,4 @@
+import { expect, it } from 'vitest';
 import { Redis } from 'ioredis';
 import { testDatabase } from '@testing/db/database';
 import { paymentChannel, publishPayment } from './publish-payment';

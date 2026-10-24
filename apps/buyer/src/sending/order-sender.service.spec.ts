@@ -1,3 +1,4 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { ScriptedChain } from '@testing/chain/scripted-chain';
 import { Redis } from 'ioredis';
 import { keccak256, type Hex } from 'viem';

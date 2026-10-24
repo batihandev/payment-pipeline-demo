@@ -1,3 +1,4 @@
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Logger } from '@nestjs/common';
 import { UnrecoverableError, type Job } from 'bullmq';
 import type { ConfigService } from '@nestjs/config';
@@ -6,7 +7,7 @@ import type { BuyerConfig } from '../buyer-config';
 import { BuyerProcessor } from './buyer.processor';
 import { UpkeepProcessor } from './upkeep.processor';
 
-const done = () => jest.fn(() => Promise.resolve(undefined));
+const done = () => vi.fn(() => Promise.resolve(undefined));
 const settings: Partial<BuyerConfig> = {
   MAX_IN_FLIGHT: 10,
   RETENTION_DAYS: 30,
@@ -14,26 +15,26 @@ const settings: Partial<BuyerConfig> = {
 
 function processors() {
   const sender = {
-    inFlight: jest.fn(() => Promise.resolve(0)),
+    inFlight: vi.fn(() => Promise.resolve(0)),
     sendForOrder: done(),
     checkUnseen: done(),
   };
   const buyer = new BuyerProcessor(
     {
       order: {
-        findUnique: jest.fn(() => Promise.resolve({ rail: 'chain' })),
-        findUniqueOrThrow: jest.fn(() => Promise.resolve({ rail: 'chain' })),
+        findUnique: vi.fn(() => Promise.resolve({ rail: 'chain' })),
+        findUniqueOrThrow: vi.fn(() => Promise.resolve({ rail: 'chain' })),
       },
-      payment: { findFirst: jest.fn(() => Promise.resolve(null)) },
+      payment: { findFirst: vi.fn(() => Promise.resolve(null)) },
     } as never,
     {} as never,
-    { visitor: jest.fn(() => Promise.resolve(null)) } as never,
+    { visitor: vi.fn(() => Promise.resolve(null)) } as never,
     { recoverPending: done() } as never,
     { pace: done() } as never,
     sender as never,
     { charge: done() } as never,
-    { covers: jest.fn(() => Promise.resolve(true)) } as never,
-    { pruneOlderThan: jest.fn(() => Promise.resolve({})) } as never,
+    { covers: vi.fn(() => Promise.resolve(true)) } as never,
+    { pruneOlderThan: vi.fn(() => Promise.resolve({})) } as never,
     { get: (key: keyof BuyerConfig) => settings[key] } as ConfigService<
       BuyerConfig,
       true
@@ -64,10 +65,10 @@ const owners = [
 ];
 
 beforeEach(() => {
-  jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
+  vi.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
 });
 afterEach(() => {
-  jest.restoreAllMocks();
+  vi.restoreAllMocks();
 });
 
 it.each(owners)('routes %s to the %s processor only', async (name, owner) => {

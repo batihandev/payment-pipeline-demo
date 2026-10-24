@@ -1,3 +1,4 @@
+import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
 import {
   fixture,
   clear,

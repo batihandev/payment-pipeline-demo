@@ -1,3 +1,4 @@
+import { afterEach, beforeEach, expect, it } from 'vitest';
 import { mkdtemp, readFile, stat, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

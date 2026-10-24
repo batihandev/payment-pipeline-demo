@@ -1,3 +1,4 @@
+import { expect, it } from 'vitest';
 import { JOBS, QUEUES, schedulerJobOptions } from './names';
 
 it('keeps finished jobs and sets the priority when given', () => {

@@ -1,3 +1,4 @@
+import { afterAll, beforeAll, expect, it } from 'vitest';
 import { testDatabase } from '../testing/database';
 
 let database: Awaited<ReturnType<typeof testDatabase>>;

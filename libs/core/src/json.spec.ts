@@ -1,3 +1,4 @@
+import { expect, it } from 'vitest';
 import { bigintReplacer } from './json';
 
 it('serializes bigints as strings', () => {

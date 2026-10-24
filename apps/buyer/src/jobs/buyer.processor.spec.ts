@@ -1,3 +1,4 @@
+import { expect, it, vi } from 'vitest';
 import type { ConfigService } from '@nestjs/config';
 import type { Job } from 'bullmq';
 import { JOBS, type BuyerJobData } from '@app/queues';
@@ -6,21 +7,21 @@ import { BuyerProcessor } from './buyer.processor';
 
 function setup(rail: 'chain' | 'card') {
   const sender = {
-    inFlight: jest.fn(() => Promise.resolve(10)),
-    sendForOrder: jest.fn(() => Promise.resolve(undefined)),
+    inFlight: vi.fn(() => Promise.resolve(10)),
+    sendForOrder: vi.fn(() => Promise.resolve(undefined)),
   };
-  const funds = { covers: jest.fn(() => Promise.resolve(false)) };
-  const cards = { charge: jest.fn(() => Promise.resolve(undefined)) };
+  const funds = { covers: vi.fn(() => Promise.resolve(false)) };
+  const cards = { charge: vi.fn(() => Promise.resolve(undefined)) };
   const payment = { id: 'payment-1', orderId: 'order-1' };
   const processor = new BuyerProcessor(
     {
       order: {
-        findUnique: jest.fn(() => Promise.resolve({ rail })),
-        findUniqueOrThrow: jest.fn(() => Promise.resolve({ rail })),
+        findUnique: vi.fn(() => Promise.resolve({ rail })),
+        findUniqueOrThrow: vi.fn(() => Promise.resolve({ rail })),
       },
-      payment: { findFirst: jest.fn(() => Promise.resolve(payment)) },
+      payment: { findFirst: vi.fn(() => Promise.resolve(payment)) },
     } as never,
-    { publish: jest.fn(() => Promise.resolve(1)) } as never,
+    { publish: vi.fn(() => Promise.resolve(1)) } as never,
     {} as never,
     {} as never,
     {} as never,
@@ -32,7 +33,7 @@ function setup(rail: 'chain' | 'card') {
       get: (key: keyof BuyerConfig) => (key === 'MAX_IN_FLIGHT' ? 10 : 30),
     } as ConfigService<BuyerConfig, true>,
   );
-  const moveToDelayed = jest.fn(() => Promise.resolve(undefined));
+  const moveToDelayed = vi.fn(() => Promise.resolve(undefined));
   const job = {
     name: JOBS.buyer.sendOrder,
     data: { orderId: 'order-1' },

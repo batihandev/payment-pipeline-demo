@@ -1,3 +1,4 @@
+import { expect, it, vi } from 'vitest';
 import { Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { getQueueToken, getSharedConfigToken } from '@nestjs/bullmq';
@@ -100,7 +101,7 @@ it('closes both workers and Redis on shutdown', async () => {
     expect(buyer.worker.isRunning()).toBe(true);
     expect(upkeep.worker.isRunning()).toBe(true);
 
-    const log = jest
+    const log = vi
       .spyOn(Logger.prototype, 'error')
       .mockImplementation(() => {});
     try {

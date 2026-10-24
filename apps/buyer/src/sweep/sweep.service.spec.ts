@@ -1,3 +1,4 @@
+import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest';
 import { RpcError } from '@app/chain/rpc-error';
 import { Redis } from 'ioredis';
 import { testDatabase } from '@testing/db/database';

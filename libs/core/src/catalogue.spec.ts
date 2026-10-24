@@ -1,3 +1,4 @@
+import { expect, it } from 'vitest';
 import { catalogue } from './catalogue';
 
 it('offers twenty distinct items with positive whole-cent prices', () => {

@@ -1,3 +1,4 @@
+import { expect, it } from 'vitest';
 import { signNotice, verifyNotice } from './notices';
 
 const body = '{"paymentId":"payment-1"}';
