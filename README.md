@@ -66,7 +66,7 @@ Visitor chain purchases pause while the buyer's gas balance is below `GAS_FLOOR`
 
 USDC circulates only between the buyer and shop wallets. A nightly sweep at 03:00 UTC returns the shop's USDC to the buyer. A refill does the same on demand: when the buyer's USDC falls below `REFILL_BELOW` and the shop holds USDC and enough gas, the shop sends its whole USDC balance to the buyer, at most once per `REFILL_COOLDOWN_SECONDS`. The running cost is gas.
 
-A nightly job deletes orders, payments, ledger entries, notices, payment events, order events, Stripe events and incidents older than `RETENTION_DAYS` (default 15), and resolved scan gaps of the same age. Open orders and payments that are unsettled or not final are kept until they close. A transfer closed because it can never land is deleted by its send time.
+A nightly job at 03:30 UTC deletes orders, payments, ledger entries, notices, payment events, order events, Stripe events, incidents, daily budgets and sent sweeps older than `RETENTION_DAYS` (default 15), and resolved scan gaps of the same age. Open orders and payments that are unsettled or not final are kept until they close. A transfer closed because it can never land is deleted by its send time.
 
 ## RPC and Stripe budgets
 
@@ -247,7 +247,7 @@ Optional settings and their defaults:
 | `START_BLOCK`                                | `RESCAN_BLOCKS` below the head | First block the tracker scans when it has no cursor                                                                                                             |
 | `RESCAN_BLOCKS`                              | 5                              | Blocks re-read on each tracker pass                                                                                                                             |
 | `MAX_RANGE`, `MIN_RANGE`                     | 500, 10                        | Largest and smallest block range per log query; a rejected range is halved down to the minimum                                                                  |
-| `ACTIVE_POLL_MS`, `IDLE_POLL_MS`             | 2000, 30000                    | Tracker poll interval while payments are open, and otherwise; passes run back to back while a full range is unscanned                                           |
+| `ACTIVE_POLL_MS`, `IDLE_POLL_MS`             | 2000, 30000                    | Tracker poll interval while payments are open or the cursor is behind the head, and otherwise; passes run back to back while a full range is unscanned          |
 | `IDLE_BACKLOG_BLOCKS`                        | 1800                           | Blocks behind the head past which the tracker moves its cursor to the head, when no order is open and no chain payment is unfinished                            |
 | `RPC_COOLDOWN_MS`                            | 30000                          | Pause for a service (RPC or Stripe) after a rate-limit response                                                                                                 |
 | `RPC_MAX_ATTEMPTS`, `GAP_MAX_ATTEMPTS`       | 3, 5                           | Attempts per RPC call, and attempts per stored scan gap                                                                                                         |

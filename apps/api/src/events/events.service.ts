@@ -7,7 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import type { Redis } from 'ioredis';
 import { Observable, Subject, interval, map, merge, takeUntil } from 'rxjs';
-import type { OrderEvent, QueueEvent } from '@app/core/api';
+import type { OrderEvent, PaymentEvent, QueueEvent } from '@app/core/api';
 import { orderChannel } from '@app/events/order-events';
 import { paymentChannel } from '@app/events/publish-payment';
 import { subscribeEvents } from '@app/events/subscribe-events';
@@ -55,11 +55,7 @@ export class EventsService implements OnModuleInit, OnModuleDestroy {
     this.unsubscribe = await subscribeEvents(this.redis, {
       [paymentChannel]: (body) => {
         this.changed.next();
-        let payment: {
-          donation: boolean;
-          amount: string;
-          transactionHash: string | null;
-        };
+        let payment: Omit<PaymentEvent, 'explorerUrl'>;
         try {
           payment = JSON.parse(body) as typeof payment;
           if (payment.donation && BigInt(payment.amount) < donationMin) return;
@@ -67,12 +63,11 @@ export class EventsService implements OnModuleInit, OnModuleDestroy {
           return;
         }
         // The list read's explorer link, which only the API can build.
-        this.payments.next(
-          JSON.stringify({
-            ...payment,
-            explorerUrl: explorerUrl(explorer, payment.transactionHash),
-          }),
-        );
+        const event: PaymentEvent = {
+          ...payment,
+          explorerUrl: explorerUrl(explorer, payment.transactionHash),
+        };
+        this.payments.next(JSON.stringify(event));
       },
       [orderChannel]: (body) => {
         const order = readOrder(body);

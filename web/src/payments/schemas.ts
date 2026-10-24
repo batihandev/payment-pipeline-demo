@@ -37,7 +37,7 @@ const order = z.object({
   ),
 }) satisfies z.ZodMiniType<NonNullable<Payment['order']>>;
 
-/** A payment on the event stream. An API older than the version column omits `version`. */
+/** A payment on the event stream, with its explorer link. An API older than the version column omits `version`. */
 export const paymentEvent = z.object({
   id: z.string(),
   provider: z.enum(paymentProviders),
@@ -64,7 +64,8 @@ export const paymentEvent = z.object({
   version: z.optional(z.number()),
   donorName: z.nullable(z.string()),
   order: z.optional(z.nullable(order)),
-}) satisfies z.ZodMiniType<Omit<Payment, 'noteKinds' | 'explorerUrl'>>;
+  explorerUrl: z.nullable(z.string()),
+}) satisfies z.ZodMiniType<Omit<Payment, 'noteKinds'>>;
 export type PaymentEvent = z.output<typeof paymentEvent>;
 
 /** `GET /payments`. A note kind this page does not know is left out rather than refused. */

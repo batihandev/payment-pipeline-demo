@@ -189,7 +189,6 @@ describe('live payments', () => {
     s.stream.send({
       ...row('old', 'confirming'),
       order: undefined,
-      explorerUrl: undefined,
       confirmations: 3,
     });
     expect(s.client.getSnapshot().status).toBe('live');
@@ -204,6 +203,26 @@ describe('live payments', () => {
     expect(s.client.getSnapshot().data?.payments[0]?.explorerUrl).toBe(
       'https://example.com/tx/123',
     );
+    stop();
+  });
+  it('shows the explorer link of a payment first seen on the stream', async () => {
+    const s = server();
+    const stop = s.client.subscribe(() => {});
+    await vi.waitFor(() => {
+      expect(s.client.getSnapshot().status).toBe('live');
+    });
+    s.stream.send({
+      ...row('fresh', 'sent'),
+      order: undefined,
+      transactionHash: '0xfresh',
+      explorerUrl: 'https://example.com/tx/fresh',
+    });
+    await vi.waitFor(() => {
+      expect(
+        s.client.getSnapshot().data?.payments.find((p) => p.id === 'fresh')
+          ?.explorerUrl,
+      ).toBe('https://example.com/tx/fresh');
+    });
     stop();
   });
   it('keeps note kinds when a payment arrives on the stream', async () => {

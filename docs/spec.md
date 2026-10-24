@@ -29,7 +29,7 @@ Both rails are test-only. Stripe runs in test mode, and configuration rejects ev
 - `web/`: React + Vite, one page.
 - Prisma with PostgreSQL. Redis for BullMQ, request rate limits and pub/sub.
 - viem for chain access. The `stripe` SDK for the card rail.
-- Postgres and Redis are not started by this repository; their URLs come from the environment. A `docker-compose.yml` for local Postgres and Redis is acceptable as a convenience.
+- The apps take their Postgres and Redis URLs from the environment. `docker-compose.yml` starts local Postgres and Redis for development and tests; the deploy stack in `deploy/compose.yaml` runs its own.
 
 ## Network and money
 
@@ -78,11 +78,11 @@ The response returns the order id, its queue position and its `expiresAt`, so th
 The services run on free RPC tiers, so request volume is designed to stay inside their rate limits. Card sends make no RPC calls and are not part of this budget; they have their own limiter (see Card rail).
 
 - **Split budget:** each service has its own limiter (`RPC_REQUESTS_PER_SECOND_TRACKER`, `_BUYER`, `_API`; defaults 2, 2 and 1), and together they stay at or below the provider's rate. A limiter delays a call until its slot rather than refusing it. The tracker's share is its own, so a burst of purchases cannot stall confirmations.
-- **Adaptive polling:** the tracker polls every pass interval while any order is open or any payment is unsettled or not final, and slows to a configured idle interval otherwise.
+- **Adaptive polling:** the tracker polls every pass interval while any order is open, any payment is unsettled or not final, or the cursor is behind the head, and slows to a configured idle interval otherwise. While at least a full range is still unscanned, the next pass starts at once.
 - **One call per pass for new payments:** a single `eth_getLogs` over the new range, filtered by contract and recipient. Confirmations come from the latest block number, not per-payment calls.
 - **About one call per send:** the buyer signs locally with a nonce allocated in the database, a fixed gas limit for a USDC transfer and a fee cached for a few seconds, then broadcasts. It checks for a receipt only when retrying. At most `MAX_IN_FLIGHT` (default 10) of a wallet's transfers wait unconfirmed at once; a send beyond that returns to its queue for a moment without counting as a failed attempt.
 - A rate-limit response starts a cooldown for that service instead of an immediate retry.
-- **Bounded catch-up:** after a restart or outage the tracker scans at most a configured number of blocks per pass, so catching up never bursts past the limit.
+- **Bounded catch-up:** after a restart or outage the tracker scans at most a configured number of blocks per pass, so catching up never bursts past the limit. When the cursor is more than `IDLE_BACKLOG_BLOCKS` behind the head and no order is open and no chain payment is unfinished, the tracker moves the cursor to the head without scanning the skipped blocks and records a `cursor_forwarded` incident; a transfer to the shop in those blocks, such as a stray donation, is not recorded.
 - Head and finality tag are each fetched once per pass. Poll timing has a little jitter.
 - **Fast path for test buys:** the page shows the order as `sent` as soon as the buyer has the transaction hash, before the tracker sees it in a block. With sub-second blocks on Base Sepolia, a payment settles within seconds of the click.
 
@@ -124,7 +124,7 @@ A card payment's stage never moves backwards: an event that would move it to an 
 
 ### tracker
 
-- **Cursor:** the highest block up to which every block has been scanned, with that block's hash, in Postgres. It advances in the same database transaction that stores the range's payments, so a crash can never lose a payment.
+- **Cursor:** the highest block up to which every block has been scanned or deliberately skipped by a recorded forward, with that block's hash, in Postgres. It advances in the same database transaction that stores the range's payments, so a crash can never lose a payment.
 - Each pass reads `Transfer` logs to the shop address with `eth_getLogs` over ranges no larger than a configured maximum. If the provider rejects a range as too large, the range is halved and retried, down to a configured minimum.
 - **Gaps:** a range that still fails is stored as a gap with its error, attempt count and next retry time. The cursor moves past it only once the gap is stored. A BullMQ job retries gaps with bounded attempts, so one bad range cannot starve new work. Open gaps show on `/health`; a recovered gap writes an incident.
 - **Overlap:** each pass re-reads the last `RESCAN_BLOCKS` blocks. A log re-read inside that overlap, in the same block, is expected and skipped silently. A log seen again anywhere else, such as a gap retry or a replay after a restart, is skipped and recorded as a duplicate. If the cursor block's stored hash no longer matches the chain, the tracker steps back and rescans.
@@ -194,7 +194,7 @@ Failures are quiet. Once the page has data, a failed refresh or health read keep
 
 Stats are computed from these tables, never stored as running totals.
 
-**Retention:** a nightly job deletes orders, payments, ledger entries, notices, payment events, order events, Stripe events and incidents older than `RETENTION_DAYS` (default 15), and resolved gaps of the same age. Open orders and unsettled or non-final payments are kept until they close.
+**Retention:** a nightly job at 03:30 UTC deletes orders, payments, ledger entries, notices, payment events, order events, Stripe events, incidents, daily budgets and sent sweeps older than `RETENTION_DAYS` (default 15), and resolved gaps of the same age. Open orders and unsettled or non-final payments are kept until they close.
 
 ## Monitoring
 
