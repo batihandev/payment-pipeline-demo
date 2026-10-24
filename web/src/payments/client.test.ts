@@ -628,6 +628,53 @@ describe('receipt window', () => {
       stop();
     });
   });
+  it('clears the read timer when a read is superseded', async () => {
+    vi.useFakeTimers();
+    await without('any', async () => {
+      await without('timeout', async () => {
+        const s = windowed(250);
+        const stop = s.client.subscribe(() => {});
+        await s.load();
+        const baseline = vi.getTimerCount();
+        const release = s.holdReads();
+        const reads = s.reads.length;
+        s.client.showMoreReceipts();
+        await vi.waitFor(() => {
+          expect(s.reads).toHaveLength(reads + 1);
+        });
+        s.stream.open();
+        await vi.waitFor(() => {
+          expect(s.reads).toHaveLength(reads + 2);
+        });
+        release();
+        await vi.waitFor(() => {
+          expect(s.data().receipts.length).toBeGreaterThan(20);
+        });
+        expect(vi.getTimerCount()).toBe(baseline);
+        stop();
+      });
+    });
+  });
+  it('clears the read timer on unsubscribe', async () => {
+    vi.useFakeTimers();
+    await without('any', async () => {
+      await without('timeout', async () => {
+        const baseline = vi.getTimerCount();
+        const s = windowed(30);
+        const stop = s.client.subscribe(() => {});
+        await s.load();
+        s.holdReads();
+        const reads = s.reads.length;
+        s.stream.send(row('fresh'));
+        await vi.waitFor(() => {
+          expect(s.reads).toHaveLength(reads + 1);
+        });
+        stop();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(vi.getTimerCount()).toBe(baseline);
+      });
+    });
+  });
   /** Counts of the shown receipts at every update, to catch a collapse that a later update hides. */
   function watchCounts(s: ReturnType<typeof windowed>) {
     const counts: number[] = [];

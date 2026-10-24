@@ -419,8 +419,9 @@ export class PaymentsClient {
       this.failing = true;
       if (more) this.olderFailed = true;
       else if (!this.feed) this.status = 'offline';
+    } finally {
+      release();
     }
-    release();
     this.reading = undefined;
     this.abort = undefined;
     this.retry = setTimeout(() => {
