@@ -66,6 +66,7 @@ export const trackerSchema = z.object({
   RESCAN_BLOCKS: positiveInteger.default(5),
   MAX_RANGE: positiveInteger.default(500),
   MIN_RANGE: positiveInteger.default(10),
+  IDLE_BACKLOG_BLOCKS: positiveInteger.default(1800),
   ACTIVE_POLL_MS: positiveInteger.default(2000),
   IDLE_POLL_MS: positiveInteger.default(30_000),
   RPC_MAX_ATTEMPTS: positiveInteger.default(3),

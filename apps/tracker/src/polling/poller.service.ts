@@ -71,12 +71,34 @@ export class PollerService implements OnApplicationBootstrap, OnModuleDestroy {
   }
 
   async pass(): Promise<number> {
-    const head = await this.scanner.scanOnce();
+    const head = await this.scanner.scanOnce(async () => {
+      const { open, pending } = await this.waiting();
+      return open === 0 && pending === 0;
+    });
     const finalized = await this.scanner.rpc(() =>
       this.scanner.chain.getFinalized(),
     );
     await this.progress.advance(head.number, finalized);
-    const [open, pending, cursor] = await Promise.all([
+    const [{ open, pending }, cursor] = await Promise.all([
+      this.waiting(),
+      this.db.cursor.findUnique({ where: { name: this.scanner.cursorName } }),
+    ]);
+    if (
+      cursor &&
+      head.number - cursor.blockNumber >= BigInt(this.scanner.options.maxRange)
+    )
+      return 0;
+    const active =
+      open > 0 || pending > 0 || !cursor || cursor.blockNumber < head.number;
+    return Math.round(
+      (active ? this.intervals.active : this.intervals.idle) *
+        (0.9 + this.rng() * 0.2),
+    );
+  }
+
+  /** Open orders and chain payments that are not yet final and settled. */
+  private async waiting(): Promise<{ open: number; pending: number }> {
+    const [open, pending] = await Promise.all([
       this.db.order.count({ where: { status: 'open' } }),
       this.db.payment.count({
         where: {
@@ -85,13 +107,7 @@ export class PollerService implements OnApplicationBootstrap, OnModuleDestroy {
           OR: [{ final: false }, { stage: { notIn: ['settled', 'notified'] } }],
         },
       }),
-      this.db.cursor.findUnique({ where: { name: this.scanner.cursorName } }),
     ]);
-    const active =
-      open > 0 || pending > 0 || !cursor || cursor.blockNumber < head.number;
-    return Math.round(
-      (active ? this.intervals.active : this.intervals.idle) *
-        (0.9 + this.rng() * 0.2),
-    );
+    return { open, pending };
   }
 }

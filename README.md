@@ -82,7 +82,7 @@ The services run on free RPC tiers, so request volume stays inside their rate li
 
 ## Rescans and duplicates
 
-Each tracker pass re-reads the last `RESCAN_BLOCKS` blocks. A log re-read inside that overlap, in the same block, is skipped silently. A log seen again anywhere else, such as a gap retry or a replay after a restart, is skipped and recorded as a duplicate.
+Each tracker pass re-reads the last `RESCAN_BLOCKS` blocks. While a full `MAX_RANGE` is still unscanned, the next pass starts at once. When the cursor is more than `IDLE_BACKLOG_BLOCKS` behind and nothing waits on the chain, the tracker moves it to the head without scanning the skipped blocks and records a `cursor_forwarded` incident; transfers to the shop in those blocks, such as stray donations, are not recorded. A log re-read inside that overlap, in the same block, is skipped silently. A log seen again anywhere else, such as a gap retry or a replay after a restart, is skipped and recorded as a duplicate.
 
 ## API routes
 
@@ -247,7 +247,8 @@ Optional settings and their defaults:
 | `START_BLOCK`                                | `RESCAN_BLOCKS` below the head | First block the tracker scans when it has no cursor                                                                                                             |
 | `RESCAN_BLOCKS`                              | 5                              | Blocks re-read on each tracker pass                                                                                                                             |
 | `MAX_RANGE`, `MIN_RANGE`                     | 500, 10                        | Largest and smallest block range per log query; a rejected range is halved down to the minimum                                                                  |
-| `ACTIVE_POLL_MS`, `IDLE_POLL_MS`             | 2000, 30000                    | Tracker poll interval while payments are open, and otherwise                                                                                                    |
+| `ACTIVE_POLL_MS`, `IDLE_POLL_MS`             | 2000, 30000                    | Tracker poll interval while payments are open, and otherwise; passes run back to back while a full range is unscanned                                           |
+| `IDLE_BACKLOG_BLOCKS`                        | 1800                           | Blocks behind the head past which the tracker moves its cursor to the head, when no order is open and no chain payment is unfinished                            |
 | `RPC_COOLDOWN_MS`                            | 30000                          | Pause for a service (RPC or Stripe) after a rate-limit response                                                                                                 |
 | `RPC_MAX_ATTEMPTS`, `GAP_MAX_ATTEMPTS`       | 3, 5                           | Attempts per RPC call, and attempts per stored scan gap                                                                                                         |
 | `ORDER_TTL_MINUTES`                          | 30                             | Minutes before an unpaid order expires                                                                                                                          |
