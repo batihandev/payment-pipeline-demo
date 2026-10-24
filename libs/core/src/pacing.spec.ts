@@ -1,3 +1,4 @@
+import { expect, it } from 'vitest';
 import { dailyTarget, sampleAmountCents, shouldBuyThisMinute } from './pacing';
 
 function seededRng(seed: number): () => number {

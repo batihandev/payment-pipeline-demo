@@ -1,3 +1,4 @@
+import { afterAll, afterEach, beforeAll, beforeEach, expect, it } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import type { NestExpressApplication } from '@nestjs/platform-express';

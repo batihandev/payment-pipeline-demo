@@ -1,3 +1,4 @@
+import { expect, it } from 'vitest';
 import { ChainSnapshotService } from './chain-snapshot.service';
 import { RpcError } from '@app/chain/rpc-error';
 

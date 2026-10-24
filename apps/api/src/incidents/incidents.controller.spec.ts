@@ -1,3 +1,4 @@
+import { expect, it } from 'vitest';
 import request from 'supertest';
 import { useReadApi } from '../../testing/read-api';
 

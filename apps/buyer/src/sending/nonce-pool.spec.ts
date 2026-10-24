@@ -1,3 +1,4 @@
+import { afterAll, beforeAll, expect, it } from 'vitest';
 import { Redis } from 'ioredis';
 import { generatePrivateKey } from 'viem/accounts';
 import { ScriptedChain } from '@testing/chain/scripted-chain';

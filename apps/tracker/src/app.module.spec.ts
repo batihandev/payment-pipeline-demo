@@ -1,3 +1,4 @@
+import { expect, it, vi } from 'vitest';
 import { Logger } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { getQueueToken, getSharedConfigToken } from '@nestjs/bullmq';
@@ -84,7 +85,7 @@ it('stops the poll loop before closing workers, Redis and the database', async (
       name: string,
     ) => {
       const original = (target[method] as () => Promise<unknown>).bind(target);
-      jest.spyOn(target, method as never).mockImplementation((async () => {
+      vi.spyOn(target, method as never).mockImplementation((async () => {
         const result = await original();
         order.push(name);
         return result;
@@ -97,7 +98,7 @@ it('stops the poll loop before closing workers, Redis and the database', async (
     expect(tracker.worker.isRunning()).toBe(true);
     expect(notices.worker.isRunning()).toBe(true);
 
-    const log = jest
+    const log = vi
       .spyOn(Logger.prototype, 'error')
       .mockImplementation(() => {});
     try {

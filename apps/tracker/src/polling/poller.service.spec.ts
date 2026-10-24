@@ -1,3 +1,12 @@
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { Logger } from '@nestjs/common';
 import {
   fixture,
@@ -106,7 +115,7 @@ describe('poll loop', () => {
   };
 
   it('stops polling between passes on shutdown', async () => {
-    const pass = jest.spyOn(poller, 'pass').mockResolvedValue(60_000);
+    const pass = vi.spyOn(poller, 'pass').mockResolvedValue(60_000);
     poller.onApplicationBootstrap();
     await new Promise((resolve) => setImmediate(resolve));
     expect(pass).toHaveBeenCalledTimes(1);
@@ -116,7 +125,7 @@ describe('poll loop', () => {
 
   it('lets the pass in flight finish before shutdown completes', async () => {
     const running = gate();
-    const pass = jest.spyOn(poller, 'pass').mockImplementation(async () => {
+    const pass = vi.spyOn(poller, 'pass').mockImplementation(async () => {
       await running.closed;
       return 0;
     });
@@ -133,10 +142,10 @@ describe('poll loop', () => {
   });
 
   it('records an incident and waits for the next poll when a pass fails', async () => {
-    const error = jest
+    const error = vi
       .spyOn(Logger.prototype, 'error')
       .mockImplementation(() => {});
-    const pass = jest
+    const pass = vi
       .spyOn(poller, 'pass')
       .mockRejectedValue(new Error('rpc down'));
     poller.onApplicationBootstrap();

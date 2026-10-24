@@ -1,3 +1,4 @@
+import { expect, it } from 'vitest';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { z } from 'zod';

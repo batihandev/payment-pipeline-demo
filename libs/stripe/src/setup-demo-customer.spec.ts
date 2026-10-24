@@ -1,3 +1,4 @@
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import type Stripe from 'stripe';
 import { testDatabase } from '@testing/db/database';
 import { setupDemoCustomer } from './setup-demo-customer';
@@ -8,15 +9,15 @@ const config = {
 };
 
 function fakeStripe() {
-  const customersCreate = jest.fn(() => Promise.resolve({ id: 'cus_1' }));
-  const attach = jest.fn(() =>
+  const customersCreate = vi.fn(() => Promise.resolve({ id: 'cus_1' }));
+  const attach = vi.fn(() =>
     Promise.resolve({
       id: 'pm_own',
       card: { brand: 'visa', last4: '4242' },
     }),
   );
-  const list = jest.fn(() => Promise.resolve({ data: [] as unknown[] }));
-  const update = jest.fn(() => Promise.resolve({}));
+  const list = vi.fn(() => Promise.resolve({ data: [] as unknown[] }));
+  const update = vi.fn(() => Promise.resolve({}));
   return {
     stripe: {
       customers: { create: customersCreate, update },

@@ -1,3 +1,4 @@
+import { expect, it } from 'vitest';
 import { HttpRequestError, RpcRequestError, TimeoutError } from 'viem';
 import { RpcError, classifyRpcError } from './rpc-error';
 import { RpcLimiter } from './rpc-limiter';

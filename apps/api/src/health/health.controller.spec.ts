@@ -1,4 +1,4 @@
-import { expect } from '@jest/globals';
+import { expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { Queue } from 'bullmq';
@@ -265,14 +265,14 @@ it('returns monitoring with null chain fields when the chain read fails', async 
     chainError: 'timeout',
     openGaps: 0,
     cooldowns: { buyer: 0, tracker: 0, api: 0, stripe: 0 },
-    monitoring: expect.objectContaining({ oldestUnsettledAt: null }),
+    monitoring: expect.objectContaining({ oldestUnsettledAt: null }) as unknown,
   });
 });
 it('still answers /health with null Redis parts while Redis is down', async () => {
-  const down = jest.fn().mockRejectedValue(new Error('connection refused'));
+  const down = vi.fn().mockRejectedValue(new Error('connection refused'));
   const redis = state.redisOf();
-  jest.spyOn(redis, 'pttl').mockImplementation(down);
-  jest.spyOn(redis, 'get').mockImplementation(down);
+  vi.spyOn(redis, 'pttl').mockImplementation(down);
+  vi.spyOn(redis, 'get').mockImplementation(down);
   const response = await get('/health');
   expect(response.statusCode).toBe(200);
   expect(response.body).toMatchObject({
@@ -280,7 +280,9 @@ it('still answers /health with null Redis parts while Redis is down', async () =
     queueDepth: null,
     cooldowns: null,
     redisError: 'unavailable',
-    monitoring: expect.objectContaining({ visitorPausedSince: null }),
+    monitoring: expect.objectContaining({
+      visitorPausedSince: null,
+    }) as unknown,
   });
 });
 it('leaves unmatched payments out of the oldest unsettled payment', async () => {

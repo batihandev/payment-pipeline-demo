@@ -1,3 +1,4 @@
+import { expect, it } from 'vitest';
 import { StreamLimit } from './stream-limit';
 
 const limit = (perIp: number, total: number) =>

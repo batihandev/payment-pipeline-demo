@@ -1,3 +1,4 @@
+import { expect, it } from 'vitest';
 import { donorName } from './donor-name';
 
 const first = `0x${'ab'.repeat(20)}`;

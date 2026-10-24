@@ -1,3 +1,12 @@
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { Queue, Worker, type Job } from 'bullmq';
 import { testDatabase } from '@testing/db/database';
@@ -122,7 +131,7 @@ it('delays a short send without using an attempt', async () => {
   const row = await purchases.visitor(randomUUID(), 'chain', now);
   if (!row) throw new Error('Expected order');
   await queue.add('send-order', { orderId: row.id }, { attempts: 1 });
-  const covers = jest.fn(() => Promise.resolve(false));
+  const covers = vi.fn(() => Promise.resolve(false));
   let delays = 0;
   let sent = false;
   const worker = new Worker(

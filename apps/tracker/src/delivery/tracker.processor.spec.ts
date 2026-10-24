@@ -1,8 +1,9 @@
+import { expect, it, vi } from 'vitest';
 import { UnrecoverableError, type Job } from 'bullmq';
 import { JOBS } from '@app/queues';
 import { TrackerProcessor } from './tracker.processor';
 
-const done = () => jest.fn(() => Promise.resolve(undefined));
+const done = () => vi.fn(() => Promise.resolve(undefined));
 
 function processor() {
   const delivery = { flush: done() };

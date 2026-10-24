@@ -1,3 +1,4 @@
+import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { Logger } from '@nestjs/common';
 import { getQueueToken } from '@nestjs/bullmq';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -26,7 +27,7 @@ it.each([
 ] as const)(
   'logs only the fixed line and the error name for a %s queue connection failure',
   (_name, module, names) => {
-    const log = jest
+    const log = vi
       .spyOn(Logger.prototype, 'error')
       .mockImplementation(() => {});
     try {
@@ -49,9 +50,7 @@ it.each([
 );
 
 it('reads health from the buyer queue that orders owns, logging one line per failure', () => {
-  const log = jest
-    .spyOn(Logger.prototype, 'error')
-    .mockImplementation(() => {});
+  const log = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
   try {
     const owned = app
       .select(OrdersModule)

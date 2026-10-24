@@ -1,3 +1,12 @@
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { once } from 'node:events';
 import type { IncomingMessage } from 'node:http';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -28,7 +37,7 @@ beforeEach(async () => {
   app = await createTestApp({ environment: { DONATION_MIN: '10000' } });
 });
 afterEach(async () => {
-  jest.useRealTimers();
+  vi.useRealTimers();
   await app.close();
 });
 const connect = async (): Promise<IncomingMessage> => {
@@ -104,19 +113,7 @@ it('streams donations without the sender', async () => {
   stream.destroy();
 });
 it('sends a keep-alive comment every 30 seconds', async () => {
-  jest.useFakeTimers({
-    doNotFake: [
-      'nextTick',
-      'setImmediate',
-      'clearImmediate',
-      'setTimeout',
-      'clearTimeout',
-      'Date',
-      'performance',
-      'hrtime',
-      'queueMicrotask',
-    ],
-  });
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
   const stream = await connect();
   const chunks: string[] = [];
   stream.on('data', (chunk: Buffer) => chunks.push(String(chunk)));
@@ -126,25 +123,25 @@ it('sends a keep-alive comment every 30 seconds', async () => {
       await new Promise((resolve) => setImmediate(resolve));
     return chunks.at(-1);
   };
-  jest.advanceTimersByTime(29_999);
+  vi.advanceTimersByTime(29_999);
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(chunks).toEqual([]);
-  jest.advanceTimersByTime(1);
+  vi.advanceTimersByTime(1);
   expect(await nextChunk()).toBe(': keep-alive\n\n');
-  jest.advanceTimersByTime(30_000);
+  vi.advanceTimersByTime(30_000);
   expect(await nextChunk()).toBe(': keep-alive\n\n');
   // The stream's keep-alive timer, beside the throttler's sweep.
-  const timersWithStream = jest.getTimerCount();
+  const timersWithStream = vi.getTimerCount();
   const closed = once(stream, 'close');
   stream.destroy();
   await closed;
   for (
     let wait = 0;
-    wait < 50 && jest.getTimerCount() === timersWithStream;
+    wait < 50 && vi.getTimerCount() === timersWithStream;
     wait++
   )
     await new Promise((resolve) => setTimeout(resolve, 10));
-  expect(jest.getTimerCount()).toBe(timersWithStream - 1);
+  expect(vi.getTimerCount()).toBe(timersWithStream - 1);
 });
 it('relays order events to the stream as named order events', async () => {
   const stream = await connect();

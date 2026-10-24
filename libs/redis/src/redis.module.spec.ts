@@ -1,3 +1,4 @@
+import { expect, it, vi } from 'vitest';
 import { Logger } from '@nestjs/common';
 import { once } from 'node:events';
 import { ConfigModule } from '@nestjs/config';
@@ -19,7 +20,7 @@ it('quits Redis on shutdown', async () => {
   }).compile();
   const redis = module.get<Redis>(REDIS);
   expect(await redis.ping()).toBe('PONG');
-  const quit = jest.spyOn(redis, 'quit');
+  const quit = vi.spyOn(redis, 'quit');
   await module.close();
   expect(quit).toHaveBeenCalledTimes(1);
   if (redis.status !== 'end') await once(redis, 'end');
@@ -37,9 +38,7 @@ it('names the service in its connection-failure log line', async () => {
       RedisModule.forRoot({ service: 'API' }),
     ],
   }).compile();
-  const log = jest
-    .spyOn(Logger.prototype, 'error')
-    .mockImplementation(() => {});
+  const log = vi.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
   try {
     module.get<Redis>(REDIS).emit('error', new Error('refused'));
     expect(log.mock.calls).toEqual([

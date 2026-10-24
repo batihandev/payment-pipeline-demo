@@ -1,3 +1,4 @@
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import { Redis } from 'ioredis';
 import { ScriptedChain } from '@testing/chain/scripted-chain';
 import { RpcError } from '@app/chain/rpc-error';
@@ -252,7 +253,7 @@ it('retries a transient failure and sends the order to review when retries run o
 it('says when Stripe accepted the charge but recording it failed', async () => {
   const row = await order();
   const transaction = database.db.$transaction.bind(database.db);
-  const spy = jest
+  const spy = vi
     .spyOn(database.db, '$transaction')
     .mockImplementationOnce(transaction)
     .mockRejectedValueOnce(new Error('connection lost'));

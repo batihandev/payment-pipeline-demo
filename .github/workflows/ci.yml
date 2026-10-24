@@ -69,7 +69,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm prisma generate
       - run: pnpm prisma migrate deploy
-      - run: node --experimental-vm-modules --env-file-if-exists=.env node_modules/jest/bin/jest.js --runInBand
+      - run: node --env-file-if-exists=.env node_modules/vitest/vitest.mjs run
 
   test-web:
     runs-on: ubuntu-latest

@@ -1,3 +1,4 @@
+import { expect, it } from 'vitest';
 import { receiptNoteKinds } from './receipt-notes';
 
 it('lists the incident kinds a receipt note can explain', () => {

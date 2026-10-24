@@ -1,4 +1,4 @@
-import { expect } from '@jest/globals';
+import { expect, it, vi } from 'vitest';
 import { Injectable, Module, type OnModuleDestroy } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ConfigError } from '@app/config';
@@ -18,7 +18,7 @@ it('keeps only the name and code of an error, and only when they look like ident
 });
 
 it('logs a startup failure as one JSON line naming the bad variables, not their values', () => {
-  const output = jest
+  const output = vi
     .spyOn(process.stderr, 'write')
     .mockImplementation(() => true);
   let written: string[];
@@ -48,10 +48,10 @@ it('logs a startup failure as one JSON line naming the bad variables, not their 
 const CONNECTION_STRING = 'postgresql://user:secret@db.internal:5432/payments';
 
 async function captured(run: () => Promise<void>): Promise<string> {
-  const stdout = jest
+  const stdout = vi
     .spyOn(process.stdout, 'write')
     .mockImplementation(() => true);
-  const stderr = jest
+  const stderr = vi
     .spyOn(process.stderr, 'write')
     .mockImplementation(() => true);
   try {
