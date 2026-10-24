@@ -15,6 +15,7 @@ import { isReceiptNoteKind, receiptNoteKinds } from '@app/core/receipt-notes';
 import type { ApiConfig } from '../common/api-config';
 import { InjectNow, type Now } from '../common/clock.module';
 import { ttlCache } from '../common/ttl-cache';
+import { explorerUrl } from '../common/explorer-url';
 
 const CACHE_MS = 5000;
 
@@ -112,9 +113,7 @@ export class PaymentsService implements OnModuleInit, OnModuleDestroy {
         noteKinds: incidents
           .map((incident) => incident.kind)
           .filter(isReceiptNoteKind),
-        explorerUrl: row.transactionHash
-          ? `${explorer.replace(/\/$/, '')}/tx/${row.transactionHash}`
-          : null,
+        explorerUrl: explorerUrl(explorer, row.transactionHash),
       }));
   }
 }

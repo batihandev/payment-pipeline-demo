@@ -19,6 +19,7 @@ export type TrackerOptions = {
   rpcAttempts: number;
   gapAttempts: number;
   confirmations: number;
+  idleBacklog: number;
 };
 export type TrackerChain = Pick<
   ChainClient,
@@ -54,6 +55,7 @@ export class ScannerService {
       rpcAttempts: get('RPC_MAX_ATTEMPTS'),
       gapAttempts: get('GAP_MAX_ATTEMPTS'),
       confirmations: get('CONFIRMATIONS'),
+      idleBacklog: get('IDLE_BACKLOG_BLOCKS'),
     };
     this.options = options;
     this.cursorName = `chain-${options.chainId}-${options.shop.toLowerCase()}`;
@@ -66,14 +68,23 @@ export class ScannerService {
         'MIN_RANGE must exceed RESCAN_BLOCKS + 1; MAX_RANGE must be at least MIN_RANGE',
       );
   }
-  async scanOnce(): Promise<{ number: bigint; hash: string }> {
+  /** `idle` says whether nothing waits on the chain; it is asked after the head is read. */
+  async scanOnce(
+    idle?: () => Promise<boolean>,
+  ): Promise<{ number: bigint; hash: string }> {
     const fetched = await this.rpc(() => this.chain.getHead());
     if (!this.highestHead || fetched.number > this.highestHead.number)
       this.highestHead = fetched;
     const head = this.highestHead;
-    const cursor = await this.db.cursor.findUnique({
+    let cursor = await this.db.cursor.findUnique({
       where: { name: this.cursorName },
     });
+    if (
+      cursor &&
+      head.number - cursor.blockNumber > BigInt(this.options.idleBacklog) &&
+      (await idle?.())
+    )
+      cursor = await this.forward(cursor.blockNumber, head);
     let position =
       cursor?.blockNumber ??
       this.options.startBlock ??
@@ -164,6 +175,33 @@ export class ScannerService {
           SET block_number = EXCLUDED.block_number, block_hash = EXCLUDED.block_hash`;
     });
     return head;
+  }
+  /**
+   * Moves an idle cursor to the head. A purchase made after `idle` answered is mined after
+   * the head was read, so the skipped blocks hold no transfer an order waits for.
+   */
+  private async forward(from: bigint, head: { number: bigint; hash: string }) {
+    return this.db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${this.cursorName}, 0))`;
+      await tx.cursor.updateMany({
+        where: { name: this.cursorName, blockNumber: { lt: head.number } },
+        data: {
+          blockNumber: head.number,
+          blockHash: head.hash,
+          advancedAt: this.now(),
+        },
+      });
+      await recordIncident(tx, {
+        kind: 'cursor_forwarded',
+        fromBlock: from,
+        toBlock: head.number,
+        whatHappened:
+          'The cursor was far behind the head with nothing waiting.',
+        howHandled:
+          'Moved the cursor to the head without scanning the skipped blocks.',
+      });
+      return tx.cursor.findUniqueOrThrow({ where: { name: this.cursorName } });
+    });
   }
   async readRange(from: bigint, end: bigint) {
     let to = end;

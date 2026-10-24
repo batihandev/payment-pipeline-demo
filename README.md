@@ -66,7 +66,7 @@ Visitor chain purchases pause while the buyer's gas balance is below `GAS_FLOOR`
 
 USDC circulates only between the buyer and shop wallets. A nightly sweep at 03:00 UTC returns the shop's USDC to the buyer. A refill does the same on demand: when the buyer's USDC falls below `REFILL_BELOW` and the shop holds USDC and enough gas, the shop sends its whole USDC balance to the buyer, at most once per `REFILL_COOLDOWN_SECONDS`. The running cost is gas.
 
-A nightly job deletes orders, payments, ledger entries, notices, payment events, order events, Stripe events and incidents older than `RETENTION_DAYS` (default 30), and resolved scan gaps of the same age. Open orders and payments that are unsettled or not final are kept until they close. A transfer closed because it can never land is deleted by its send time.
+A nightly job at 03:30 UTC deletes orders, payments, ledger entries, notices, payment events, order events, Stripe events, incidents, daily budgets and sent sweeps older than `RETENTION_DAYS` (default 15), and resolved scan gaps of the same age. Open orders and payments that are unsettled or not final are kept until they close. A transfer closed because it can never land is deleted by its send time.
 
 ## RPC and Stripe budgets
 
@@ -82,7 +82,7 @@ The services run on free RPC tiers, so request volume stays inside their rate li
 
 ## Rescans and duplicates
 
-Each tracker pass re-reads the last `RESCAN_BLOCKS` blocks. A log re-read inside that overlap, in the same block, is skipped silently. A log seen again anywhere else, such as a gap retry or a replay after a restart, is skipped and recorded as a duplicate.
+Each tracker pass re-reads the last `RESCAN_BLOCKS` blocks. While a full `MAX_RANGE` is still unscanned, the next pass starts at once. When the cursor is more than `IDLE_BACKLOG_BLOCKS` behind and nothing waits on the chain, the tracker moves it to the head without scanning the skipped blocks and records a `cursor_forwarded` incident; transfers to the shop in those blocks, such as stray donations, are not recorded. A log re-read inside that overlap, in the same block, is skipped silently. A log seen again anywhere else, such as a gap retry or a replay after a restart, is skipped and recorded as a duplicate.
 
 ## API routes
 
@@ -247,7 +247,8 @@ Optional settings and their defaults:
 | `START_BLOCK`                                | `RESCAN_BLOCKS` below the head | First block the tracker scans when it has no cursor                                                                                                             |
 | `RESCAN_BLOCKS`                              | 5                              | Blocks re-read on each tracker pass                                                                                                                             |
 | `MAX_RANGE`, `MIN_RANGE`                     | 500, 10                        | Largest and smallest block range per log query; a rejected range is halved down to the minimum                                                                  |
-| `ACTIVE_POLL_MS`, `IDLE_POLL_MS`             | 2000, 30000                    | Tracker poll interval while payments are open, and otherwise                                                                                                    |
+| `ACTIVE_POLL_MS`, `IDLE_POLL_MS`             | 2000, 30000                    | Tracker poll interval while payments are open or the cursor is behind the head, and otherwise; passes run back to back while a full range is unscanned          |
+| `IDLE_BACKLOG_BLOCKS`                        | 1800                           | Blocks behind the head past which the tracker moves its cursor to the head, when no order is open and no chain payment is unfinished                            |
 | `RPC_COOLDOWN_MS`                            | 30000                          | Pause for a service (RPC or Stripe) after a rate-limit response                                                                                                 |
 | `RPC_MAX_ATTEMPTS`, `GAP_MAX_ATTEMPTS`       | 3, 5                           | Attempts per RPC call, and attempts per stored scan gap                                                                                                         |
 | `ORDER_TTL_MINUTES`                          | 30                             | Minutes before an unpaid order expires                                                                                                                          |
@@ -264,7 +265,7 @@ Optional settings and their defaults:
 | `GAS_FLOOR`                                  | 200000000000000                | Native balance floor in wei (0.0002 ETH)                                                                                                                        |
 | `REFILL_BELOW`, `REFILL_COOLDOWN_SECONDS`    | 5000000, 20                    | Buyer USDC balance in micro-units (5 USDC) that triggers a refill, and the wait between refills                                                                 |
 | `MAX_IN_FLIGHT`                              | 10                             | Buyer purchases in flight at once                                                                                                                               |
-| `RETENTION_DAYS`                             | 30                             | Days that records are kept                                                                                                                                      |
+| `RETENTION_DAYS`                             | 15                             | Days that records are kept; above the 14 days the charts show, and below the 30 days a Stripe receipt link lasts                                                |
 | `STREAMS_PER_IP`                             | 5                              | Open live-stream connections allowed per client address                                                                                                         |
 | `STREAMS_TOTAL`                              | 500                            | Open live-stream connections allowed in all                                                                                                                     |
 | `STRIPE_SECRET_KEY`                          | unset                          | Stripe test-mode secret key (`sk_test_…`) for the buyer and `pnpm stripe:setup`; other prefixes, `sk_live_` included, are refused; card charges fail without it |

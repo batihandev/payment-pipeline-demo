@@ -18,6 +18,7 @@ export const options = {
   rpcAttempts: 3,
   gapAttempts: 3,
   confirmations: 10,
+  idleBacklog: 1000,
 };
 /** The tracker settings the options above and the poll intervals stand for. */
 export const trackerConfig = (overrides: Partial<typeof options> = {}) => {
@@ -33,6 +34,7 @@ export const trackerConfig = (overrides: Partial<typeof options> = {}) => {
     RPC_MAX_ATTEMPTS: settings.rpcAttempts,
     GAP_MAX_ATTEMPTS: settings.gapAttempts,
     CONFIRMATIONS: settings.confirmations,
+    IDLE_BACKLOG_BLOCKS: settings.idleBacklog,
     ACTIVE_POLL_MS: 2000,
     IDLE_POLL_MS: 30000,
   });

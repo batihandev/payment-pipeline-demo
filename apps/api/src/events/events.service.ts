@@ -7,12 +7,13 @@ import {
 import { ConfigService } from '@nestjs/config';
 import type { Redis } from 'ioredis';
 import { Observable, Subject, interval, map, merge, takeUntil } from 'rxjs';
-import type { OrderEvent, QueueEvent } from '@app/core/api';
+import type { OrderEvent, PaymentEvent, QueueEvent } from '@app/core/api';
 import { orderChannel } from '@app/events/order-events';
 import { paymentChannel } from '@app/events/publish-payment';
 import { subscribeEvents } from '@app/events/subscribe-events';
 import { InjectRedis } from '@app/redis';
 import type { ApiConfig } from '../common/api-config';
+import { explorerUrl } from '../common/explorer-url';
 
 /** Below the 100 s after which Cloudflare closes an idle connection. */
 const KEEP_ALIVE_MS = 30_000;
@@ -50,19 +51,23 @@ export class EventsService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit(): Promise<void> {
     const donationMin = this.config.get('DONATION_MIN', { infer: true });
+    const explorer = this.config.get('BLOCK_EXPLORER_URL', { infer: true });
     this.unsubscribe = await subscribeEvents(this.redis, {
       [paymentChannel]: (body) => {
         this.changed.next();
+        let payment: Omit<PaymentEvent, 'explorerUrl'>;
         try {
-          const payment = JSON.parse(body) as {
-            donation: boolean;
-            amount: string;
-          };
+          payment = JSON.parse(body) as typeof payment;
           if (payment.donation && BigInt(payment.amount) < donationMin) return;
         } catch {
           return;
         }
-        this.payments.next(body);
+        // The list read's explorer link, which only the API can build.
+        const event: PaymentEvent = {
+          ...payment,
+          explorerUrl: explorerUrl(explorer, payment.transactionHash),
+        };
+        this.payments.next(JSON.stringify(event));
       },
       [orderChannel]: (body) => {
         const order = readOrder(body);
@@ -87,7 +92,7 @@ export class EventsService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Each published payment as an unnamed event; order changes and the waiting queue as named
+   * Each published payment, with its explorer link, as an unnamed event; order changes and the waiting queue as named
    * `order` and `queue` events; and a `keep-alive` comment every 30 seconds.
    */
   stream(): Observable<MessageEvent> {

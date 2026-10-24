@@ -62,9 +62,38 @@ it('relays full published payment rows to SSE clients and releases disconnected 
   const received = once(stream, 'data');
   await publishPayment(redis, row);
   const chunk: unknown = (await received)[0];
-  expect(String(chunk)).toContain(`data: ${serializePayment(row)}\n\n`);
+  expect(String(chunk)).toMatch(/\n\n$/);
+  expect(message(chunk)).toEqual({
+    ...(JSON.parse(serializePayment(row)) as object),
+    explorerUrl: null,
+  });
   stream.destroy();
 });
+it('adds the explorer link to a streamed payment with a transaction', async () => {
+  const stream = await connect();
+  const hash = `0x${'ab'.repeat(32)}`;
+  const row = await database.db.payment.create({
+    data: {
+      provider: 'chain',
+      externalKey: 'event-explorer',
+      amount: 14000731n,
+      stage: 'sent',
+      transactionHash: hash,
+      sentAt: new Date(),
+    },
+  });
+  const received = once(stream, 'data');
+  await publishPayment(redis, row);
+  expect(message((await received)[0])).toMatchObject({
+    explorerUrl: `https://sepolia.basescan.org/tx/${hash}`,
+  });
+  stream.destroy();
+});
+const message = (chunk: unknown) =>
+  JSON.parse(/^data: (.*)$/m.exec(String(chunk))?.[1] ?? '') as Record<
+    string,
+    unknown
+  >;
 const donation = (key: string, amount: bigint) =>
   database.db.payment.create({
     data: {

@@ -328,10 +328,6 @@ export class PaymentsClient {
           event.order ??
           (previous?.orderId === event.orderId ? previous.order : null),
         noteKinds: previous?.noteKinds ?? [],
-        explorerUrl:
-          previous?.transactionHash === event.transactionHash
-            ? previous.explorerUrl
-            : null,
       });
     }
     this.feed = {

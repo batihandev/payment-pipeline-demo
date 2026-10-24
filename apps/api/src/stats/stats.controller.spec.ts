@@ -109,36 +109,36 @@ it('counts only today in /stats', async () => {
     failuresRecovered: 0,
   });
 });
-it('returns 30 zero-filled days in /stats/daily with scheduled and visitor split', async () => {
+it('returns 15 zero-filled days in /stats/daily with scheduled and visitor split', async () => {
   await settle('2026-10-22T11:00:00Z', 'schedule', 8);
   await settle('2026-10-22T11:30:00Z', 'visitor', 4);
   await settle('2026-10-20T11:30:00Z', 'visitor', 10);
-  await settle('2026-09-23T00:00:00Z');
-  await settle('2026-09-22T23:59:59Z', 'visitor');
+  await settle('2026-10-08T00:00:00Z');
+  await settle('2026-10-07T23:59:59Z', 'visitor');
   const days = await daily();
-  expect(days).toHaveLength(30);
+  expect(days).toHaveLength(15);
   expect(days[0]).toEqual({
-    day: '2026-09-23',
+    day: '2026-10-08',
     settled: 1,
     scheduled: 0,
     visitor: 0,
     averageTimeToSettleMs: 10000,
   });
-  expect(days[29]).toEqual({
+  expect(days[14]).toEqual({
     day: '2026-10-22',
     settled: 2,
     scheduled: 1,
     visitor: 1,
     averageTimeToSettleMs: 6000,
   });
-  expect(days[27]).toEqual({
+  expect(days[12]).toEqual({
     day: '2026-10-20',
     settled: 1,
     scheduled: 0,
     visitor: 1,
     averageTimeToSettleMs: 10000,
   });
-  expect(days[28]).toEqual({
+  expect(days[13]).toEqual({
     day: '2026-10-21',
     settled: 0,
     scheduled: 0,
@@ -147,7 +147,7 @@ it('returns 30 zero-filled days in /stats/daily with scheduled and visitor split
   });
   await settle('2026-10-22T11:45:00Z', 'visitor');
   state.time = today + 59999;
-  expect((await daily())[29]?.settled).toBe(2);
+  expect((await daily())[14]?.settled).toBe(2);
   state.time = today + 60000;
-  expect((await daily())[29]?.settled).toBe(3);
+  expect((await daily())[14]?.settled).toBe(3);
 });

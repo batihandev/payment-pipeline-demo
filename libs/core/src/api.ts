@@ -78,6 +78,12 @@ export type PublicPaymentRecord = {
 };
 export type PublicPayment = Json<PublicPaymentRecord>;
 
+/** A payment on the event stream: the public payment with its explorer link, which only the API can build. */
+export type PaymentEventRecord = PublicPaymentRecord & {
+  explorerUrl: string | null;
+};
+export type PaymentEvent = Json<PaymentEventRecord>;
+
 /** One row of `GET /payments`: the payment with its receipt notes and explorer link. */
 export type PaymentListItemRecord = PublicPaymentRecord & {
   noteKinds: ReceiptNoteKind[];

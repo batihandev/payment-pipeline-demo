@@ -56,9 +56,43 @@ it('keeps polling every block until a settled payment is final', async () => {
   expect(await poller.pass()).toBe(30000);
   expect((await f.db.payment.findFirstOrThrow()).final).toBe(true);
 });
-it('uses active polling during bounded catch-up without open orders', async () => {
+it('runs the next pass at once while a full range is still unscanned', async () => {
+  await order(f.db);
   f.chain.head = 10000n;
+  expect(await poller.pass()).toBe(0);
+});
+it('waits the active interval once less than a range is left', async () => {
+  await order(f.db);
+  f.chain.head = 1200n;
+  expect(await poller.pass()).toBe(0);
   expect(await poller.pass()).toBe(2000);
+});
+it('forwards an idle cursor that is far behind to the head', async () => {
+  await poller.pass();
+  f.chain.head = 2000n;
+  f.chain.ranges = [];
+  await poller.pass();
+  expect((await f.db.cursor.findFirstOrThrow()).blockNumber).toBe(2000n);
+  expect(f.chain.ranges).toEqual([[1995n, 2000n]]);
+  expect(
+    await f.db.incident.findFirstOrThrow({
+      where: { kind: 'cursor_forwarded' },
+    }),
+  ).toMatchObject({ fromBlock: 20n, toBlock: 2000n });
+});
+it('does not forward an idle cursor that is less than the backlog behind', async () => {
+  await poller.pass();
+  f.chain.head = 1020n;
+  await poller.pass();
+  expect((await f.db.cursor.findFirstOrThrow()).blockNumber).toBe(514n);
+  expect(await f.db.incident.count()).toBe(0);
+});
+it('scans the backlog instead of forwarding while an order is open', async () => {
+  await poller.pass();
+  await order(f.db);
+  f.chain.head = 2000n;
+  await poller.pass();
+  expect((await f.db.cursor.findFirstOrThrow()).blockNumber).toBe(514n);
 });
 it('adds small bounded jitter to poll intervals', async () => {
   const scanner = new ScannerService(f.db, f.chain, trackerConfig(), () => now);

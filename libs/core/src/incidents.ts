@@ -1,6 +1,7 @@
 /** Every kind of incident the services record. The database stores the kind as text. */
 export const incidentKinds = [
   'card_failed',
+  'cursor_forwarded',
   'cursor_reorg',
   'duplicate',
   'event_failed',
