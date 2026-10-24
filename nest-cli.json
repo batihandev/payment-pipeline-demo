@@ -37,49 +37,13 @@
         "tsConfigPath": "apps/api/tsconfig.app.json"
       }
     },
-    "db": {
-      "type": "library",
-      "root": "libs/db",
-      "entryFile": "index",
-      "sourceRoot": "libs/db/src",
+    "scripts": {
+      "type": "application",
+      "root": "scripts",
+      "entryFile": "stripe-setup",
+      "sourceRoot": "scripts",
       "compilerOptions": {
-        "tsConfigPath": "libs/db/tsconfig.lib.json"
-      }
-    },
-    "config": {
-      "type": "library",
-      "root": "libs/config",
-      "entryFile": "index",
-      "sourceRoot": "libs/config/src",
-      "compilerOptions": {
-        "tsConfigPath": "libs/config/tsconfig.lib.json"
-      }
-    },
-    "chain": {
-      "type": "library",
-      "root": "libs/chain",
-      "entryFile": "index",
-      "sourceRoot": "libs/chain/src",
-      "compilerOptions": {
-        "tsConfigPath": "libs/chain/tsconfig.lib.json"
-      }
-    },
-    "core": {
-      "type": "library",
-      "root": "libs/core",
-      "entryFile": "index",
-      "sourceRoot": "libs/core/src",
-      "compilerOptions": {
-        "tsConfigPath": "libs/core/tsconfig.lib.json"
-      }
-    },
-    "events": {
-      "type": "library",
-      "root": "libs/events",
-      "entryFile": "index",
-      "sourceRoot": "libs/events/src",
-      "compilerOptions": {
-        "tsConfigPath": "libs/events/tsconfig.lib.json"
+        "tsConfigPath": "tsconfig.scripts.json"
       }
     }
   }
