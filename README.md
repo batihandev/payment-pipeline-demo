@@ -166,7 +166,7 @@ The client address is the socket address. Set `CLIENT_IP_HEADER=cf-connecting-ip
 | Age of the oldest payment in `sent`, `received`, `confirming` or `processing`, for an order not closed as failed | over 1 hour     |
 | Age of the oldest settled payment, other than a donation, not yet notified                                       | over 1 hour     |
 | Time since the last scheduled purchase                                                                           | over 24 hours   |
-| Time since the last card payment settled; a disabled Stripe account or a broken webhook stops these              | over 6 hours    |
+| Time since the last card payment settled; a disabled Stripe account or a broken webhook stops these              | over 12 hours   |
 | Time visitor test buys have been paused by the gas floor                                                         | over 24 hours   |
 | `/health` itself unreachable                                                                                     | over 30 minutes |
 
