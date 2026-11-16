@@ -9,13 +9,14 @@ export class GapRecoveryService {
     @Optional() private readonly now = () => new Date(),
   ) {}
 
+  // Every failure kind is retried up to the attempt cap: a short provider outage can answer with
+  // errors the classifier does not recognise, and a range that failed once is cheap to read again.
   async retryOnce(): Promise<void> {
     const gap = await this.db.scanGap.findFirst({
       where: {
         resolvedAt: null,
         attempts: { lt: this.scanner.options.gapAttempts },
         nextRetryAt: { lte: this.now() },
-        errorCategory: { not: 'permanent' },
       },
       orderBy: { nextRetryAt: 'asc' },
     });
@@ -44,8 +45,7 @@ export class GapRecoveryService {
           toBlock: gap.toBlock,
           whatHappened: `Gap retry failed: ${range.failure.kind}.`,
           howHandled:
-            gap.attempts + 1 >= this.scanner.options.gapAttempts ||
-            range.failure.kind === 'permanent'
+            gap.attempts + 1 >= this.scanner.options.gapAttempts
               ? 'Left the gap open for manual review; stopped automatic retries.'
               : 'Left the gap open with exponential backoff.',
         });

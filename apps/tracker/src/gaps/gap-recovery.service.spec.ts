@@ -82,18 +82,51 @@ it('stops automatic gap retries at the attempt cap while new scans keep progress
   ).scanOnce();
   expect((await f.db.cursor.findFirstOrThrow()).blockNumber).toBe(20n);
 });
-it('leaves future and permanently malformed gaps open without retrying them', async () => {
+it('leaves a gap open without retrying it before its retry time', async () => {
   await gap();
   await f.db.scanGap.updateMany({
     data: { nextRetryAt: new Date(now.getTime() + 1) },
   });
   await recovery.retryOnce();
   expect((await f.db.scanGap.findFirstOrThrow()).attempts).toBe(1);
-  await f.db.scanGap.updateMany({
-    data: { nextRetryAt: now, errorCategory: 'permanent' },
+});
+it('retries a gap whose first failure was classed permanent, since a provider outage can return errors the classifier does not know', async () => {
+  const row = await gap();
+  await f.db.scanGap.update({
+    where: { id: row.id },
+    data: { errorCategory: 'permanent' },
   });
+  await order(f.db);
+  f.chain.logs = [log()];
   await recovery.retryOnce();
-  expect((await f.db.scanGap.findFirstOrThrow()).attempts).toBe(1);
+  expect(
+    await f.db.scanGap.findUniqueOrThrow({ where: { id: row.id } }),
+  ).toMatchObject({ resolvedAt: now });
+  expect(await f.db.payment.count()).toBe(1);
+});
+it('keeps retrying a gap after a permanent failure until the attempt cap', async () => {
+  await gap();
+  f.chain.failure = () => {
+    throw new RpcError('permanent');
+  };
+  await recovery.retryOnce();
+  await f.db.scanGap.updateMany({ data: { nextRetryAt: now } });
+  await recovery.retryOnce();
+  expect(await f.db.scanGap.findFirstOrThrow()).toMatchObject({
+    attempts: 3,
+    resolvedAt: null,
+  });
+  expect(
+    (
+      await f.db.incident.findMany({
+        where: { kind: 'gap_retry_failed' },
+        orderBy: { createdAt: 'asc' },
+      })
+    ).map((incident) => incident.howHandled),
+  ).toEqual([
+    'Left the gap open with exponential backoff.',
+    'Left the gap open for manual review; stopped automatic retries.',
+  ]);
 });
 it('bounds each gap retry and retains the unscanned remainder after range halving', async () => {
   const row = await gap();
